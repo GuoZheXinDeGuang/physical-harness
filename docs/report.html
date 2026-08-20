@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 48 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 49 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,14 +115,14 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+26.9<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>四个独立区块 n=800</b>，215 修 <b>0 破</b></span></div>
-    <div><span class="k">+18.5<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>四个独立区块 n=800</b>，152 修 4 破</span></div>
+    <div><span class="k">+32.2<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>三个独立区块 n=600</b>，193 修 <b>0 破</b></span></div>
+    <div><span class="k">+13.2<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>三个独立区块 n=600</b>，85 修 6 破</span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
     <div><span class="k">87</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略四个区块 +30.5 / +20.5 / +29.0 / +27.5pp；克隆策略四个区块 +17.5 / +16.5 / +23.0 / +17.0pp。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
+  <p class="bandnote">两个数字都取自<b>现在这道门禁</b>（含第 6 节的判断测试）产出的 bundle，各在三个独立区块上评分一次：脚本 +31.0 / +30.0 / +35.5pp，克隆 +15.0 / +12.5 / +12.0pp。旧门禁下的四区块结果（脚本 +26.9pp、克隆 +18.5pp 且有两条规则）见第 6 节，<b>两套数字属于不同的 bundle，不可互换也不可合并</b>。迁移取自 Round 10。<b>单区块 n=200 的 delta 带 ±7pp，所以这里报的是合并值。</b></p>
 </header>
 
 
@@ -206,14 +206,17 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <p>每个区块上的 bundle 都是<strong>逐位相同</strong>的（同一份预注册，只换 held-out 种子）。
     后来两个策略各自补到了<strong>三个区块</strong>，于是离散度第一次有了真估计：</p>
     <div class="tw"><table>
-      <thead><tr><th>策略</th><th>四个区块的 delta</th><th>跨度</th><th>sd</th><th>合并 n=800</th></tr></thead>
+      <thead><tr><th>策略 / 门禁</th><th>各区块的 delta</th><th>跨度</th><th>sd</th><th>合并</th></tr></thead>
       <tbody>
-        <tr><td>脚本</td><td class="n">+30.5 / +20.5 / +29.0 / +27.5</td><td class="n">10.0pp</td><td class="n">4.4pp</td><td class="n"><b>+26.9pp</b>，215 修 <b>0 破</b></td></tr>
-        <tr><td>行为克隆</td><td class="n">+17.5 / +16.5 / +23.0 / +17.0</td><td class="n">6.5pp</td><td class="n">3.0pp</td><td class="n"><b>+18.5pp</b>，152 修 4 破</td></tr>
+        <tr><td>脚本（旧门禁，4 区块）</td><td class="n">+30.5 / +20.5 / +29.0 / +27.5</td><td class="n">10.0pp</td><td class="n">4.4pp</td><td class="n"><b>+26.9pp</b>，215 修 <b>0 破</b></td></tr>
+        <tr><td>行为克隆（旧门禁，4 区块，2 规则）</td><td class="n">+17.5 / +16.5 / +23.0 / +17.0</td><td class="n">6.5pp</td><td class="n">3.0pp</td><td class="n"><b>+18.5pp</b>，152 修 4 破</td></tr>
+        <tr class="hi"><td><b>脚本（现门禁，3 区块）</b></td><td class="n">+31.0 / +30.0 / +35.5</td><td class="n">5.5pp</td><td class="n">2.9pp</td><td class="n"><b>+32.2pp</b>，193 修 <b>0 破</b></td></tr>
+        <tr class="hi"><td><b>行为克隆（现门禁，3 区块，1 规则）</b></td><td class="n">+15.0 / +12.5 / +12.0</td><td class="n">3.0pp</td><td class="n">1.6pp</td><td class="n"><b>+13.2pp</b>，85 修 6 破</td></tr>
       </tbody>
     </table></div>
-    <p>两个 sd（4.4 与 3.0）在各自 n=4 的情况下<strong>分不出高下</strong>，
-    但都落在按 McNemar 算出的 SE 3-4pp 附近 —— 理论与实测对上了。</p>
+    <p>四组 sd 落在 <strong>1.6 - 4.4pp</strong>，都在按 McNemar 算出的 SE 3-4pp 附近 ——
+    理论与实测对上了。<strong>组间的 sd 差别在各自 n=3~4 下分不出高下</strong>，
+    不要从中读出「谁更稳」（上一版报告在这里犯过一次，见下方撤回）。</p>
     <p><strong>这条限定适用于本报告里每一个单区块数字：n=200 的 delta 应当读作一个带 ±7pp 的量，
     几个 pp 的跨区块比较是噪声，不是发现。</strong>
     上面那张轨迹图之所以标注为「定性的」，正是这个原因；现在它有了量。</p>
@@ -694,9 +697,20 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <p>第 1 代切片从 60 涨到 140 会<strong>换掉选出的第一条规则</strong>，进而改变整条链：
     行为克隆策略在新门禁下<strong>从两条规则压回一条</strong>，本区块 +15.0pp
     （此前四个区块、两条规则时是 +16.5 ~ +23.0pp）。</p>
-    <p>下方成绩栏里克隆的 <strong>+18.5pp</strong> 是<strong>两条规则的 bundle 在四个区块上的复现</strong>，
-    在当时的门禁下正当赚到；上表的 +15.0pp 是<strong>现在这道门禁的产出，且只有一个区块</strong>。
-    两个数不能互相替换，也不能合并。</p>
+    <p>但<strong>这个代价不是单向的</strong>。两套 bundle 各自补到三个区块之后：</p>
+    <div class="tw"><table>
+      <thead><tr><th>策略</th><th>旧门禁</th><th>现门禁</th></tr></thead>
+      <tbody>
+        <tr><td>脚本</td><td class="n">+26.9pp（4 区块）</td><td class="n"><b>+32.2pp</b>（3 区块，193 修 <b>0 破</b>）</td></tr>
+        <tr><td>行为克隆</td><td class="n">+18.5pp（4 区块，<b>2 条规则</b>）</td><td class="n">+13.2pp（3 区块，<b>1 条规则</b>）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>更大的第 1 代切片选出了一条更好的第一规则</strong> —— 脚本策略因此变好了 5.3pp。
+    它在克隆策略上变差，是因为那条更好的第一规则<strong>吃掉了第二条规则本来要修的失败</strong>，
+    链长不下去了。<strong>「更严的门禁要付代价」这个说法太粗：付不付、付多少，
+    取决于换来的第一条规则还留不留得下链。</strong></p>
+    <p>两套数字属于<strong>不同的 bundle</strong>（脚本的阈值 0.001823 对 0.002118），
+    不可互换也不可合并。成绩栏报的是现门禁的产出。</p>
   </div>
 </section>
 
@@ -1090,7 +1104,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
     <li><strong>修复原语的天花板</strong> —— 见上一节。两次手写更强原语的尝试都失败了，
       所以这不是一条待办事项，是这套方法的边界。</li>
-    <li><strong>异质失败仍然更难治理：+18.5pp 对 +26.9pp</strong>（两者都是四区块合并 n=800）。
+    <li><strong>异质失败仍然更难治理：+13.2pp 对 +32.2pp</strong>（现门禁，两者都是三区块合并 n=600）。
       克隆策略现在能长出两条规则的链，见第 5 节 —— 这一条取代了原来的「失败形态是我们设计的」。</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
       真正的 VLA 会有感知本身的失败模式，这里没有。</li>
@@ -1104,8 +1118,8 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       决定性的是<strong>失败能否被选择性检测</strong>，不是策略有多好。见第 6 节。</li>
     <li><strong>更保守的门禁有价格。</strong>把判断测试做足功效后，第 1 代切片从 60 涨到 140，
       换掉了选出的第一条规则，克隆策略因此<strong>从两条规则压回一条</strong>。
-      成绩栏的克隆数字是旧门禁下两条规则的四区块复现，新门禁的单区块结果是 +15.0pp，
-      <strong>两者不可互换也不可合并</strong>。</li>
+      <strong>但代价不是单向的</strong>：同一个改动让脚本策略从 +26.9pp 升到 <strong>+32.2pp</strong>。
+      付不付代价，取决于换来的第一条规则还留不留得下链。见第 6 节。</li>
     <li><strong>几处结论的作用域比它们看起来窄，逐一标注在正文里：</strong>
       跨任务迁移（第 4 节）只在<strong>脚本策略</strong>上做过 —— 克隆策略是在 Lift 上训的，根本执行不了 Stack；
       修复原语的天花板（第 9 节）只在 <strong>Lift</strong> 上测过；
@@ -1143,7 +1157,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  48 轮自主循环，3800+ 行实现 + 1500 行测试，90 个测试全绿，48 篇过程记录。
+  49 轮自主循环，3800+ 行实现 + 1500 行测试，90 个测试全绿，49 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
