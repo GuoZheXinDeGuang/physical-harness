@@ -53,3 +53,20 @@ def test_sizing_never_reads_the_candidate():
 def test_reservoir_cap_is_reported_not_silent():
     plan = plan_generation(9, 2, 400, reservoir=30)
     assert plan.capped and plan.seeds_used == 30
+
+
+def test_a_low_measured_yield_sizes_the_next_generation_larger():
+    """Round 32: the second factor is measured, not assumed.
+
+    Two generations with identical residual rates must be sized differently
+    when the campaign has learned that its recoveries change few outcomes.
+    """
+    from governor.power import plan_generation
+
+    optimistic = plan_generation(2, 150, 400, 4000, discordance_yield=0.70)
+    measured = plan_generation(2, 150, 400, 4000, discordance_yield=0.26)
+    assert measured.seeds_needed > optimistic.seeds_needed
+    # The relationship is inverse-proportional, not merely monotone.
+    assert measured.seeds_needed == pytest.approx(
+        optimistic.seeds_needed * 0.70 / 0.26, rel=0.02)
+    assert measured.discordance_yield == 0.26

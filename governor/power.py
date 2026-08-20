@@ -67,30 +67,42 @@ class PowerPlan:
     seeds_needed: int
     seeds_used: int
     capped: bool
+    #: Discordant pairs expected per residual failure, measured from the last
+    #: completed generation rather than assumed.
+    discordance_yield: float = 0.7
 
     def line(self) -> str:
         return (f"gen {self.generation}: residual {self.residual_failures} "
                 f"({self.residual_rate:.1%}) -> need {self.discordant_needed} discordant "
                 f"-> {self.seeds_needed} seeds, using {self.seeds_used}"
+                + f" [yield {self.discordance_yield:.2f}/failure]"
                 + ("  [CAPPED]" if self.capped else ""))
 
 
 def plan_generation(
     generation: int, residual_failures: int, n_observed: int, reservoir: int, *,
     fix_share: float = 0.80, alpha: float = 0.05, power: float = 0.80,
-    engage_rate: float = 0.7, minimum: int = 60,
+    discordance_yield: float = 0.7, minimum: int = 60,
 ) -> PowerPlan:
     """Seeds this generation should be gated on.
 
-    A candidate can only produce a discordant pair on an episode that currently
-    FAILS and that the candidate actually engages, so the expected yield per
-    seed is ``residual_rate * engage_rate``. Both inputs come from episodes
+    A discordant pair needs an episode that currently FAILS *and* whose outcome
+    the candidate actually changes, so the expected yield per seed is
+    ``residual_rate * discordance_yield``. Both inputs come from episodes
     already run, never from the candidate under test.
+
+    Until round 32 this second factor was a fixed 0.7 named ``engage_rate``,
+    which conflated engaging with an episode and changing its outcome. That
+    holds where recovery almost always works (the scripted policy fixes what it
+    fires on) and fails badly where it does not: the cloned policy repairs 27%
+    of what it fires on, so a generation sized for 20 discordant pairs returned
+    3, and a candidate with the right sign died of Type II error. The caller
+    measures this from the last completed generation instead of assuming it.
     """
     residual_rate = residual_failures / max(n_observed, 1)
     need_d = discordant_needed(fix_share, alpha, power)
-    yield_per_seed = max(residual_rate * engage_rate, 1e-6)
+    yield_per_seed = max(residual_rate * discordance_yield, 1e-6)
     seeds = max(minimum, int(round(need_d / yield_per_seed)))
     used = min(seeds, reservoir)
     return PowerPlan(generation, residual_failures, residual_rate, need_d, seeds, used,
-                     capped=seeds > reservoir)
+                     capped=seeds > reservoir, discordance_yield=discordance_yield)

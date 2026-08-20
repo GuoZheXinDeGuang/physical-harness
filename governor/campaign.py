@@ -97,6 +97,12 @@ class Preregistration:
     #: Keeping them as defaults bound at import time also made an A/B silently
     #: run the same arm twice (round 29) -- rebinding the module attribute after
     #: import cannot reach a default already bound to the function.
+    #: Generation 1 has no measured yield to carry forward. Later generations
+    #: never use this; see `plan_generation`.
+    prior_discordance_yield: float = 0.7
+    #: Floor on the carried-forward estimate, so one unlucky generation cannot
+    #: demand an unbounded reservoir.
+    min_discordance_yield: float = 0.05
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
 
@@ -206,6 +212,10 @@ def run_campaign(
     plans: list[dict] = []
 
     prev_residual_rate: float | None = None
+    #: Discordant pairs per residual failure, carried forward from the last
+    #: completed generation. Generation 1 has nothing to measure and uses the
+    #: prior; every later generation is sized on this campaign's own evidence.
+    prev_yield: float | None = None
     for gen in range(1, prereg.max_generations + 1):
         # Size this generation BEFORE anything about its candidate is known, from
         # the previous generation's residual rate. Measurement, search and gate
@@ -217,7 +227,9 @@ def run_campaign(
             rate = prev_residual_rate if prev_residual_rate is not None else 0.5
             plan = plan_generation(gen, round(rate * len(reservoir)), len(reservoir),
                                    len(reservoir), fix_share=prereg.power_fix_share,
-                                   alpha=prereg.alpha, power=prereg.power_target)
+                                   alpha=prereg.alpha, power=prereg.power_target,
+                                   discordance_yield=(prev_yield if prev_yield is not None
+                                                      else prereg.prior_discordance_yield))
             dev_specs = reservoir[: plan.seeds_used]
             plans.append(asdict(plan))
             if verbose:
@@ -258,6 +270,10 @@ def run_campaign(
                   f"rejected (fixed={dev_result.fixed} broken={dev_result.broken} p={dev_result.p_value:.4f})")
         rec = GenerationRecord(gen, rule.rule_id, rule.trigger.describe(), bundle.sha(),
                                child.sha(), dev_result, promoted, reason)
+        # Sized from a SEALED generation, never from the candidate being planned.
+        residual_on_slice = max(len(dev_specs) - sum(labels), 1)
+        prev_yield = max((dev_result.fixed + dev_result.broken) / residual_on_slice,
+                         prereg.min_discordance_yield)
         history.append(rec)
         store.put("generation", {
             "preregistration_sha": prereg_sha, "generation": gen,
