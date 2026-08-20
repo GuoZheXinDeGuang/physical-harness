@@ -147,3 +147,42 @@ campaign 生命周期（多代原子增量 + preregistration + 内容哈希产�
 4. **LLM proposer**：接口已备好（`Trigger` 就是 proposer 的输出类型）。
    用 dsh 那套 mock server 思路验证，零 API 成本。
 5. **跨任务迁移**：stack / pickcan，证明 critic 能 zero-shot 迁移。
+
+## Round 4 — 2026-08-19 — 多代 campaign + 盲对照
+
+### 做成了什么
+
+1. `Bundle` 从单规则改成**规则链** + `Rule`：`assert_atomic_child_of` 强制「每代只加一条、
+   父规则逐字节冻结、子代记录父哈希」（Zetta `preserve_parent_rules_byte_for_byte` 的对应物）。
+2. `governor/campaign.py`：preregistration（种子划分先冻结再跑）、
+   内容哈希产物存储（`runs/*/artifacts/<sha>.json` + append-only index）、代际循环。
+   **每代对父代做原子归因**，held-out 只在 campaign 结束时评一次（不当作训练信号）。
+3. `paired_gate` 泛化成子代 vs 父代。`ablation_curve` 对链上**每条**规则降级感知。
+4. **VERIFY：真跑 4000 个 episode，318 秒。** held-out n=200 上 +22.0pp p<1e-5 零特权。
+   gen3 被拒绝（p=0.344），门禁不是橡皮图章。
+5. **盲对照**（本轮最重要的一步）：同 recovery 无条件触发 = −6.5pp、破坏 51 个；
+   演化 vs 盲发正面 +28.5pp。赢的是 critic 的判断。
+
+### 什么没成 / 只有真跑才暴露
+
+- 不定长 episode 打爆逐步散度分析（第 2 代才出现）。改成末值 hold 填充 + 有效样本掩码。
+- 三条规则链超 horizon，robosuite 拒绝 step。horizon→900 且尊重 `done`。
+- 两个都加了回归测试；21 个测试全绿。
+
+### 下一轮种子
+
+持久事件日志 + 离线重放审计。现在不变量只在线检查，落盘后才能事后审计和 shadow replay。
+
+## Frontier（Round 4 后更新）
+
+**当前天花板：** 零特权、两条规则、held-out n=200 上 +22.0pp，通过盲对照。
+
+**下一个 frontier：**
+1. **持久事件日志 + 离线审计**（Round 5 计划）：把 dsh 的「一切从日志重建」真正落地。
+2. **早期预警 × 廉价 recovery**：`privileged.grasp_error` 在 step 27 触发，比零特权早一倍。
+   现在 recovery 固定 112 步很贵；早期预警可能配更便宜的修正。用误报成本定价。
+3. **跨任务迁移**：stack / pickcan，证明规则链能 zero-shot 迁移（Zetta 只在同族 PnP 内证明过）。
+4. **LLM proposer**：`propose_rule` 的契约已经是 `(traces, labels) -> Rule`，
+   换 provider 即可。用 dsh 的 mock server 思路验证，零 API 成本。
+5. **recovery 也进演化**：现在 recovery 程序是手写常量，只有 trigger 在演化。
+   让 proposer 同时搜索恢复程序（阶段与时长）是更大的搜索空间，也是更真的「自演化」。
