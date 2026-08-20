@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 24 完成
+**Round:** 25 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -80,19 +80,23 @@
       **负面但有信息量**：三条分支全部止步深度 1，选择区块选出的就是贪心 top-1 会选的那条。
       串起来看：链的深度受限于**修复天花板**，不是搜索贪心。**这个方向关闭。**
       held-out（全新区块）+22.0pp。详见 docs/round24-beam.md
+- [x] Round 25 proposer 接缝 + LLM provider（零 API，脚本化 stand-in 验证，74 测试绿）。
+      **端到端跑通，并暴露一个问题**：mock 模型的天真挑法（取最强分离）在 held-out 上
+      **+31.5pp 打赢确定性搜索的 +26.0pp** —— 差距来自我手写的 earliness 权重 0.25，
+      **它从没被标定过**。详见 docs/round25-llm-proposer.md
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 25：**LLM proposer**。这是 progress.md 的 Frontier 里唯一还没碰过的一条。
-契约已经是 `(traces, labels) -> Rule`，换 provider 即可。
-用 dsh 那套 mock server 的思路验证（脚本化返回候选），**零 API 成本**，
-证明这条通路能端到端跑通，然后按同样的纪律过门禁。
+Round 26：**标定搜索目标函数的 earliness 权重**。round 25 暴露它从没被验证过，
+而且在一个 held-out 区块上值 −5.5pp。
+做法：把 `score = recall - 1.2*fp + W*(lead/n_steps)` 里的 W 扫一遍
+（0 / 0.1 / 0.25 / 0.5），每个值选出的候选在**各自的**门禁上判定，
+最后在一个全新 held-out 区块上比。注意每个区块只用一次。
 
-**已关闭的方向：** 修复原语（round 21/22 两次失败，需独立研究工作）、
-beam 搜索（round 24，问题不存在）。
+**已关闭的方向：** 修复原语（round 21/22）、beam 搜索（round 24）。
 
 ## 阻塞
 
@@ -124,6 +128,8 @@ beam 搜索（round 24，问题不存在）。
 - 不要在生成阶段设严格的 σ 门槛：那会在候选被评判之前静默压掉它们。生成宽松、验证严格。
 - 不要对所有世代用固定的 dev 样本量：残余效应量随世代变小，后期会系统性功效不足。
   用 `scale_dev_by_power=True`（精确 McNemar 功效计算）。
+- 不要把手调的目标函数权重当成已验证的：round 25 实测 earliness 权重 0.25 值 −5.5pp。
+- 不要用「模型说的」缩短校验路径：proposer 输出是不可信输入，边界是 schema 不是作者。
 - **前提正确也不代表干预有效**：round 22 前提验证过、实现修对了，横向搜索启动 14 次成功 0 次。
 - 判断「握住了没有」不要用固定步数：前一段可能让夹爪张着，固定步数会把还在合拢的读成握住。
   用 settle 判据（开度不再变化）。
