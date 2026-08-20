@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** convergent（打 GOAL.md 的 5 条验收）→ 之后 evolving。
-**Round:** 1 完成（可行性 + 标定 + 上限验证）
+**Round:** 2 完成（特征契约 + 确定性环境 + 自动触发器搜索）
 **Updated:** 2026-08-19
 
 ## 已确立的事实（实测，不要重新验证）
@@ -15,15 +15,20 @@
 
 ## 现在在哪
 
-- [x] 环境可行性 + 难度标定 + 上限验证（docs/ 三篇）
-- [~] 架构设计 workflow wf_585c9df5-4ac：7 map 完成，5 设计 + 对抗 critic 进行中
-- [ ] 骨架实现
-- [ ] 第一次自动演化 campaign
+- [x] 环境可行性 + 难度标定 + 上限验证（docs/ 四篇）
+- [x] governor/features.py 特征契约（6 个特征，名字空间即声明，未知特征直接拒绝）
+- [x] governor/env.py 确定性环境 + 冻结策略；4 个可复现性回归测试绿
+- [x] governor/search.py 自动 EOD + 触发器搜索；已验证优于人手
+- [~] 架构设计 workflow wf_585c9df5-4ac：7 map 完成，5 设计 agent 运行中
+- [ ] governed rollout + recovery 执行器
+- [ ] 配对显著性门禁 + 特权消融自动化
+- [ ] 第一次端到端自动演化 campaign
 
 ## 下一步
 
-workflow 返回 → 落骨架，第一条真实链路是：
-**跑 1 个 episode → 落事件日志 → 从日志重建 critic 在第 t 步看到的东西 → 断言一致**。
+把搜索出来的触发器接上 recovery，跑配对门禁，端到端复现 round-1 手写实验的数字。
+即：search → trigger → governed rollout → paired McNemar → 特权消融曲线。
+事件日志和不变量等 workflow 的 schema 设计返回后再落。
 
 ## 阻塞
 

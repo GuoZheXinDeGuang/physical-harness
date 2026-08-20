@@ -69,3 +69,37 @@ harness 要做到的是**自动**找到这对，并且在声明的特权预算�
 5. 更难的任务族（Stack / PickPlace）+ 跨任务 zero-shot 迁移
 
 **权衡过但不做：** 自写 MuJoCo 场景（失去与 RoboCasa 同底座的迁移论据）；上 Ray（单机 18 核 multiprocessing 够）。
+
+## Round 2 — 2026-08-19 — 特征契约 + 自动搜索
+
+### 做成了什么
+
+1. `governor/features.py`：**名字空间即声明**。`observable.*` / `privileged.*` 前缀和 `Privilege`
+   枚举必须一致，否则构造时就抛。未知特征在 `privilege_cost` 处直接 KeyError ——
+   proposer 无法凭空发明特征，也就无法绕过预算去摸原始观测。
+2. `governor/env.py`：确定性环境 provider（`suite.make(seed=)`）+ 冻结策略。
+   配 4 个回归测试，其中一个专门断言「改全局 numpy 种子不影响已播种的 episode」。
+3. `governor/search.py`：EOD 扫描 + 触发器搜索，受特权预算约束。
+4. **验证：搜索赢了人手**（docs/search-beats-hand.md）。0.1 秒内重现我试错才找到的
+   `finger_gap` 规则，并找到更好的 `gripper_effort` 规则（同样 recall 1.00 / fp 0.00，但早 6 步触发）。
+   零特权最优解得分 1.105 > 特权最优解 1.095 —— 这个任务上特权对检测没有帮助。
+
+### 什么没成 / 注意
+
+- `governor` 包没装进 venv（用的 `pip install -e .` 但 packages.find 在建包前就跑了），
+  现在靠 `PYTHONPATH=.` 跑。下一轮 `uv pip install -e .` 重装一次即可。
+- 搜索目标函数里 earliness 的权重（0.25）是拍的，还没做敏感性分析。
+  它已经在改变排序（gripper_effort 靠 lead 赢过 finger_gap），所以值得单独验证。
+
+### 下一轮种子
+
+接上 recovery 执行器和配对门禁，端到端复现 round-1 的数字，然后把特权消融曲线自动化。
+关键：round-1 已知满特权 recovery 能到 100%、零特权只剩 +13.3%，
+所以门禁必须能同时报出这两个数，否则会误报成功。
+
+## Frontier（更新）
+
+**新增发现改变了排序：** 特权在「检测」上无用，但在「更早预警」上有用
+（`privileged.grasp_error` 在 step 27 触发，比零特权早一倍多，代价是 recall 0.88 / fp 0.06）。
+=> 新 frontier：**早期预警 + 廉价 recovery** 的组合，可能比「晚检测 + 昂贵 recovery」更省，
+且能用误报成本来定价。这是两个源项目都没探索的方向。
