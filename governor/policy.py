@@ -120,9 +120,25 @@ class ClonedDriver:
         self.percept.target = target
 
     def on_handback(self) -> None:
-        """Restart the clock: a clone resumed past its training horizon is off
-        distribution, which would add an uncontrolled second failure source."""
-        self.k = 0
+        """Resume in the regime the recovery advanced the task to, not at zero.
+
+        The recovery ends holding the object aloft. Restarting the clock puts the
+        clone back in its approach regime with the gripper opening, which undoes
+        the repair -- measured at -2.0pp with 3 fixed and 7 broken. This is the
+        same error the scripted driver's hand-back already avoids by superseding
+        the interrupted phase rather than resuming it.
+
+        The clock is set to where the demonstrator's own schedule enters `lift`,
+        which is the phase the recovery program terminates in. That mapping comes
+        from the demonstrations the clone was trained on, not from tuning.
+        """
+        acc = 0
+        for name, dur in self.spec.schedule:
+            if name == "lift":
+                self.k = acc
+                return
+            acc += dur
+        self.k = acc
 
     @property
     def exhausted(self) -> bool:

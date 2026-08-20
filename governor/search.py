@@ -31,6 +31,32 @@ from governor.features import REGISTRY, Privilege, privilege_cost
 
 Op = Literal["lt", "gt"]
 
+#: How a trigger reduces the feature history before comparing.
+#:
+#: ``value`` is the instantaneous reading -- the only form through round 13, and
+#: enough for a failure that is bimodal in one observable at a predictable step.
+#: The cloned policy has no fixed schedule, so its failures land at different
+#: steps and a per-step scan averages misaligned events into nothing (peak 1.16
+#: sigma). A RUNNING reduction is invariant to when something happened:
+#: ``observable.eef_z`` separates the clone's outcomes at Cohen d = 1.43 under
+#: ``min`` while showing nothing instantaneously. All four stay O(1) per step,
+#: so they remain evaluable at action frequency.
+Reducer = Literal["value", "min", "max", "range"]
+REDUCERS: tuple[Reducer, ...] = ("value", "min", "max", "range")
+
+
+def reduce_series(series: np.ndarray, reducer: Reducer) -> np.ndarray:
+    """Running reduction: element t is the reduction over steps 0..t inclusive."""
+    if reducer == "value":
+        return series
+    if reducer == "min":
+        return np.minimum.accumulate(series)
+    if reducer == "max":
+        return np.maximum.accumulate(series)
+    if reducer == "range":
+        return np.maximum.accumulate(series) - np.minimum.accumulate(series)
+    raise ValueError(f"unknown reducer {reducer!r}")
+
 
 @dataclass(frozen=True, slots=True)
 class Trigger:
@@ -41,6 +67,7 @@ class Trigger:
     threshold: float
     dwell: int
     arm_after: int
+    reducer: Reducer = "value"
 
     @property
     def privilege(self) -> int:
@@ -48,7 +75,7 @@ class Trigger:
 
     def fire_step(self, trace: dict[str, np.ndarray]) -> int | None:
         """First step index at which this trigger fires, or None."""
-        series = trace[self.feature]
+        series = reduce_series(trace[self.feature], self.reducer)
         hit = series < self.threshold if self.op == "lt" else series > self.threshold
         consec = 0
         for t in range(len(series)):
@@ -62,7 +89,8 @@ class Trigger:
 
     def describe(self) -> str:
         sym = "<" if self.op == "lt" else ">"
-        return (f"{self.feature} {sym} {self.threshold:.5g} for {self.dwell} steps, "
+        subject = self.feature if self.reducer == "value" else f"running_{self.reducer}({self.feature})"
+        return (f"{subject} {sym} {self.threshold:.5g} for {self.dwell} steps, "
                 f"armed from t={self.arm_after} (privilege={self.privilege})")
 
 
@@ -140,7 +168,18 @@ def divergence_profile(traces, labels, feature: str) -> np.ndarray:
     return np.where(enough, prof, np.nan)
 
 
-def earliest_divergence(traces, labels, feature: str, sigma: float = 2.0) -> int | None:
+#: Separation a feature must reach for the scan to propose an arming step.
+#:
+#: This is a GENERATION-time heuristic, not a decision. It exists to pick where
+#: to arm a trigger, and a strict value here silently suppresses candidates
+#: before anything gets to judge them: at 2.0 the cloned policy produced zero
+#: candidates although `observable.eef_z` separates its outcomes at Cohen d =
+#: 1.43, a large effect. Filtering belongs downstream, where it is paired,
+#: out-of-sample and significance-tested. Kept permissive on purpose.
+GENERATION_SIGMA = 1.0
+
+
+def earliest_divergence(traces, labels, feature: str, sigma: float = GENERATION_SIGMA) -> int | None:
     """First control step where `feature` separates the two outcome groups."""
     prof = np.abs(divergence_profile(traces, labels, feature))
     idx = np.flatnonzero(np.nan_to_num(prof, nan=0.0) >= sigma)
@@ -170,17 +209,20 @@ def search_triggers(
                   if (0 if f.privilege is Privilege.OBSERVABLE else 1) <= privilege_budget]
     out: list[TriggerScore] = []
     for feature in sorted(admissible):
-        eod = earliest_divergence(traces, labels, feature)
+      for reducer in REDUCERS:
+        reduced = [{feature: reduce_series(t[feature], reducer)} for t in traces]
+        eod = earliest_divergence(reduced, labels, feature)
         if eod is None:
             continue
+        traces_r = reduced
         # Arm at or after the divergence: firing before the signal exists is noise.
         arms = sorted({eod, min(eod + 2, n_steps - 1), min(eod + 6, n_steps - 1)})
-        values = np.concatenate([t[feature][eod:] for t in traces if len(t[feature]) > eod])
+        values = np.concatenate([t[feature][eod:] for t in traces_r if len(t[feature]) > eod])
         for thr in _quantile_grid(values):
             for op in ("lt", "gt"):
                 for dwell in dwells:
                     for arm in arms:
-                        trig = Trigger(feature, op, float(thr), int(dwell), int(arm))
+                        trig = Trigger(feature, op, float(thr), int(dwell), int(arm), reducer)
                         fires = [trig.fire_step(t) for t in traces]
                         tp = [f for f, y in zip(fires, labels) if not y and f is not None]
                         fp = [f for f, y in zip(fires, labels) if y and f is not None]
@@ -197,10 +239,10 @@ def search_triggers(
                         out.append(TriggerScore(trig, recall, fpr, med, lead, score))
     out.sort(key=lambda s: -s.score)
     # keep the best trigger per (feature, op) so the head is not one rule's neighbours
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     deduped: list[TriggerScore] = []
     for s in out:
-        key = (s.trigger.feature, s.trigger.op)
+        key = (s.trigger.feature, s.trigger.op, s.trigger.reducer)
         if key in seen:
             continue
         seen.add(key)
