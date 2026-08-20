@@ -5,13 +5,14 @@ from __future__ import annotations
 from multiprocessing import Pool
 from typing import Sequence
 
-from governor.env import EpisodeSpec, rollout
+from governor.env import EpisodeSpec
+from governor.governed import governed_rollout
 
 DEFAULT_WORKERS = 10
 
 
 def _one(spec: EpisodeSpec) -> dict:
-    return rollout(spec)
+    return governed_rollout(spec, None)
 
 
 def rollout_many(specs: Sequence[EpisodeSpec], workers: int = DEFAULT_WORKERS) -> list[dict]:

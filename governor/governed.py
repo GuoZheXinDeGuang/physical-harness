@@ -28,9 +28,8 @@ from typing import Sequence
 
 import numpy as np
 
-from governor.env import (
-    PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, lifted, make_env, object_key, phase_at,
-)
+from governor.env import EpisodeSpec, lifted, make_env, object_key
+from governor.policy import RecoveryActor, make_driver
 from governor.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )
@@ -155,104 +154,98 @@ def _percept_object(obs, spec: EpisodeSpec, sensor_sd: float, draw: int) -> np.n
 def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     """Run one episode, optionally under a critic-recovery bundle.
 
-    ``bundle=None`` runs the frozen policy alone. Both arms of a paired gate go
-    through this identical code path, so the only difference between them is the
-    governance itself.
+    Control ownership, not schedule splicing
+    ----------------------------------------
+    The frozen policy owns every step until a critic fires; then a scripted
+    :class:`RecoveryActor` owns the next ``len(program)`` steps and hands control
+    back. Recovery steps do not advance the policy's own clock, so the policy
+    resumes where it was interrupted -- which is what the earlier
+    splice-into-the-phase-queue implementation did, expressed in a way that also
+    works for a policy with no phases at all.
 
-    Rules are evaluated in chain order and the first to fire wins, which mirrors
-    the model-order commit discipline in dsh's tool scheduler: dispatch may be
-    concurrent, but the committed order is fixed and reproducible.
+    ``bundle=None`` runs the policy alone; both arms of a paired gate go through
+    this identical code path.
     """
     critic_names = PrivilegePolicy(critic_budget=bundle.critic_budget if bundle else 0).critic_names()
     action_names = PrivilegePolicy(critic_budget=bundle.action_budget if bundle else 0).critic_names()
     env = make_env(spec)
     obs = env.reset()
-    policy = FrozenPolicy(spec)
-    policy.observe_once(obs)
+    driver = make_driver(spec)
+    driver.observe_once(obs)
     start_z = float(np.asarray(obs[object_key(spec)])[2])
 
     rules = list(bundle.rules) if bundle else []
     consec = {r.rule_id: 0 for r in rules}
     used = {r.rule_id: 0 for r in rules}
     fires: list[dict] = []
-    privilege_used = 0
-    t = 0
-    queue: list[tuple[str, int]] = list(spec.schedule)
     history: dict[str, list[float]] = {}
-    # commitment over every decision view this episode produced; see episode_log
     chain = chain_start()
+    privilege_used = 0
+    recovery: RecoveryActor | None = None
+    t = 0
 
-    while queue:
-        phase, dur = queue.pop(0)
-        interrupted = False
-        for _ in range(dur):
-            obs, _r, done, _info = env.step(policy.act(obs, phase))
-            # `t` is the ZERO-BASED index of the step just taken, matching the
-            # trace index the search and shadow replay use. A 1-based counter
-            # here armed every trigger one step early; shadow replay caught it
-            # as 6/40 disagreements with the live run.
-            if done:
-                t += 1
-                queue = []
-                interrupted = True
-                break
-            view = project(obs, critic_names, step=t, episode=f"s{spec.seed}")
-            logged = record_view(view)
-            snap = view.snapshot()
-            for name, value in snap.items():
-                history.setdefault(name, []).append(value)
-            chain = chain_step(chain, logged.digest)
-            if not rules:
-                t += 1
-                continue
+    while t < spec.horizon:
+        if recovery is not None and recovery.done:
+            driver.on_handback()
+            recovery = None
+        if recovery is not None:
+            action = recovery.act(obs)
+        elif driver.exhausted:
+            break
+        else:
+            action = driver.act(obs)
 
-            # --- critic dispatch, behind both invariants ---------------------
-            assert_view_reconstructable(view, logged)
-            triggered: Rule | None = None
-            for rule in rules:
-                if used[rule.rule_id] >= rule.recovery.max_invocations:
-                    consec[rule.rule_id] = 0
-                    continue
-                trig = rule.trigger
-                if t < trig.arm_after:
-                    consec[rule.rule_id] = 0
-                    continue
-                value = view[trig.feature]                     # attested read
-                hit = value < trig.threshold if trig.op == "lt" else value > trig.threshold
-                consec[rule.rule_id] = consec[rule.rule_id] + 1 if hit else 0
-                if triggered is None and consec[rule.rule_id] >= trig.dwell:
-                    triggered = rule
-            assert_privilege_budget(view, bundle.critic_budget, role="critic")
-            privilege_used = max(privilege_used, view.privilege_used())
-
-            if triggered is None:
-                t += 1
-                continue
-
-            # --- recovery dispatch, its own stricter budget ------------------
-            used[triggered.rule_id] += 1
-            fires.append({"rule_id": triggered.rule_id, "step": t})
-            act_view = project(obs, action_names, step=t, episode=f"s{spec.seed}")
-            assert_view_reconstructable(act_view, record_view(act_view))
-            assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
-            policy.target = _percept_object(obs, spec, triggered.recovery.sensor_sd,
-                                          used[triggered.rule_id])
-            queue = list(triggered.recovery.program) + queue
-            for k in consec:
-                consec[k] = 0
+        obs, _r, done, _info = env.step(action)
+        if done:
             t += 1
-            interrupted = True
             break
-        if interrupted and queue:
+
+        view = project(obs, critic_names, step=t, episode=f"s{spec.seed}")
+        logged = record_view(view)
+        for name, value in view.snapshot().items():
+            history.setdefault(name, []).append(value)
+        chain = chain_step(chain, logged.digest)
+        t += 1
+        if not rules:
             continue
-        if interrupted:
-            break
+
+        assert_view_reconstructable(view, logged)
+        triggered: Rule | None = None
+        for rule in rules:
+            if used[rule.rule_id] >= rule.recovery.max_invocations:
+                consec[rule.rule_id] = 0
+                continue
+            trig = rule.trigger
+            if t - 1 < trig.arm_after:
+                consec[rule.rule_id] = 0
+                continue
+            value = view[trig.feature]
+            hit = value < trig.threshold if trig.op == "lt" else value > trig.threshold
+            consec[rule.rule_id] = consec[rule.rule_id] + 1 if hit else 0
+            if triggered is None and consec[rule.rule_id] >= trig.dwell:
+                triggered = rule
+        assert_privilege_budget(view, bundle.critic_budget, role="critic")
+        privilege_used = max(privilege_used, view.privilege_used())
+        if triggered is None:
+            continue
+
+        used[triggered.rule_id] += 1
+        fires.append({"rule_id": triggered.rule_id, "step": t - 1})
+        act_view = project(obs, action_names, step=t - 1, episode=f"s{spec.seed}")
+        assert_view_reconstructable(act_view, record_view(act_view))
+        assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
+        percept = _percept_object(obs, spec, triggered.recovery.sensor_sd, used[triggered.rule_id])
+        driver.retarget(percept)
+        recovery = RecoveryActor(triggered.recovery.program, percept)
+        for k in consec:
+            consec[k] = 0
 
     success = lifted(obs, spec, start_z)
     env.close()
     return {
         "seed": spec.seed,
         "task": spec.task,
+        "policy": driver.identity,
         "success": success,
         "steps": t,
         "fires": fires,

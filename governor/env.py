@@ -66,6 +66,9 @@ class EpisodeSpec:
     #: Std-dev of joint-space reset noise; robosuite's own initialization randomness.
     arm_noise: float = 0.02
     kp: float = 8.0
+    #: Frozen policy: "scripted", or a path to cloned MLP weights. The policy is a
+    #: black box either way; only the harness knows which one it is.
+    policy: str = "scripted"
     schedule: tuple[tuple[str, int], ...] = NOMINAL_SCHEDULE
 
     def child(self, **kw) -> "EpisodeSpec":
@@ -154,36 +157,13 @@ def phase_at(schedule: tuple[tuple[str, int], ...], t: int) -> str | None:
 
 
 def rollout(spec: EpisodeSpec) -> dict:
-    """Run one un-governed episode; return the full per-step feature trace.
+    """Run one un-governed episode.
 
-    The trace is what a critic would have seen, recorded for every declared
-    feature regardless of privilege, so a later analysis can ask what an
-    observable-only critic could have known at step t.
+    Delegates to :func:`governor.governed.governed_rollout` with no bundle so
+    there is exactly ONE rollout implementation. Two of them would drift, and a
+    gate whose two arms ran different code would measure the drift instead of
+    the governance.
     """
-    from governor.features import REGISTRY
+    from governor.governed import governed_rollout
 
-    env = make_env(spec)
-    obs = env.reset()
-    policy = FrozenPolicy(spec)
-    policy.observe_once(obs)
-    start_z = float(np.asarray(obs[object_key(spec)])[2])
-    names = sorted(REGISTRY)
-    trace: dict[str, list[float]] = {n: [] for n in names}
-    phases: list[str] = []
-    total = sum(d for _, d in spec.schedule)
-    for t in range(total):
-        phase = phase_at(spec.schedule, t)
-        obs, _r, _done, _info = env.step(policy.act(obs, phase))
-        for n in names:
-            trace[n].append(REGISTRY[n].extract(obs))
-        phases.append(phase)
-    success = lifted(obs, spec, start_z)
-    env.close()
-    return {
-        "seed": spec.seed,
-        "task": spec.task,
-        "success": success,
-        "steps": total,
-        "phases": phases,
-        "trace": {n: np.asarray(v) for n, v in trace.items()},
-    }
+    return governed_rollout(spec, None)
