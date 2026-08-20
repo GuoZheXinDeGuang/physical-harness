@@ -66,6 +66,16 @@ class Preregistration:
     #: artifact record a claim it never tested.
     task: str = "lift"
     policy: str = "scripted"
+    #: Scale each generation's dev sample to the effect it can still see. With a
+    #: constant size the gate is progressively underpowered as residual effects
+    #: shrink; round 17 measured a candidate worth +6.5pp held-out rejected at
+    #: p=0.065 on 120 seeds. `dev` becomes an ORDERED RESERVOIR and each
+    #: generation takes a prefix sized from the PREVIOUS generation's residual
+    #: rate -- decided before the candidate is judged, so it is not optional
+    #: stopping.
+    scale_dev_by_power: bool = False
+    power_fix_share: float = 0.80
+    power_target: float = 0.80
     min_fixed: int = 3
     alpha: float = 0.05
     #: Search the recovery program per generation, not just the trigger. The
@@ -177,11 +187,30 @@ def run_campaign(
     if verbose:
         print(f"preregistration {prereg_sha[:12]}  dev={len(prereg.dev)} heldout={len(prereg.heldout)}")
 
-    dev_specs = _specs(prereg.dev, prereg)
+    reservoir = _specs(prereg.dev, prereg)
+    dev_specs = reservoir
     bundle = Bundle(rules=(), critic_budget=prereg.critic_budget, action_budget=prereg.action_budget)
     history: list[GenerationRecord] = []
+    plans: list[dict] = []
 
+    prev_residual_rate: float | None = None
     for gen in range(1, prereg.max_generations + 1):
+        # Size this generation BEFORE anything about its candidate is known, from
+        # the previous generation's residual rate. Measurement, search and gate
+        # then all run on the SAME slice: sizing the gate differently from the
+        # search would judge a candidate on a population it was not fitted to.
+        if prereg.scale_dev_by_power:
+            from governor.power import plan_generation
+
+            rate = prev_residual_rate if prev_residual_rate is not None else 0.5
+            plan = plan_generation(gen, round(rate * len(reservoir)), len(reservoir),
+                                   len(reservoir), fix_share=prereg.power_fix_share,
+                                   alpha=prereg.alpha, power=prereg.power_target)
+            dev_specs = reservoir[: plan.seeds_used]
+            plans.append(asdict(plan))
+            if verbose:
+                print(f"  {plan.line()}")
+
         # Residual failures under the CURRENT bundle are the target population.
         from multiprocessing import Pool
         from governor.gate import _run
@@ -230,9 +259,11 @@ def run_campaign(
         if not promoted:
             break
         bundle = child
+        prev_residual_rate = 1.0 - dev_result.governed_rate
 
     # --- held-out is scored ONCE, after the campaign, as a test --------------
-    result: dict = {"preregistration_sha": prereg_sha, "generations": len(history),
+    result: dict = {"preregistration_sha": prereg_sha, "power_plans": plans,
+                    "generations": len(history),
                     "promoted": sum(1 for h in history if h.promoted),
                     "final_sha": bundle.sha(), "rules": [r.rule_id for r in bundle.rules]}
     if bundle.rules:
