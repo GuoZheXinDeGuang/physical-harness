@@ -84,6 +84,12 @@ class Rule:
                 "feature": self.trigger.feature, "op": self.trigger.op,
                 "threshold": round(float(self.trigger.threshold), 9),
                 "dwell": int(self.trigger.dwell), "arm_after": int(self.trigger.arm_after),
+                # The running reducer arrived in round 14 and this form was
+                # written before it. Omitting it made two rules that behave
+                # differently hash identically, which blinded BOTH freeze
+                # checks at once: `parent_sha` is computed from this same form,
+                # so it could not act as a backstop.
+                "reducer": self.trigger.reducer,
             },
             "recovery": {
                 "name": self.recovery.name,
