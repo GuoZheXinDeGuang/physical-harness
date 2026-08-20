@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 23 完成
+**Round:** 24 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -76,19 +76,23 @@
       **连续两轮抬天花板失败，大幅加强了 round 19 的结论。** 详见 docs/round22-ceiling-holds.md
 - [x] Round 23 报告更新重发：天花板从「局限清单里的一条」升格为**独立一节（第 8 节）**，
       含两次失败尝试的完整证据；错误清单 11 → 13 条
+- [x] Round 24 beam 搜索（三路划分：dev 门禁 / 选择区块 / held-out）。
+      **负面但有信息量**：三条分支全部止步深度 1，选择区块选出的就是贪心 top-1 会选的那条。
+      串起来看：链的深度受限于**修复天花板**，不是搜索贪心。**这个方向关闭。**
+      held-out（全新区块）+22.0pp。详见 docs/round24-beam.md
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 24：**beam 搜索对抗贪心收敛**。round 8 证明了这个问题真实存在（每步都通过门禁、
-终点却更差），round 17 又量化了单条候选路线的第二类错误代价。
-做法：每代保留 top-K 候选各自成链、并行推进，最后按 held-out 之外的准则选一条。
+Round 25：**LLM proposer**。这是 progress.md 的 Frontier 里唯一还没碰过的一条。
+契约已经是 `(traces, labels) -> Rule`，换 provider 即可。
+用 dsh 那套 mock server 的思路验证（脚本化返回候选），**零 API 成本**，
+证明这条通路能端到端跑通，然后按同样的纪律过门禁。
 
-注意 round 18 的功效机制已经就位，beam 的每条分支都能按自己的残余率定样本量。
-
-**修复原语方向已经关闭** —— 两次失败（round 21/22）证明它需要独立研究工作，不是这个循环能产出的。
+**已关闭的方向：** 修复原语（round 21/22 两次失败，需独立研究工作）、
+beam 搜索（round 24，问题不存在）。
 
 ## 阻塞
 
