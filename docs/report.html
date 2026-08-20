@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 22 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 27 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,69 +115,89 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+17.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>53.0% → 70.5%，全新区块 n=200</span></div>
+    <div><span class="k">+30.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>46.5% → 77.0%，全新区块 n=200</span></div>
     <div><span class="k">+12.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
-    <div><span class="k">−32.5<span style="font-size:.9rem">pp</span></span><span class="v"><b>方法论收紧的总代价</b><br>从最初的 +50.0pp 一路下修</span></div>
+    <div><span class="k">−5.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>目标函数里的 earliness 权重</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">55</span><span class="v">测试全绿<br>2900+ 行实现 / 900 行测试</span></div>
+    <div><span class="k">77</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">当前数字取自 Round 18（现行代码、全新 held-out 区块）、Round 10 的迁移实验与 Round 14 的克隆策略验收。每个 held-out 区块只评分一次。</p>
+  <p class="bandnote">当前数字取自 Round 27（标定后的目标函数、全新 held-out 区块 6000-6199）、Round 10 的迁移实验与 Round 14 的克隆策略验收。每个 held-out 区块只评分一次。</p>
 </header>
 
 
 <section>
   <p class="num">00 / 全局</p>
-  <h2>每次把方法论收紧，数字就往下走</h2>
+  <h2>数字动过两次，方向相反，性质也不同</h2>
   <p class="w">
-    这条线比任何单个成绩都更能说明这套东西在干什么。第一轮手写的实验报出 <strong>+50.0pp</strong>；
-    二十二轮之后，同一件事在现行代码和干净流程下是 <strong>+17.5pp</strong>。
-    中间没有一次是「效果变差了」—— 每一次下修都是<strong>拆掉一个不该算数的机制</strong>。
+    第一轮手写的实验报出 <strong>+50.0pp</strong>。之后一路下修到 <strong>+17.5pp</strong>，
+    <strong>每一步都是拆掉一个不该算数的机制</strong>，没有一次是效果变差。
+    然后标定了目标函数里一个从没被验证过的常数，回到 <strong>+30.5pp</strong> ——
+    那是<strong>加上本来就该有的</strong>。
+  </p>
+  <p class="w">
+    这两件事必须分开讲。混为一谈会让人以为「严谨 = 数字变小」，而实际发生的是：
+    <strong>严谨先减去了假的，然后让真的暴露出来。</strong>
   </p>
   <figure>
     <div class="chartscroll">
-    <svg viewBox="0 0 640 260" role="img" aria-label="headline 数字随方法论收紧而下降">
-      <line class="axis" x1="66" y1="200" x2="612" y2="200"/>
-      <line class="axis" x1="66" y1="26" x2="66" y2="200"/>
-      <line class="grid" x1="66" y1="26" x2="612" y2="26"/><text class="lbl" x="30" y="30">+50pp</text>
-      <line class="grid" x1="66" y1="113" x2="612" y2="113"/><text class="lbl" x="30" y="117">+25pp</text>
-      <text class="lbl" x="46" y="204">0</text>
-      <polyline fill="none" stroke="var(--fail)" stroke-width="2.5" points="120,26 240,113 360,122 480,139 600,139"/>
-      <circle cx="120" cy="26"  r="5" fill="var(--fail)"/>
-      <circle cx="240" cy="113" r="5" fill="var(--pass)"/>
-      <circle cx="360" cy="122" r="5" fill="var(--pass)"/>
-      <circle cx="480" cy="139" r="5" fill="var(--pass)"/>
-      <circle cx="600" cy="139" r="6" fill="var(--pass)"/>
+    <svg viewBox="0 0 660 270" role="img" aria-label="headline 数字的两段变化">
+      <line class="axis" x1="66" y1="205" x2="632" y2="205"/>
+      <line class="axis" x1="66" y1="26" x2="66" y2="205"/>
+      <line class="grid" x1="66" y1="26" x2="632" y2="26"/><text class="lbl" x="30" y="30">+50pp</text>
+      <line class="grid" x1="66" y1="115" x2="632" y2="115"/><text class="lbl" x="30" y="119">+25pp</text>
+      <text class="lbl" x="46" y="209">0</text>
+      <polyline fill="none" stroke="var(--fail)" stroke-width="2.5" points="120,26 240,115 360,125 480,143"/>
+      <polyline fill="none" stroke="var(--pass)" stroke-width="2.5" points="480,143 600,96"/>
+      <circle cx="120" cy="26"  r="6" fill="var(--fail)"/>
+      <circle cx="240" cy="115" r="5" fill="var(--fail)"/>
+      <circle cx="360" cy="125" r="5" fill="var(--fail)"/>
+      <circle cx="480" cy="143" r="5" fill="var(--fail)"/>
+      <circle cx="600" cy="96"  r="7" fill="var(--pass)"/>
       <text class="val" x="120" y="18" text-anchor="middle">+50.0</text>
-      <text class="val" x="240" y="105" text-anchor="middle">+27.5</text>
-      <text class="val" x="360" y="114" text-anchor="middle">+22.5</text>
-      <text class="val" x="480" y="131" text-anchor="middle">+17.5</text>
-      <text class="val" x="600" y="131" text-anchor="middle">+17.5</text>
-      <text class="lbl" x="120" y="220" text-anchor="middle">手写实验</text>
-      <text class="lbl" x="120" y="234" text-anchor="middle" fill="var(--fail)">recovery 读了真值</text>
-      <text class="lbl" x="240" y="220" text-anchor="middle">特权消融</text>
-      <text class="lbl" x="240" y="234" text-anchor="middle">感知降到板载水平</text>
-      <text class="lbl" x="360" y="220" text-anchor="middle">策略时钟</text>
-      <text class="lbl" x="360" y="234" text-anchor="middle">拆掉恢复期误触发</text>
-      <text class="lbl" x="480" y="220" text-anchor="middle">全新 held-out</text>
-      <text class="lbl" x="480" y="234" text-anchor="middle">+ 按功效定样本量</text>
-      <text class="lbl" x="600" y="220" text-anchor="middle">现值</text>
-      <text class="lbl" x="600" y="234" text-anchor="middle">19 轮之后</text>
+      <text class="val" x="240" y="107" text-anchor="middle">+27.5</text>
+      <text class="val" x="360" y="117" text-anchor="middle">+22.5</text>
+      <text class="val" x="480" y="135" text-anchor="middle">+17.5</text>
+      <text class="val" x="600" y="88" text-anchor="middle">+30.5</text>
+      <text class="lbl" x="120" y="224" text-anchor="middle">手写实验</text>
+      <text class="lbl" x="120" y="237" text-anchor="middle" fill="var(--fail)">recovery 读真值</text>
+      <text class="lbl" x="240" y="224" text-anchor="middle">特权消融</text>
+      <text class="lbl" x="360" y="224" text-anchor="middle">策略时钟</text>
+      <text class="lbl" x="480" y="224" text-anchor="middle">全新区块</text>
+      <text class="lbl" x="480" y="237" text-anchor="middle">+ 功效定量</text>
+      <text class="lbl" x="600" y="224" text-anchor="middle" fill="var(--pass)">标定目标函数</text>
+      <text class="lbl" x="600" y="237" text-anchor="middle" fill="var(--pass)">现值</text>
+      <rect x="110" y="252" width="11" height="11" fill="var(--fail)"/>
+      <text class="lbl" x="127" y="262">减去不该有的（拆掉一个机制）</text>
+      <rect x="360" y="252" width="11" height="11" fill="var(--pass)"/>
+      <text class="lbl" x="377" y="262">加上本来该有的（修好一个次优）</text>
     </svg>
     </div>
     <figcaption>
-      每一段下降都对应一次具体的机制拆除，不是效果衰减。最后一点在全新的 held-out 区块上
-      （基线 53.0%，旧块 48.5%），所以严格说不可与前面直接横比 —— 这本身也是纪律的一部分。
+      不同 held-out 区块基线不同（最后一点 46.5%，前一点 53.0%），所以这条线是<strong>定性的</strong>，
+      不能当成精确的逐点比较。每个区块只评分一次。
     </figcaption>
   </figure>
   <div class="tw"><table>
-    <thead><tr><th>下修</th><th>拆掉了什么</th><th>怎么发现的</th></tr></thead>
+    <thead><tr><th>变动</th><th>发生了什么</th><th>怎么发现的</th></tr></thead>
     <tbody>
       <tr><td class="n">+50.0 → +27.5</td><td>recovery 读仿真器里物体的真实位置</td><td>特权消融</td></tr>
-      <tr><td class="n">+29.0 → +22.5</td><td>critic 在恢复期间仍求值，等于白得一次额外修复</td><td>策略时钟改造</td></tr>
-      <tr><td class="n">+22.5 → +17.5</td><td>旧 held-out 区块已被用于一次事后诊断</td><td>换全新区块 + 按功效定样本量</td></tr>
+      <tr><td class="n">+29.0 → +22.5</td><td>critic 在恢复期间仍求值 = 白得一次额外修复</td><td>策略时钟改造</td></tr>
+      <tr><td class="n">+22.5 → +17.5</td><td>旧 held-out 区块已用于一次事后诊断</td><td>换全新区块 + 按功效定量</td></tr>
+      <tr class="hi"><td class="n">+17.5 → +30.5</td><td><strong>目标函数里一个手调常数编码了已失效的假设</strong></td><td>一个不共享我假设的 proposer</td></tr>
     </tbody>
   </table></div>
+  <div class="call ok">
+    <h4>最后那一行是怎么被抓到的</h4>
+    <p>搜索的打分函数里有一项 <code>+0.25 × lead</code>，偏好「早触发」的候选。
+    那在最初的实现下有道理：恢复程序被拼接进策略的阶段队列，会挤掉后面的阶段，所以留出时间是真的约束。
+    <strong>但第 17 轮把恢复动作改成拥有自己的步数之后，这个约束就不存在了</strong> ——
+    实测总步数最大 209，horizon 900，恢复从未被截断。</p>
+    <p><strong>一个在第 2 轮合理的常数，在第 17 轮的重构之后变成有害的，中间没有任何信号。</strong>
+    抓住它的不是代码审查，而是第 25 轮接进来的一个 LLM proposer ——
+    它不知道有 earliness 这回事，于是挑了个我的目标函数会扣分的候选，然后赢了 5.5pp。
+    扫一遍权重（0 / 0.1 / 0.25 / 0.5）确认：<strong>W=0 最优，那个权重值 −5.0pp。</strong></p>
+  </div>
 </section>
 
 <section>
@@ -211,21 +231,19 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <div class="tw"><table>
     <thead><tr><th>代</th><th>候选（自动搜索，零特权）</th><th>样本量</th><th>提升 vs 父代</th><th>修复/破坏</th><th>p</th><th>判定</th></tr></thead>
     <tbody>
-      <tr><td class="n">1</td><td class="m">running_min(finger_gap) &lt; 0.0129 @58</td><td class="n">60 种子</td><td class="n">+11.7%</td><td class="n">7 / 0</td><td class="n">0.016</td><td><span class="tag p">提升</span></td></tr>
-      <tr><td class="n">2</td><td class="m">gripper_effort &gt; 0.0861 @58</td><td class="n">90 种子</td><td class="n">+7.8%</td><td class="n">8 / 1</td><td class="n">0.039</td><td><span class="tag p">提升</span></td></tr>
-      <tr><td class="n">3</td><td class="m">gripper_effort &gt; 0.0292 dwell3 @56</td><td class="n">112 种子</td><td class="n">+2.7%</td><td class="n">4 / 1</td><td class="n">0.375</td><td><span class="tag r">拒绝</span></td></tr>
+      <tr><td class="n">1</td><td class="m">finger_gap &lt; 0.002118 @41</td><td class="n">60 种子</td><td class="n">+25.0%</td><td class="n">15 / 0</td><td class="n">6e-5</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">2</td><td class="m">gripper_effort &gt; 0.0862 dwell2 @56</td><td class="n">157 种子</td><td class="n">+3.2%</td><td class="n">8 / 3</td><td class="n">0.227</td><td><span class="tag r">拒绝</span></td></tr>
     </tbody>
   </table></div>
 
-  <p><strong>held-out（全新区块，只评一次，n=200）：53.0% → 70.5%，+17.5pp，36 修复 / 1 破坏，p&lt;1e-5。</strong></p>
+  <p><strong>held-out（全新区块 6000-6199，只评一次，n=200）：46.5% → 77.0%，+30.5pp，61 修复 / 0 破坏，p&lt;1e-5。</strong></p>
   <p class="w"><strong>样本量随世代递增（60 → 90 → 112），这是刻意的。</strong>
   第一代打整个失败集，第二代只打第一代剩下的 —— 残余效应量变小，固定样本量会让后期世代
   系统性功效不足。用精确 McNemar 枚举算：80% 功效需要 20 对不一致。
   第 g 代的样本量由<strong>第 g−1 代已测出的残余率</strong>决定，种子取自预注册的有序池，
   所以候选自身的结果绝不影响它被判定的样本量 —— 那会是 optional stopping，是另一个过程。</p>
-  <p class="w">固定 120 种子那次只长出<strong>一条</strong>规则；按功效定量之后长出<strong>两条</strong>，
-  而且总门禁成本 60+90+112 = <strong>262 个种子，低于固定的 360</strong>。
-  早期世代效应大本来就不需要那么多 —— 功效更高的同时反而更便宜。</p>
+  <p class="w">样本量按功效定量还更便宜：早期世代效应大，60 个种子就够把 +25.0% 打到 p=6e-5；
+  第二代残余效应小，自动升到 157 个种子，仍然正确地拒绝了一个 p=0.227 的候选。</p>
 
   <h3>赢的是判断，不是时间</h3>
   <p class="w">受治理的回合因为插入恢复动作会多跑控制步。所以设了盲对照：<strong>同一套 recovery、同样次数、同样的步触发，但无条件触发，不看状态。</strong></p>
@@ -272,10 +290,10 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       <circle cx="260" cy="40" r="5" fill="var(--pass)"/>
       <circle cx="400" cy="111" r="5" fill="var(--pass)"/>
       <circle cx="540" cy="146" r="5" fill="var(--pass)"/>
-      <text class="val" x="120" y="22" text-anchor="middle">100.0%</text>
-      <text class="val" x="260" y="30" text-anchor="middle">97.5%</text>
-      <text class="val" x="400" y="101" text-anchor="middle">77.5%</text>
-      <text class="val" x="540" y="136" text-anchor="middle">65.0%</text>
+      <text class="val" x="120" y="22" text-anchor="middle">99.5%</text>
+      <text class="val" x="260" y="30" text-anchor="middle">95.0%</text>
+      <text class="val" x="400" y="101" text-anchor="middle">77.0%</text>
+      <text class="val" x="540" y="136" text-anchor="middle">67.0%</text>
       <text class="lbl" x="120" y="218" text-anchor="middle">0.000</text>
       <text class="lbl" x="120" y="232" text-anchor="middle" fill="var(--fail)">真值·特权</text>
       <text class="lbl" x="260" y="218" text-anchor="middle">0.010</text>
@@ -285,7 +303,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     </svg>
     </div>
     <figcaption>
-      <strong>sd=0.010 的板载感知拿到 97.5%，真值 100.0%。</strong>只要传感器精度到 1cm，特权买不到任何东西；
+      <strong>sd=0.010 的板载感知拿到 95.0%，真值 99.5%。</strong>只要传感器精度到 1cm，特权买不到任何东西；
       退化的拐点在 sd=0.020。n=200，每点都是一次配对同种子门禁。
     </figcaption>
   </figure>
@@ -659,7 +677,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 55 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 77 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -678,7 +696,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  22 轮自主循环，2900+ 行实现 + 900 行测试，55 个测试全绿，22 篇过程记录。
+  27 轮自主循环，3600+ 行实现 + 1400 行测试，77 个测试全绿，27 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
