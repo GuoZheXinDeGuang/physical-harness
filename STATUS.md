@@ -1,8 +1,8 @@
 # STATUS
 
-**Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
+**Goal:** PHASE 2: Agentic Robotics OS 的 backbone harness, 见 GOAL.md v2 + ARCHITECTURE.md。(phase 1 Governor 成为治理层, 其记录不动)
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 52 完成
+**Round:** 54 进行中(L0 迁移 workflow 后台跑)
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -182,6 +182,14 @@
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
+
+## PHASE 2 状态
+
+- [x] Round 54a: 内核 harness/ + plugins/graphs.py + 11 内核测试(100 全绿), GOAL v2 + ARCHITECTURE.md
+- [ ] Round 54b: workflow wf_10857d18-974(Seam -> Workloads -> Integrate -> Review)完成后:
+      处理 review findings -> 我串行跑真仿真 parity(scripts/parity_check.py 对 runs/campaign-pj-scripted)
+      -> RECORD。**用户重定向已取代 /loop 旧 prompt, 以 GOAL.md v2 为准。**
+- gate(等用户): reasoner 接真实模型需要 key 与选型; 三层团队的契约细化按他们的 spec 迭代。
 
 ## 下一步
 

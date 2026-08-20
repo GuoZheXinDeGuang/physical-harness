@@ -2022,3 +2022,38 @@ B 切片只有 n=140。在**全新 held-out 区块 n=200** 上做决定性测量
 
 **用户于本轮后重定向(phase 2)**: 项目角色改为 Agentic Robotics OS 的 backbone harness。
 Governor(rounds 1-53)整体降级为其中的治理/评测层。见 GOAL.md v2 与 ARCHITECTURE.md。
+
+# PHASE 2 - Backbone Harness
+
+## Round 54 - 2026-08-20 - 重定向落地: 内核 + L0 迁移 workflow
+
+### 计划(已写入 GOAL.md v2 / ARCHITECTURE.md)
+
+角色: Agentic Robotics OS 的 backbone harness。
+合成: dsh 的 everything-is-a-plugin(能力接缝/配置分层/事件链) + Zetta 的 physical RSI 作为 workload + 我们的特权预算上提到能力解析层。
+三层科研板块以契约接入: reasoner.proposer / graph.scene + graph.skill / embodiment.env + policy.driver。
+RSI 是 OS 主循环 Verify -> Adapt 那条边的严格化, 提升的技能以 SkillRecord(前置条件/效果/失败模式/能力边界/判断)写回 Skill Graph。
+迁移阶梯 L0(适配器) -> L1(实现入插件) -> L2(删 governor), 每级 parity 收口。
+
+### 本轮已落地(inline)
+
+harness/ 内核(9 文件): capability(runtime_checkable 契约) / kernel(解析记账+特权预算) /
+config(profile-bundle-patch -> MountPlan 内容哈希+出处) / events(链式 SessionLog+防篡改) /
+registry(spawn 安全的 "module:factory" 字符串) / executor / definitions(8 个能力) / contracts。
+plugins/graphs.py: 内容寻址 InMemorySkillGraph + SceneGraph 占位。
+tests/test_kernel.py 11 项, 含 AST 边界测试(内核零 governor/plugins 依赖)、
+canonical 完整性(round 34 不变量从第一天套上)、日志防篡改、特权预算。
+全套 100 绿。
+
+### 进行中(workflow wf_10857d18-974, 后台)
+
+Seam(EpisodeSpec 携带 provider ref + env/policy/reasoner 适配器) ->
+Workloads 并行(rsi workload 插件 + SkillRecord 发布 + parity 脚本; profiles + 3x2 纯配置矩阵) ->
+Integrate(全套测试) -> Review 三路(parity 风险 opus / 边界 / 可审计性)。
+完成后由我串行跑真仿真 parity(对 runs/campaign-pj-* 存档逐位比对)。
+
+### 设计决策记录
+
+- provider 身份走 EpisodeSpec 里的字符串 ref, 不走模块全局 hook: hook 不能活过 spawn(phase 1 实测), 字符串可 pickle、进哈希、可审计。
+- Preregistration 增加 provider ref 字段 -> 新 run 的 prereg sha 会变, 预期且诚实(挂载进哈希)。
+- L0 允许插件依赖 governor(legacy 库), L2 清除; 内核边界从第一天由测试强制。
