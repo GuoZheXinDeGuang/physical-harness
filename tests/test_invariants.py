@@ -39,7 +39,7 @@ def test_injection_is_caught():
     """A wrapper that adds a feature AFTER the view was logged must be rejected."""
     v = zero_budget_view()
     logged = record_view(v)
-    v._values["privileged.cube_z"] = 0.83      # the injection
+    v._values["privileged.object_z"] = 0.83      # the injection
     with pytest.raises(InvariantViolation, match="diverges from the durable log"):
         assert_view_reconstructable(v, logged)
 
@@ -56,7 +56,7 @@ def test_cached_digest_would_not_catch_injection():
     """Why digest() is a method: the cached formulation is f(x) == f(x)."""
     v = zero_budget_view()
     cached = v.digest()                         # what a naive implementation stores
-    v._values["privileged.cube_z"] = 0.83
+    v._values["privileged.object_z"] = 0.83
     assert cached != v.digest(), "live digest must move when contents move"
     # the naive check compares the cached value to itself and passes:
     assert cached == cached
@@ -97,12 +97,12 @@ def test_zero_budget_view_cannot_even_see_privileged_features():
     v = zero_budget_view()
     assert not any(n.startswith("privileged.") for n in v)
     with pytest.raises(KeyError):
-        v["privileged.cube_z"]
+        v["privileged.object_z"]
 
 
 def test_privileged_read_over_budget_is_caught():
     v = project(OBS, PrivilegePolicy(critic_budget=1).critic_names(), step=1, episode="e")
-    _ = v["privileged.cube_z"]
+    _ = v["privileged.object_z"]
     with pytest.raises(InvariantViolation, match="privilege budget"):
         assert_privilege_budget(v, budget=0, role="critic")
 

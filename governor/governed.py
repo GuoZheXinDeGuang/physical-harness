@@ -28,7 +28,9 @@ from typing import Sequence
 
 import numpy as np
 
-from governor.env import PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, make_env, phase_at
+from governor.env import (
+    PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, lifted, make_env, object_key, phase_at,
+)
 from governor.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )
@@ -141,9 +143,9 @@ class Bundle:
             raise ValueError("child does not record its parent's hash")
 
 
-def _percept_cube(obs, spec: EpisodeSpec, sensor_sd: float, draw: int) -> np.ndarray:
-    """Onboard estimate of the cube pose. Deterministic in (seed, draw)."""
-    true = np.asarray(obs["cube_pos"]).copy()
+def _percept_object(obs, spec: EpisodeSpec, sensor_sd: float, draw: int) -> np.ndarray:
+    """Onboard estimate of the target object's pose. Deterministic in (seed, draw)."""
+    true = np.asarray(obs[object_key(spec)]).copy()
     if sensor_sd <= PRIVILEGED_SENSOR_SD:
         return true
     rng = np.random.RandomState((spec.seed * 104729 + 3 + draw * 7907) % (2**31 - 1))
@@ -167,6 +169,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     obs = env.reset()
     policy = FrozenPolicy(spec)
     policy.observe_once(obs)
+    start_z = float(np.asarray(obs[object_key(spec)])[2])
 
     rules = list(bundle.rules) if bundle else []
     consec = {r.rule_id: 0 for r in rules}
@@ -232,7 +235,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             act_view = project(obs, action_names, step=t, episode=f"s{spec.seed}")
             assert_view_reconstructable(act_view, record_view(act_view))
             assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
-            policy.target = _percept_cube(obs, spec, triggered.recovery.sensor_sd,
+            policy.target = _percept_object(obs, spec, triggered.recovery.sensor_sd,
                                           used[triggered.rule_id])
             queue = list(triggered.recovery.program) + queue
             for k in consec:
@@ -245,10 +248,11 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         if interrupted:
             break
 
-    success = bool(env._check_success())
+    success = lifted(obs, spec, start_z)
     env.close()
     return {
         "seed": spec.seed,
+        "task": spec.task,
         "success": success,
         "steps": t,
         "fires": fires,

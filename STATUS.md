@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 9 完成
+**Round:** 10 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -36,14 +36,16 @@
 - [x] Round 7 触发器样本外预筛（抓到 shrinkage +0.45 的过拟合候选）
 - [x] Round 8 recovery-search campaign 实跑；发现贪心收敛更差；修掉半样本内的 recovery 门禁
 - [x] Round 9 干净切分下 recovery 每代被正确拒绝；收敛回 +27.5pp；泄漏代价量化为 4.5pp
+- [x] Round 10 跨任务零退化迁移（stack +28.5% / pickcan +24.0%）；特权触发器在 pickcan 上静默失效（0 触发）
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 10：**跨任务迁移**。这是唯一还没碰的大方向，也是 Zetta 只在同族 PnP 内证明过的那件事。
-把 Lift 上演化出的规则链原样用到 Stack / PickPlaceCan 上，零重新搜索，看还剩多少。
+Round 11：把三个任务接进 campaign 做**多任务联合演化**，
+看联合演化出的链会不会比单任务演化 + 迁移更好，还是更差（round 8 的贪心教训）。
+另一条可选路：对抗贪心收敛的 beam 搜索。
 
 ## 阻塞
 
@@ -73,5 +75,8 @@ Round 10：**跨任务迁移**。这是唯一还没碰的大方向，也是 Zett
   （round 9 查明触发它的是泄漏的门禁；贪心的结构性风险仍然成立，但那次是泄漏造成的。）
 - 一个泄漏的门禁不表现为「结果变差」，而是「结果变好然后提前收敛」——
   代价藏在没长出来的那条规则里，单看那一代看不见。
+- 不要用各任务自己的成功判据做迁移实验：冻结策略在 Stack/PickPlace 上是 0%，
+  那测的是策略缺的技能不是 critic。用共享子目标（抓起并举离桌面）。
+- 特权触发器的阈值是关于世界的事实（0.8215 是桌高），换场景会**静默**变成 no-op，不报错。
 - 不要今晚做沙箱代码执行：SBPL `(allow default)(deny file-write*)` 不拦网络（实测），
   且 10-way 并行下 critic tick p99 = 108-169ms，500µs 硬预算会作废几乎全部 episode。

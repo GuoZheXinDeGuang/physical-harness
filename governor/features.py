@@ -98,13 +98,32 @@ register(Feature("observable.gripper_effort", Privilege.OBSERVABLE,
                  "Gripper joint speed magnitude; nonzero while the fingers are still closing."))
 
 # --- privileged: only the simulator knows these ----------------------------------
+#
+# Note what this costs. The observable features above read proprioception and are
+# object-agnostic, so they transfer to another task unchanged. The privileged
+# ones must first FIND the object, and every task names it differently
+# (cube_pos / cubeA_pos / Can_pos). Privilege is not just untransferable to a
+# real robot; here it does not even transfer between two simulated tasks without
+# a lookup table.
 
-register(Feature("privileged.cube_z", Privilege.PRIVILEGED,
-                 lambda o: float(np.asarray(o["cube_pos"])[2]),
-                 "Ground-truth cube height. A real robot needs external perception for this."))
+#: Object-pose keys in resolution order, one per supported task.
+_OBJECT_KEYS = ("cube_pos", "cubeA_pos", "Can_pos")
+
+
+def _object_pos(o: Mapping[str, np.ndarray]) -> np.ndarray:
+    for key in _OBJECT_KEYS:
+        if key in o:
+            return np.asarray(o[key])
+    raise KeyError(f"no object pose in observation; looked for {_OBJECT_KEYS}")
+
+
+register(Feature("privileged.object_z", Privilege.PRIVILEGED,
+                 lambda o: float(_object_pos(o)[2]),
+                 "Ground-truth height of the target object. Needs external perception on a real robot."))
 register(Feature("privileged.grasp_error", Privilege.PRIVILEGED,
-                 lambda o: float(np.linalg.norm(np.asarray(o["gripper_to_cube_pos"])[:2])),
-                 "Ground-truth planar distance from gripper to cube."))
+                 lambda o: float(np.linalg.norm(
+                     _object_pos(o)[:2] - np.asarray(o["robot0_eef_pos"])[:2])),
+                 "Ground-truth planar distance from the end effector to the target object."))
 
 
 def observable_names() -> list[str]:
