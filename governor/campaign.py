@@ -60,6 +60,12 @@ class Preregistration:
     action_budget: int
     recovery_sensor_sd: float
     max_generations: int
+    #: Which world and which frozen policy this campaign governs. Part of the
+    #: preregistration because a promoted skill is only meaningful against the
+    #: policy and task it was earned on; changing either silently would make the
+    #: artifact record a claim it never tested.
+    task: str = "lift"
+    policy: str = "scripted"
     min_fixed: int = 3
     alpha: float = 0.05
     #: Search the recovery program per generation, not just the trigger. The
@@ -115,7 +121,8 @@ class CampaignStore:
 
 
 def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
-    return [EpisodeSpec(seed=s, percept_noise=prereg.percept_noise) for s in seeds]
+    return [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
+                        percept_noise=prereg.percept_noise) for s in seeds]
 
 
 def propose_rule(
