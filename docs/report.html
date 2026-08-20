@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 41 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 42 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,14 +115,14 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+25.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>两个独立区块合并 n=400</b>，102 修 0 破</span></div>
+    <div><span class="k">+26.7<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>三个独立区块 n=600</b>，160 修 <b>0 破</b></span></div>
     <div><span class="k">+19.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>三个独立区块 n=600</b>，117 修 3 破</span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
     <div><span class="k">87</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略 6000-6199（+30.5pp）与 8200-8399（+20.5pp）；克隆策略 8000-8199（+17.5pp）、8400-8599（+16.5pp）与 8600-8799（+23.0pp）。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
+  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略 6000-6199（+30.5pp）、8200-8399（+20.5pp）与 8800-8999（+29.0pp）；克隆策略 8000-8199（+17.5pp）、8400-8599（+16.5pp）与 8600-8799（+23.0pp）。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
 </header>
 
 
@@ -203,9 +203,17 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <tr class="hi"><td class="n">合并 n=400</td><td class="n">49.5%</td><td class="n">75.0%</td><td class="n"><b>+25.5pp</b></td><td class="n">102 / 0</td><td class="n">2.5pp</td><td class="n">±4.9pp</td></tr>
       </tbody>
     </table></div>
-    <p>两个区块的 bundle 是<strong>逐位相同</strong>的（同一份预注册，只换 held-out 种子），
-    两次都 p&lt;1e-5、零破坏。差的 10.0pp 是 <strong>2.0 个标准误</strong> ——
-    大体在抽样噪声内，但已经在边缘。</p>
+    <p>每个区块上的 bundle 都是<strong>逐位相同</strong>的（同一份预注册，只换 held-out 种子）。
+    后来两个策略各自补到了<strong>三个区块</strong>，于是离散度第一次有了真估计：</p>
+    <div class="tw"><table>
+      <thead><tr><th>策略</th><th>三个区块的 delta</th><th>跨度</th><th>sd</th><th>合并 n=600</th></tr></thead>
+      <tbody>
+        <tr><td>脚本</td><td class="n">+30.5 / +20.5 / +29.0</td><td class="n">10.0pp</td><td class="n">5.4pp</td><td class="n"><b>+26.7pp</b>，160 修 <b>0 破</b></td></tr>
+        <tr><td>行为克隆</td><td class="n">+17.5 / +16.5 / +23.0</td><td class="n">6.5pp</td><td class="n">3.5pp</td><td class="n"><b>+19.0pp</b>，117 修 3 破</td></tr>
+      </tbody>
+    </table></div>
+    <p>两个 sd（5.4 与 3.5）在各自 n=3 的情况下<strong>分不出高下</strong>，
+    但都落在按 McNemar 算出的 SE 3-4pp 附近 —— 理论与实测对上了。</p>
     <p><strong>这条限定适用于本报告里每一个单区块数字：n=200 的 delta 应当读作一个带 ±7pp 的量，
     几个 pp 的跨区块比较是噪声，不是发现。</strong>
     上面那张轨迹图之所以标注为「定性的」，正是这个原因；现在它有了量。</p>
@@ -805,6 +813,12 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <p>这让「特权买不到东西」有了更强的读法：<strong>不是噪声小到无所谓，
     是瓶颈根本不在感知这一侧。</strong>零特权下唯一可用的信号 <code>finger_gap</code>
     只告诉你「miss 了」，不告诉你「往哪边偏」—— 而找方向正是上面第二次尝试输掉的那件事。</p>
+    <p style="color:var(--ink-3)"><strong>限定范围：这一段只对克隆策略成立。</strong>
+    同一条消融梯在脚本策略上给出完全相反的结论 ——
+    工作点 75.0% 对真值 <strong>100.0%</strong>，<strong>特权在那里值 +25.0pp</strong>。
+    <strong>「瓶颈在哪一侧」是策略的性质，不是这套方法的结论</strong>，
+    正如「检测还是修复」是当前 bundle 的性质。消融梯的价值恰恰在于它<strong>逐个策略地回答</strong>这个问题，
+    而不是给出一个放之四海的答案。</p>
   </div>
   <p class="w">
     <strong>这条限制对 Zetta 更硬。</strong>它的恢复步骤从一个已发布的工具目录里组装，
@@ -959,7 +973,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  41 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，41 篇过程记录。
+  42 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，42 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
