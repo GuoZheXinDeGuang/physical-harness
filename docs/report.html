@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 46 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 48 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -647,19 +647,62 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     真正在做判断的规则不怕这道题。
   </p>
 
+  <h3>补上这道测试缺的功效 —— 同一类错误的第四次</h3>
+  <div class="call">
+    <h4>我加了一道决定提升的测试，却没给它功效规划</h4>
+    <p>为了把这条界定位得更准，用 DART 的 σ 造了一梯策略：
+    σ=0.30 → <strong>15.8%</strong>，0.35 → <strong>21.7%</strong>，0.40 → <strong>31.7%</strong>，0.45 → 34.2%。
+    中间两档在 n=60 下对盲发孪生是 <strong>+15.0%，p=0.093 / 0.078</strong> ——
+    看起来是「确实在判断，只是功效不够」。<strong>我差点就这么写下来。</strong></p>
+    <p>但提升现在依赖<strong>两道</strong>测试，而只有第一道做过功效规划。
+    已封存世代里真在判断的规则，正面对比的分裂比是 <strong>0.86-0.99</strong>
+    （脚本 101/102、克隆 71/83）；中间两档是 <strong>0.70</strong>。
+    而 0.80 的分裂比需要 20 对不一致，<strong>0.70 需要 49 对</strong> ——
+    它们只有 21-23 对。<strong>这道门禁只看得见强判断，看不见中等判断。</strong></p>
+    <p>给它自己的功效规划后，世代样本量取两道测试的较大者，第 1 代从 60 涨到 <strong>140</strong>。
+    然后<strong>重跑全部五个策略，不是只重跑失败的那两个 —— 只重跑失败的就是挑数字。</strong></p>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>策略</th><th>基线</th><th>长出的规则</th><th>held-out（全新区块）</th><th>对自己的盲发孪生</th></tr></thead>
+    <tbody>
+      <tr><td>脚本</td><td class="n">~50%</td><td class="n">1</td><td class="n"><b>+31.0pp</b>，62 修 <b>0 破</b></td><td class="n">+25.0%，p&lt;1e-5</td></tr>
+      <tr class="hi"><td>行为克隆 h256</td><td class="n"><b>32.5%</b></td><td class="n"><b>1</b></td><td class="n">+15.0pp，33 修 3 破</td><td class="n">+21.4%，p&lt;1e-5</td></tr>
+      <tr><td>DART σ=0.30</td><td class="n">15.8%</td><td class="n"><b>0</b></td><td class="n">—</td><td class="n">−10.7%，p=0.0015</td></tr>
+      <tr><td>DART σ=0.35</td><td class="n">21.7%</td><td class="n"><b>0</b></td><td class="n">—</td><td class="n">−26.4%，p&lt;1e-5</td></tr>
+      <tr class="hi"><td>DART σ=0.40</td><td class="n"><b>31.7%</b></td><td class="n"><b>0</b></td><td class="n">—</td><td class="n">−33.6%，p&lt;1e-5</td></tr>
+    </tbody>
+  </table></div>
+  <p class="w">
+    <strong>n=60 的那个 +15.0% 是噪声。</strong>在 140 个种子上，符号翻转成显著为负 ——
+    搜索选出的最佳候选<strong>明显不如盲发</strong>，三个策略一致。
+  </p>
+
   <div class="call ok">
-    <h4>第三个策略给出的不是失败，是这套方法的下界</h4>
-    <p><strong>当策略弱到「无条件干预」本身就有巨大收益时，判断没有可赚的空间。</strong>
-    governor 的价值区间有下界：被治理的策略必须好到
-    <strong>「什么时候插手」这件事本身值钱</strong>。</p>
-    <p>这条边界只有第三个策略能给出 —— 前两个都在下界之上，
-    <strong>而正是那条被自动化门禁放行、又被同一套纪律拦下的退化规则，把下界标了出来。</strong></p>
+    <h4>真正的下界不是能力阈值，是失败能不能被选择性检测</h4>
+    <p>看表里加深的那两行：<strong>DART σ=0.40 基线 31.7%，行为克隆 h256 基线 32.5%
+    —— 成功率几乎相同，一个长不出任何规则，一个长得出。</strong></p>
+    <p>所以「策略要多好，governor 才有价值」<strong>这个问法本身是错的</strong>。
+    决定性的不是成功率，是<strong>失败是否可被选择性地检测</strong>：
+    DART 克隆的失败散布在「盲目重抓大体都对」的区域里，
+    h256 克隆的失败集中在时机上，值得挑时候插手。</p>
+    <p>这也修正了上一版报告里「第三个策略太弱」的说法 ——
+    <strong>不是太弱，是失败形态不给判断留空间。</strong></p>
+  </div>
+
+  <div class="call">
+    <h4>代价：更保守的门禁不是免费的</h4>
+    <p>第 1 代切片从 60 涨到 140 会<strong>换掉选出的第一条规则</strong>，进而改变整条链：
+    行为克隆策略在新门禁下<strong>从两条规则压回一条</strong>，本区块 +15.0pp
+    （此前四个区块、两条规则时是 +16.5 ~ +23.0pp）。</p>
+    <p>下方成绩栏里克隆的 <strong>+18.5pp</strong> 是<strong>两条规则的 bundle 在四个区块上的复现</strong>，
+    在当时的门禁下正当赚到；上表的 +15.0pp 是<strong>现在这道门禁的产出，且只有一个区块</strong>。
+    两个数不能互相替换，也不能合并。</p>
   </div>
 </section>
 
 <section>
   <p class="num">07 / 过程</p>
-  <h2>四十六轮里被自己抓到的二十一个错误</h2>
+  <h2>四十八轮里被自己抓到的二十二个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -750,6 +793,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td><code>def f(..., w=DEFAULT_W)</code> 的默认值在 def 时绑定，
             import 后改 <code>mod.DEFAULT_W</code> 够不到它。
             <strong>两臂结果逐位相同，本身就该起疑</strong></td>
+      </tr>
+      <tr>
+        <td class="n">22</td>
+        <td><strong>加了一道决定提升的测试，却没给它功效规划</strong></td>
+        <td>两个策略的候选卡在 p≈0.08</td>
+        <td>0.70 的分裂比需要 49 对不一致而不是 20 对；
+            n=60 的 +15.0% 在 n=140 下翻转为显著<strong>为负</strong></td>
       </tr>
       <tr>
         <td class="n">21</td>
@@ -1048,10 +1098,14 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       第二次还先修掉了 beam 自己的三个实验缺陷，结果仍是同块 <strong>+15.0pp 对贪心 +23.0pp、成本 3 倍</strong>（见第 10 节）。
       没试过的是「单独不显著但组合显著」的候选批量入选。</li>
     <li><strong>只有一个物理场景族。</strong>三个任务共享 Panda 臂和桌面抓取。真正的跨形态迁移没碰。</li>
-    <li><strong>这套方法有一条实测的下界，第三个策略标出了它。</strong>
-      在基线 15.8% 的弱克隆上，campaign 在新门禁下<strong>产出零条规则</strong> ——
-      因为「总是重抓一次」本身就值 +39.5pp，判断没有可赚的空间。
-      <strong>被治理的策略必须好到「什么时候插手」这件事本身值钱。</strong>见第 6 节。</li>
+    <li><strong>这套方法有一条实测的下界，而它不是能力阈值。</strong>
+      三个 DART 克隆（基线 15.8% / 21.7% / <strong>31.7%</strong>）在新门禁下全部<strong>产出零条规则</strong>，
+      而基线 <strong>32.5%</strong> 的另一个克隆长得出 —— <strong>成功率几乎相同，结果相反。</strong>
+      决定性的是<strong>失败能否被选择性检测</strong>，不是策略有多好。见第 6 节。</li>
+    <li><strong>更保守的门禁有价格。</strong>把判断测试做足功效后，第 1 代切片从 60 涨到 140，
+      换掉了选出的第一条规则，克隆策略因此<strong>从两条规则压回一条</strong>。
+      成绩栏的克隆数字是旧门禁下两条规则的四区块复现，新门禁的单区块结果是 +15.0pp，
+      <strong>两者不可互换也不可合并</strong>。</li>
     <li><strong>几处结论的作用域比它们看起来窄，逐一标注在正文里：</strong>
       跨任务迁移（第 4 节）只在<strong>脚本策略</strong>上做过 —— 克隆策略是在 Lift 上训的，根本执行不了 Stack；
       修复原语的天花板（第 9 节）只在 <strong>Lift</strong> 上测过；
@@ -1089,7 +1143,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  46 轮自主循环，3800+ 行实现 + 1500 行测试，90 个测试全绿，46 篇过程记录。
+  48 轮自主循环，3800+ 行实现 + 1500 行测试，90 个测试全绿，48 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
