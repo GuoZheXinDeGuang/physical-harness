@@ -27,3 +27,25 @@ def test_parent_freeze_catches_a_swapped_reducer():
     assert tampered.sha() != parent.sha(), "the bundle hash ignores the reducer"
     with pytest.raises(ValueError, match="frozen"):
         child.assert_atomic_child_of(tampered)
+
+
+def test_every_field_that_defines_behaviour_reaches_the_canonical_form():
+    """Generalises round 34: a new field must not be able to hide from the hash.
+
+    `parent_sha` is the one deliberate exclusion -- including it would make the
+    hash self-referential and break the parent-freeze comparison it exists for.
+    """
+    import dataclasses as dc
+
+    from governor.governed import Bundle
+
+    rule = _rule("min")
+    canonical = rule.canonical()
+    for obj, sub in ((rule.trigger, canonical["trigger"]),
+                     (rule.recovery, canonical["recovery"])):
+        missing = {f.name for f in dc.fields(obj)} - set(sub)
+        assert not missing, f"{type(obj).__name__} fields absent from canonical(): {missing}"
+
+    bundle = Bundle(rules=(rule,), critic_budget=0, action_budget=0)
+    missing = {f.name for f in dc.fields(bundle)} - set(bundle.canonical()) - {"parent_sha"}
+    assert not missing, f"Bundle fields absent from canonical(): {missing}"
