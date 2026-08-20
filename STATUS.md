@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 7 完成（campaign 跨轮运行中）
+**Round:** 8 完成（v2 campaign 跨轮运行中）
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -34,17 +34,19 @@
 - [x] Round 5 持久事件日志 + 链式承诺 + 离线审计 + shadow replay（抓到 step 索引 off-by-one）
 - [x] Round 6 recovery 程序进搜索空间（坐标下降）+ 门禁化采纳；实测被门禁拒绝一次
 - [x] Round 7 触发器样本外预筛（抓到 shrinkage +0.45 的过拟合候选）
+- [x] Round 8 recovery-search campaign 实跑；发现贪心收敛更差；修掉半样本内的 recovery 门禁
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-**后台有一个 campaign 在跑**（`runs/campaign-recovery-search`，`search_recovery=True`，
-约 40 分钟，日志 `/tmp/campaign_rs.log`）。下一轮第一件事是收它的结果并记录。
+**后台有 v2 campaign 在跑**（`runs/campaign-recovery-search-v2`，recovery 门禁已改成不相交切分，
+日志 `/tmp/campaign_rs2.log`，约 10 分钟）。下一轮第一件事是收它，
+看 recovery 在干净切分下还能不能过门禁。
 
-之后：`screen_triggers=True` + `search_recovery=True` 一起跑一次，
-再往前是跨任务迁移（stack / pickcan）。
+之后：跨任务迁移（stack / pickcan）—— 这是唯一还没碰的大方向，
+也是 Zetta 只在同族 PnP 内证明过的那件事。
 
 ## 阻塞
 
@@ -68,5 +70,8 @@
 - 不要在改了触发语义之后沿用旧数字：必须重跑 campaign 重新赚。
 - 不要在看到 p=0.096 之后加大 held-out 样本量重测：那是 p-hacking。
 - 不要用 shadow replay 预筛 recovery 候选：换修复动作就换轨迹，录像不再描述它。只能真跑。
+- 不要在搜索过的种子上给同一个改动过门禁：round 8 实测同一改动在半样本内切分上 p=0.039（过），
+  在干净切分上 p=0.096（不过）。
+- 不要假设「每步都通过门禁」等于「终点更好」：round 8 每步都合理，终点比 round 5 低 4.5pp。
 - 不要今晚做沙箱代码执行：SBPL `(allow default)(deny file-write*)` 不拦网络（实测），
   且 10-way 并行下 critic tick p99 = 108-169ms，500µs 硬预算会作废几乎全部 episode。

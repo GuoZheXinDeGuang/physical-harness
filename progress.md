@@ -277,3 +277,41 @@ shadow replay 接进 proposer 做离线预筛：候选池从几十筛到 top-3 �
 ### 下一轮种子
 
 收 campaign 结果 → `screen_triggers` + `search_recovery` 联合跑一次 → 跨任务迁移。
+
+## Round 8 — 2026-08-20 — 贪心收敛的代价 + 一个半样本内的门禁
+
+### 做成了什么
+
+1. 收了 `search_recovery=True` 的完整 campaign（509 秒）：
+   gen1 的 recovery 通过门禁被采纳，合并 +18.3% vs 父代；gen2 无候选可过；
+   held-out +23.0pp、0 破坏、零特权。
+2. **发现一：贪心地每代最优，收敛更早、终点更差。**
+   同一 preregistration 下，round 5（不搜 recovery）是 2 条规则 +27.5pp，
+   round 8 是 1 条规则 +23.0pp。每一步都局部正确，没有作弊；
+   更强的 gen1 让剩余失败更少更难，第二条规则够不着显著性线。
+   => 这是贪心 + 显著性门禁的结构性后果。Zetta 的 "success continues to scale" 那句话，
+   在这里的对应现象是：单调上升是真的，但终点高低取决于每步多贪心。
+3. **发现二：recovery 门禁有一半是样本内的。** 在 `dev[:60]` 上搜，却在全部 120 个 dev 上过门禁。
+   靠跨轮对照发现（round 6 干净 held-out p=0.096 拒绝 vs round 8 dev p=0.039 采纳）。
+   已修成不相交切分，剩余门禁种子不足 20 直接报错，两组种子都写进产物。
+
+### 什么没成 / 注意
+
+- 没有对 round 5 和 round 8 的 held-out 数字做配对检验：held-out 对每个 campaign
+  只有一次评分机会，再拿它比较就是把测试集变成训练信号。只做描述性对比。
+
+### 下一轮种子
+
+收 v2 campaign（干净切分下 recovery 还能不能过门禁）→ 跨任务迁移。
+
+## Frontier（Round 8 后更新）
+
+**当前天花板：** 零特权，held-out +27.5pp（round 5 两条规则）/ +23.0pp（round 8 一条带搜索 recovery）。
+
+**下一个 frontier：**
+1. **跨任务迁移**（唯一还没碰的大方向）：stack / pickcan，验证规则链 zero-shot 迁移。
+   Zetta 只在同族 PnP 内证明过。
+2. **对抗贪心收敛**：每代保留 top-K 候选做 beam 而不是 greedy top-1，
+   或者允许「单独不显著但组合显著」的候选批量入选。round 8 证明了这个问题真实存在。
+3. **早期预警 × 廉价 recovery**：用误报成本给早期预警定价。
+4. **LLM proposer**：契约已是 `(traces, labels) -> Rule`，用 mock server 验证，零 API 成本。
