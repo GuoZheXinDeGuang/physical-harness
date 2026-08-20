@@ -1,0 +1,451 @@
+<title>Governor 通宵实测报告</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+
+<style>
+:root{
+  --bg:#ECEFEE; --surface:#FFFFFF; --surface-2:#F5F7F6; --band:#12201C;
+  --ink:#141917; --ink-2:#525C58; --ink-3:#7B857F;
+  --rule:#D3D9D6; --rule-2:#B4BDB8;
+  --pass:#0F6350; --pass-soft:#DCEDE7;
+  --fail:#95462A; --fail-soft:#F5E4DC;
+  --band-ink:#EAF0ED; --band-ink-2:#9BB0A7;
+  --display:"Archivo","Noto Sans SC",system-ui,sans-serif;
+  --sans:"Noto Sans SC","Archivo",-apple-system,BlinkMacSystemFont,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --measure:38rem; --wide:62rem;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1211; --surface:#161B19; --surface-2:#121716; --band:#0A100E;
+    --ink:#E3E9E6; --ink-2:#98A29D; --ink-3:#727C77;
+    --rule:#252D2A; --rule-2:#39433F;
+    --pass:#5CC0A2; --pass-soft:#0F2620;
+    --fail:#DC9070; --fail-soft:#2A1913;
+    --band-ink:#E3E9E6; --band-ink-2:#8FA49B;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1211; --surface:#161B19; --surface-2:#121716; --band:#0A100E;
+  --ink:#E3E9E6; --ink-2:#98A29D; --ink-3:#727C77;
+  --rule:#252D2A; --rule-2:#39433F;
+  --pass:#5CC0A2; --pass-soft:#0F2620;
+  --fail:#DC9070; --fail-soft:#2A1913;
+  --band-ink:#E3E9E6; --band-ink-2:#8FA49B;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.78;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--wide);margin:0 auto;padding:0 1.5rem 6rem}
+
+/* masthead */
+.top{padding:4rem 0 0}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin:0 0 1rem}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(2.2rem,5.5vw,3.4rem);line-height:1.06;letter-spacing:-.02em;margin:0 0 1rem;text-wrap:balance}
+.lede{max-width:var(--measure);color:var(--ink-2);font-size:1.05rem;margin:0 0 2.25rem}
+.lede b{color:var(--ink);font-weight:500}
+
+/* verdict band */
+.band{background:var(--band);color:var(--band-ink);padding:1.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1.4rem 1.75rem;margin:0 0 1rem}
+.band .k{font-family:var(--mono);font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1.1;display:block}
+.band .v{font-size:.76rem;color:var(--band-ink-2);line-height:1.45;display:block;margin-top:.3rem}
+.bandnote{font-size:.8rem;color:var(--ink-3);margin:0 0 3rem}
+
+/* sections */
+section{padding-top:3.5rem}
+h2{font-family:var(--display);font-weight:600;font-size:clamp(1.4rem,3vw,1.9rem);line-height:1.2;letter-spacing:-.012em;margin:0 0 .3rem;text-wrap:balance}
+.num{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;color:var(--pass);margin:0 0 .6rem;text-transform:uppercase}
+h3{font-family:var(--sans);font-weight:700;font-size:1rem;margin:2rem 0 .5rem}
+p{max-width:var(--measure);margin:0 0 1rem}
+p.w{max-width:var(--wide)}
+ul,ol{max-width:var(--measure);padding-left:1.15rem}
+li{margin-bottom:.45rem}
+a{color:var(--pass);text-underline-offset:2px}
+a:focus-visible{outline:2px solid var(--pass);outline-offset:2px;border-radius:2px}
+code{font-family:var(--mono);font-size:.85em;background:var(--surface-2);border:1px solid var(--rule);padding:.05em .34em;border-radius:3px;overflow-wrap:anywhere}
+strong{font-weight:700}
+
+/* tables */
+.tw{overflow-x:auto;margin:1.4rem 0;border:1px solid var(--rule);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:32rem;font-size:.87rem}
+th,td{text-align:left;padding:.55rem .8rem;border-bottom:1px solid var(--rule);line-height:1.55;vertical-align:top}
+th{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:500;background:var(--surface-2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.m{font-family:var(--mono);font-size:.8rem;white-space:nowrap}
+tr.hi td{background:var(--pass-soft)}
+.tag{font-family:var(--mono);font-size:.7rem;padding:.08rem .45rem;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.tag.p{color:var(--pass);background:var(--pass-soft)}
+.tag.r{color:var(--fail);background:var(--fail-soft)}
+
+/* charts */
+figure{margin:1.6rem 0;border:1px solid var(--rule);background:var(--surface);padding:1.1rem 1.1rem .8rem}
+figcaption{font-size:.8rem;color:var(--ink-3);margin-top:.7rem;line-height:1.55}
+.chartscroll{overflow-x:auto}
+svg{display:block;min-width:26rem;width:100%;height:auto}
+.axis{stroke:var(--rule-2);stroke-width:1}
+.grid{stroke:var(--rule);stroke-width:1;stroke-dasharray:2 3}
+.lbl{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
+.val{font-family:var(--mono);font-size:10.5px;font-weight:700;fill:var(--ink)}
+
+/* callout */
+.call{border-left:3px solid var(--fail);background:var(--surface);padding:.9rem 1.1rem;margin:1.4rem 0;max-width:var(--wide)}
+.call.ok{border-left-color:var(--pass)}
+.call h4{margin:0 0 .4rem;font-size:.72rem;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.call p{margin:0;max-width:none;font-size:.93rem;color:var(--ink-2)}
+.call p+p{margin-top:.6rem}
+
+pre{font-family:var(--mono);font-size:.8rem;line-height:1.6;background:var(--surface-2);border:1px solid var(--rule);padding:.85rem 1rem;margin:1.2rem 0;overflow-x:auto;white-space:pre}
+pre code{background:none;border:0;padding:0;font-size:inherit}
+
+footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-size:.82rem;color:var(--ink-3);max-width:var(--wide)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Governor · 11 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <h1>Governor 通宵实测报告</h1>
+  <p class="lede">
+    把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
+    合成一个能在 Mac 上真跑仿真的具身 harness，并补上两者都缺的那一块：<b>特权预算</b>。
+    全部数字来自真实 MuJoCo 回合，无 mock 验证，无外部 API 调用。
+  </p>
+
+  <div class="band">
+    <div><span class="k">+27.5<span style="font-size:.9rem">pp</span></span><span class="v">held-out 成功率提升<br>48.5% → 76.0%，n=200</span></div>
+    <div><span class="k">0</span><span class="v">回归破坏<br>每一档消融都是 0</span></div>
+    <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
+    <div><span class="k">&lt;1e-5</span><span class="v">精确 McNemar p<br>配对同种子</span></div>
+    <div><span class="k">+28.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
+    <div><span class="k">30</span><span class="v">测试全绿<br>1954 行实现 / 362 行测试</span></div>
+  </div>
+  <p class="bandnote">数字取自 Round 9 的干净 campaign 与 Round 10 的迁移实验；每个 held-out 区块只评分一次。</p>
+</header>
+
+<section>
+  <p class="num">01 / 起点</p>
+  <h2>为什么不复现 LIBERO-Pro</h2>
+  <p>
+    Zetta 的成绩在 LIBERO-Pro 和 RoboCasa 上。这台机器跑不了：flash-attn 只有 <code>linux_x86_64</code> 轮子
+    且无 CPU 回退，安装脚本要求 <code>nvidia-smi</code> + CUDA 12.6，MuJoCo 渲染走 NVIDIA 专有的 EGL 通路。
+    Zetta 全仓 <code>grep sys.platform|darwin</code> 零命中。
+  </p>
+  <p>
+    所以换底座而不是换目标：<strong>robosuite 1.5.2 + MuJoCo 3.3.7</strong>，无头、纯 CPU。
+    robosuite 正是 RoboCasa 的基座，机制可迁移。实测 10 worker <strong>212 episodes/min</strong> ——
+    对照 Zetta 论文报告的 8×A100 上 35.1 episodes/min。差别在于我们不在环里跑大模型：
+    <strong>rollout 预算根本不是瓶颈</strong>，这让「每个候选都花真实回合过门禁」变得可负担。
+  </p>
+  <div class="call ok">
+    <h4>被测的对象</h4>
+    <p>冻结策略在 t=0 通过一个<strong>有噪声的传感器</strong>读一次物体位姿，然后开环执行固定时长的四阶段日程。
+    这是真实 VLA 的典型失败形态 —— 基于一个错误的感知去执行，无接触感知、无重试 ——
+    而不是控制器算不动。关键是它<strong>可恢复</strong>：重读一次当前观测就能修正。</p>
+    <p>感知噪声 sd=0.020 时基线 ≈ 48-57%，与 Zetta 在 LIBERO-Pro 上 31-38% 的基线同一量级。</p>
+  </div>
+</section>
+
+<section>
+  <p class="num">02 / 成绩</p>
+  <h2>一次干净的多代 campaign</h2>
+  <p>dev 120 个种子，held-out 200 个种子，零特权，recovery 感知 sd=0.020（板载传感器水平，非真值）。每代对<strong>父代</strong>做原子归因。</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>代</th><th>候选（自动搜索，零特权）</th><th>提升 vs 父代</th><th>修复</th><th>破坏</th><th>p</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr><td class="n">1</td><td class="m">gripper_effort &gt; 0.0509 dwell2 @59</td><td class="n">+12.5%</td><td class="n">15</td><td class="n">0</td><td class="n">6e-5</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">2</td><td class="m">finger_gap &lt; 0.00223 dwell1 @63</td><td class="n">+10.8%</td><td class="n">13</td><td class="n">0</td><td class="n">2.4e-4</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">3</td><td class="m">finger_gap &lt; 0.00229 dwell3 @77</td><td class="n">+0.0%</td><td class="n">0</td><td class="n">0</td><td class="n">1.0</td><td><span class="tag r">拒绝</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <p><strong>held-out（只评一次，n=200）：48.5% → 76.0%，+27.5pp，55 修复 / 0 破坏，p&lt;1e-5。</strong></p>
+
+  <h3>赢的是判断，不是时间</h3>
+  <p class="w">受治理的回合因为插入恢复动作会多跑控制步。所以设了盲对照：<strong>同一套 recovery、同样次数、同样的步触发，但无条件触发，不看状态。</strong></p>
+  <div class="tw"><table>
+    <thead><tr><th>臂</th><th>提升</th><th>修复</th><th>破坏</th><th>触发</th><th>p</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td>演化出的（critic 触发）</td><td class="n">+27.5pp</td><td class="n">55</td><td class="n">0</td><td class="n">103</td><td class="n">&lt;1e-5</td></tr>
+      <tr><td>盲发（无条件）</td><td class="n">−4.0pp</td><td class="n">38</td><td class="n">46</td><td class="n">200</td><td class="n">0.445</td></tr>
+      <tr class="hi"><td>正面对比</td><td class="n">+31.5pp</td><td class="n">75</td><td class="n">12</td><td class="n">—</td><td class="n">&lt;1e-5</td></tr>
+    </tbody>
+  </table></div>
+  <p>盲目多给控制步<strong>反而更差</strong> —— 它打断了本来会成功的抓取，破坏 46 个。critic 只在 103/200 个回合上触发，与失败率吻合。</p>
+</section>
+
+<section>
+  <p class="num">03 / 我们自己的那一块</p>
+  <h2>特权预算：把 sim-to-real gap 变成一个数</h2>
+  <p class="w">
+    Zetta 的 critic 读 <code>privileged.dishwasher.rack.residual_to_success</code> 这类仿真器内部量。
+    它的 README 规定「不许当隐藏控制」，但那是一句散文，没有机制。Governor 把它做成结构：
+    候选代码<strong>永远拿不到原始观测</strong>，只拿到按预算构造的 <code>FeatureView</code>；
+    view 继承 <code>Mapping</code> 并记账每一次读取；预算按<strong>实际读取</strong>核算，不看声明。
+  </p>
+  <p class="w">
+    而消融梯子内建在感知模型里：recovery 重读物体位姿时用 <code>估计 = 真值 + N(0, sd)</code>，
+    <code>sd=0</code> 就是真值、被机制<strong>自动标记为特权</strong>。扫这个 sd 就直接得到迁移曲线，
+    消融和被测量的东西是同一段代码，不可能漂移。
+  </p>
+
+  <figure>
+    <div class="chartscroll">
+    <svg viewBox="0 0 640 250" role="img" aria-label="迁移消融曲线：recovery 感知噪声越大，提升越小">
+      <line class="axis" x1="60" y1="200" x2="600" y2="200"/>
+      <line class="axis" x1="60" y1="30" x2="60" y2="200"/>
+      <line class="grid" x1="60" y1="30" x2="600" y2="30"/><text class="lbl" x="26" y="34">100%</text>
+      <line class="grid" x1="60" y1="115" x2="600" y2="115"/><text class="lbl" x="34" y="119">75%</text>
+      <line class="grid" x1="60" y1="158" x2="600" y2="158"/><text class="lbl" x="34" y="162">62%</text>
+      <text class="lbl" x="30" y="204">48%</text>
+      <line x1="60" y1="177" x2="600" y2="177" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 4"/>
+      <text class="lbl" x="470" y="172">基线 48.5%（无治理）</text>
+      <polyline fill="none" stroke="var(--pass)" stroke-width="2.5"
+        points="120,33 260,40 400,111 540,146"/>
+      <circle cx="120" cy="33" r="6" fill="var(--fail)"/>
+      <circle cx="260" cy="40" r="5" fill="var(--pass)"/>
+      <circle cx="400" cy="111" r="5" fill="var(--pass)"/>
+      <circle cx="540" cy="146" r="5" fill="var(--pass)"/>
+      <text class="val" x="120" y="22" text-anchor="middle">99.0%</text>
+      <text class="val" x="260" y="30" text-anchor="middle">98.0%</text>
+      <text class="val" x="400" y="101" text-anchor="middle">76.0%</text>
+      <text class="val" x="540" y="136" text-anchor="middle">66.5%</text>
+      <text class="lbl" x="120" y="218" text-anchor="middle">0.000</text>
+      <text class="lbl" x="120" y="232" text-anchor="middle" fill="var(--fail)">真值·特权</text>
+      <text class="lbl" x="260" y="218" text-anchor="middle">0.010</text>
+      <text class="lbl" x="400" y="218" text-anchor="middle">0.020</text>
+      <text class="lbl" x="540" y="218" text-anchor="middle">0.030</text>
+      <text class="lbl" x="330" y="246" text-anchor="middle">recovery 重读感知的噪声 sd（板载传感器精度）</text>
+    </svg>
+    </div>
+    <figcaption>
+      <strong>sd=0.010 的板载感知拿到 98.0%，真值 99.0%。</strong>只要传感器精度到 1cm，特权买不到任何东西；
+      退化的拐点在 sd=0.020。n=200，每点都是一次配对同种子门禁。
+    </figcaption>
+  </figure>
+
+  <div class="call">
+    <h4>这条曲线抓出过我自己的一个假结论</h4>
+    <p>第一轮手写实验报出 <strong>+50pp</strong>，看着漂亮。是消融把 recovery 里那句
+    <code>target = obs["cube_pos"]</code> 抓出来的 —— 直接读仿真器里物体的真实位置，真机上没有这个量。
+    我写的时候没意识到。</p>
+    <p>教训写进了机制：<strong>特权预算必须同时覆盖 critic 和 recovery</strong>。
+    真实发生过的泄漏在恢复动作的感知里，不在特征的名字里 —— 所以边界是「原始观测不进候选代码」，
+    不是「给特征名字分层」。</p>
+  </div>
+</section>
+
+<section>
+  <p class="num">04 / 最强的一个结果</p>
+  <h2>零特权链跨任务零退化，特权触发器静默失效</h2>
+  <p class="w">
+    在 Lift 上演化出的两条规则，<strong>原样搬到 Stack 和 PickPlaceCan，一个字没改</strong>，零重新搜索。
+    三个任务的成功判据不同（举起 / 放到 B 上 / 送进料箱），而冻结策略只会「抓起来」，
+    所以打分用三者<strong>共享的子目标</strong>：物体被举离起始高度 4cm 且夹爪仍被撑开。
+  </p>
+
+  <figure>
+    <div class="chartscroll">
+    <svg viewBox="0 0 640 230" role="img" aria-label="跨任务迁移：零特权链 vs 特权触发器">
+      <line class="axis" x1="70" y1="180" x2="610" y2="180"/>
+      <line class="grid" x1="70" y1="40" x2="610" y2="40"/><text class="lbl" x="34" y="44">+30pp</text>
+      <line class="grid" x1="70" y1="110" x2="610" y2="110"/><text class="lbl" x="34" y="114">+15pp</text>
+      <text class="lbl" x="46" y="184">0</text>
+      <g>
+        <rect x="110" y="52" width="46" height="128" fill="var(--pass)"/>
+        <rect x="162" y="94" width="46" height="86" fill="var(--fail)" opacity=".8"/>
+        <text class="val" x="133" y="45" text-anchor="middle">+27.5</text>
+        <text class="val" x="185" y="87" text-anchor="middle">+18.5</text>
+        <text class="lbl" x="159" y="198" text-anchor="middle">lift（源任务）</text>
+      </g>
+      <g>
+        <rect x="290" y="47" width="46" height="133" fill="var(--pass)"/>
+        <rect x="342" y="96" width="46" height="84" fill="var(--fail)" opacity=".8"/>
+        <text class="val" x="313" y="40" text-anchor="middle">+28.5</text>
+        <text class="val" x="365" y="89" text-anchor="middle">+18.0</text>
+        <text class="lbl" x="339" y="198" text-anchor="middle">stack（迁移）</text>
+      </g>
+      <g>
+        <rect x="470" y="68" width="46" height="112" fill="var(--pass)"/>
+        <rect x="522" y="178" width="46" height="2" fill="var(--fail)" opacity=".8"/>
+        <text class="val" x="493" y="61" text-anchor="middle">+24.0</text>
+        <text class="val" x="545" y="172" text-anchor="middle" fill="var(--fail)">+0.0</text>
+        <text class="lbl" x="519" y="198" text-anchor="middle">pickcan（迁移）</text>
+      </g>
+      <rect x="110" y="212" width="11" height="11" fill="var(--pass)"/>
+      <text class="lbl" x="127" y="222">零特权链（两条规则）</text>
+      <rect x="290" y="212" width="11" height="11" fill="var(--fail)" opacity=".8"/>
+      <text class="lbl" x="307" y="222">特权触发器 privileged.object_z &lt; 0.8215</text>
+    </svg>
+    </div>
+    <figcaption>每组 n=200，held-out 种子，全部 0 破坏。特权触发器在 pickcan 上<strong>触发 0 次</strong>。</figcaption>
+  </figure>
+
+  <div class="call">
+    <h4>0.8215 是那张桌子的高度</h4>
+    <p>在同一批 dev 种子上把预算放开到 1，搜出来的最佳特权触发器是
+    <code>privileged.object_z &lt; 0.8215</code>。那个阈值是<strong>关于世界的事实</strong>（Lift 的桌高），
+    不是关于抓取的事实。Stack 的 cubeA 恰好也在同一张桌子上，所以碰巧还能用；
+    罐子静止时高度不同，条件永远不成立。</p>
+    <p><strong>它不报错、不告警，就是一次也不触发。</strong>如果部署了，你看到的是「这个技能在新任务上没效果」，
+    而查不出为什么。它还<strong>连在自己的源任务上都更差</strong>（+18.5 vs +27.5）。</p>
+  </div>
+
+  <p class="w">零特权链能干净迁移的原因是结构性的：两条规则只读本体感受（夹爪关节速度、手指开度），
+  <strong>没有任何一处提到物体</strong>。「夹爪合拢但手里没东西」这个失败，在物理上与你想抓什么无关。
+  代码里也留着这个不对称的痕迹 —— <code>privileged.*</code> 需要一张查找表才能在不同任务里找到物体
+  （<code>cube_pos</code> / <code>cubeA_pos</code> / <code>Can_pos</code>），<code>observable.*</code> 不需要。</p>
+
+  <h3>特权预算的三条独立证据</h3>
+  <div class="tw"><table>
+    <thead><tr><th>证据</th><th>来源</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td>检测质量</td><td>触发器搜索</td><td>零特权最优解得分 1.105 <strong>高于</strong>特权最优解 1.095</td></tr>
+      <tr><td>真机迁移</td><td>消融曲线</td><td>特权 99.0% → 板载 sd=0.020 时 76.0%，退化可量化</td></tr>
+      <tr class="hi"><td>跨任务迁移</td><td>本轮</td><td>特权阈值是关于世界的事实，换场景<strong>静默</strong>变成 no-op</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="num">05 / 过程</p>
+  <h2>十一轮里被自己抓到的五个错误</h2>
+  <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>错误</th><th>怎么暴露的</th><th>代价</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="n">1</td>
+        <td><code>np.random.seed()</code> 对 robosuite 无效，环境自持 RNG</td>
+        <td>配对同种子跑两次哈希不一致</td>
+        <td>会让配对门禁静默退化成掷硬币</td>
+      </tr>
+      <tr>
+        <td class="n">2</td>
+        <td>手定 critic 阈值（用回合末统计量）</td>
+        <td>60 个回合只触发 1 次</td>
+        <td>+1.7%，不显著。自动 EOD 搜索 0.1 秒给出正确答案</td>
+      </tr>
+      <tr>
+        <td class="n">3</td>
+        <td>recovery 里直接读真实物体位姿</td>
+        <td>特权消融</td>
+        <td><strong>把 +13.3%（不显著）报成了 +50%</strong></td>
+      </tr>
+      <tr>
+        <td class="n">4</td>
+        <td>步索引 1-based vs 0-based，触发器早武装一步</td>
+        <td>shadow replay 与实跑 40 个里 6 个不一致</td>
+        <td>让数字<strong>更好看</strong>（+22.0 vs 修正后 +17.5），靠误触发换来</td>
+      </tr>
+      <tr>
+        <td class="n">5</td>
+        <td>recovery 门禁包含了它搜索过的种子</td>
+        <td>跨轮对照：同一改动干净切分 p=0.096、半样本内 p=0.039</td>
+        <td><strong>4.5pp</strong>，且表现为「结果变好然后提前收敛」</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="call">
+    <h4>最难发现的那一类</h4>
+    <p>错误 4 和 5 都<strong>不表现为结果变差</strong>。单元测试抓不到（每个模块自己是自洽的），
+    端到端成功率也抓不到（数字反而更好）。</p>
+    <p>抓到 4 的是「离线重放必须与在线逐步一致」这个交叉检验 ——
+    这才是 DeepSeek Harness 那条「模型可见 ⟺ 已记录」不变量的真正含义：
+    <strong>日志不是记账，是可证伪性基础设施。</strong></p>
+    <p>抓到 5 的是跨轮对照。它的代价藏在「没能长出第二条规则」这件事里 ——
+    那一代看起来是整条链上最强的一步（+18.3%）。</p>
+  </div>
+
+  <h3>一次被门禁拦下的改进</h3>
+  <p class="w">让 recovery 程序也进搜索空间（坐标下降搜每阶段步数），dev 上 70.0% → 75.0%，
+  找到「更短后撤 + 更长重新定位」，物理上也说得通。<strong>held-out 正面对比 +4.0pp，p=0.096，被拒绝。</strong>
+  如果没有对手写程序做配对检验，我会采纳它 —— 单看 dev、或单看「vs 无治理从 +19.0 变 +23.0」，都指向「更好」。
+  看到 p=0.096 之后我没有去加大样本量重测。</p>
+</section>
+
+<section>
+  <p class="num">06 / 架构</p>
+  <h2>从哪抄的什么</h2>
+  <div class="tw"><table>
+    <thead><tr><th>来自 DeepSeek Harness</th><th>来自 Zetta</th><th>Governor 自己的</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>append-only 事件日志 + 内容寻址列块（沿用它把 chunk 打包成一行的思路）</td>
+        <td>冻结策略 + 演化 critic/recovery</td>
+        <td><strong>特权预算</strong>：原始观测不进候选代码，按实际读取核算</td>
+      </tr>
+      <tr>
+        <td>运行时不变量断言（可见 ⟺ 已记录），这里做成链式承诺</td>
+        <td>dev/held-out 种子隔离 + 配对精确 McNemar</td>
+        <td><strong>感知模型即消融梯子</strong>，消融与被测对象是同一段代码</td>
+      </tr>
+      <tr>
+        <td>能力接缝 Definition / Provider / Consumer</td>
+        <td>每代只加一条、父规则逐字节冻结</td>
+        <td><strong>零外部 API</strong>：确定性 proposer 是参考实现不是回退</td>
+      </tr>
+      <tr>
+        <td>fail-closed 的安全默认</td>
+        <td>preregistration + 内容哈希产物</td>
+        <td><strong>盲对照</strong>：证明赢的是判断不是时间</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="w"><strong>明确没抄的：</strong>Zetta 的 critic 只是「单特征 + 比较符 + 阈值」的 DSL，
+  而它真正的代码通路（<code>tool_plugin</code>）在发布版里是关掉的；dsh 的 Cordis 全套仪式
+  （fiber、effect 树、typert RPC）在 Python 里不值这个复杂度，只取接缝模式本身。</p>
+</section>
+
+<section>
+  <p class="num">07 / 边界</p>
+  <h2>还没做的，和已知的局限</h2>
+  <ul>
+    <li><strong>沙箱代码执行没做。</strong>实测 <code>(allow default)(deny file-write*)</code> 这条 SBPL 并不拦网络，
+      且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
+    <li><strong>基础策略是脚本，不是学出来的 VLA。</strong>失败形态是刻意设计成「基于错误感知开环执行」的，
+      像真实 VLA 的复合误差，但终究不是。用 BC 训一个弱策略是下一个真实的抬升。</li>
+    <li><strong>贪心收敛的结构性风险仍在。</strong>Round 8 演示过一次提前收敛（虽然那次的触发原因是泄漏的门禁）。
+      每代保留 top-K 做 beam、或允许「单独不显著但组合显著」的候选批量入选，都还没试。</li>
+    <li><strong>只有一个物理场景族。</strong>三个任务共享 Panda 臂和桌面抓取。真正的跨形态迁移没碰。</li>
+    <li><strong>LLM proposer 没接。</strong>契约已经是 <code>(traces, labels) -&gt; Rule</code>，换 provider 即可，
+      但今晚全程零外部 API 是刻意的 —— 循环必须能在没有网络和密钥的情况下跑完。</li>
+  </ul>
+</section>
+
+<section>
+  <p class="num">08 / 复现</p>
+  <h2>怎么跑</h2>
+<pre><code>cd ~/Desktop/physical-harness
+uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
+
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 30 tests</span>
+
+<span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
+PYTHONPATH=. .venv/bin/python -c "
+from pathlib import Path
+from governor.campaign import CampaignStore, Preregistration, run_campaign
+p = Preregistration(dev=tuple(range(2000,2120)), heldout=tuple(range(1000,1200)),
+                    percept_noise=0.020, critic_budget=0, action_budget=0,
+                    recovery_sensor_sd=0.020, max_generations=4)
+run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
+  <p class="w">
+    每次 campaign 把 preregistration、每代判定（含被拒的）、门禁证据和消融曲线
+    按内容哈希写进 <code>runs/&lt;name&gt;/artifacts/</code>，配一个 append-only 索引。
+    仓库里 <code>GOAL.md</code> / <code>STATUS.md</code> / <code>progress.md</code> 加 <code>git log</code>
+    构成完整的续跑栈 —— 任何时刻从磁盘就能接上。
+  </p>
+</section>
+
+<footer>
+  11 轮自主循环，21 次提交，1954 行实现 + 362 行测试，12 篇过程记录。
+  全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
+  零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
+</footer>
+
+</div>

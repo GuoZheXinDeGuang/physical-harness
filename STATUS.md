@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 10 完成
+**Round:** 11 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -37,15 +37,16 @@
 - [x] Round 8 recovery-search campaign 实跑；发现贪心收敛更差；修掉半样本内的 recovery 门禁
 - [x] Round 9 干净切分下 recovery 每代被正确拒绝；收敛回 +27.5pp；泄漏代价量化为 4.5pp
 - [x] Round 10 跨任务零退化迁移（stack +28.5% / pickcan +24.0%）；特权触发器在 pickcan 上静默失效（0 触发）
+- [x] Round 11 盲对照在修正后代码上重测（+31.5pp 正面对比）；出总报告 `docs/report.html`
+      （已发布为 artifact: https://claude.ai/code/artifact/a1cae211-14e5-4de8-b0f1-6024a3cc532b ）
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 11：把三个任务接进 campaign 做**多任务联合演化**，
-看联合演化出的链会不会比单任务演化 + 迁移更好，还是更差（round 8 的贪心教训）。
-另一条可选路：对抗贪心收敛的 beam 搜索。
+Round 12：多任务联合演化（三个任务一起演化 vs 单任务演化+迁移，哪个更好）。
+或者对抗贪心收敛的 beam 搜索 —— round 8 证明了这个问题真实存在。
 
 ## 阻塞
 
