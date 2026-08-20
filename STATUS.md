@@ -191,7 +191,8 @@
       验收 #1/#2/#3(脚本)/#5 达成, #4 发布路径已真跑。148 测试绿。
 - [ ] Round 55: 克隆策略 parity(runs/campaign-pj-clone, 全新 rerun dir) + review minor 残留
       (跨进程 spawn 冒烟测试 / demos.py ref 记录为 L0 限制 / 插件间边界机械测试)。
-      GitHub push agent 后台跑着(私有库), 等它的结果。
+      **GitHub 已建**: https://github.com/yusenthebot/physical-harness (私有, main)。
+      **循环惯例(用户指令"同步push")**: 每轮 RECORD 后 `git push`, 绝不 force。
 - gate(等用户): reasoner 接真实模型需要 key 与选型; 三层团队的契约细化按他们的 spec 迭代。
 
 ## 下一步
