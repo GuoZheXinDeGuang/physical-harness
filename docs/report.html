@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 43 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 46 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,14 +115,14 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+26.7<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>三个独立区块 n=600</b>，160 修 <b>0 破</b></span></div>
-    <div><span class="k">+19.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>三个独立区块 n=600</b>，117 修 3 破</span></div>
+    <div><span class="k">+26.9<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>四个独立区块 n=800</b>，215 修 <b>0 破</b></span></div>
+    <div><span class="k">+18.5<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>四个独立区块 n=800</b>，152 修 4 破</span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
     <div><span class="k">87</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略 6000-6199（+30.5pp）、8200-8399（+20.5pp）与 8800-8999（+29.0pp）；克隆策略 8000-8199（+17.5pp）、8400-8599（+16.5pp）与 8600-8799（+23.0pp）。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
+  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略四个区块 +30.5 / +20.5 / +29.0 / +27.5pp；克隆策略四个区块 +17.5 / +16.5 / +23.0 / +17.0pp。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
 </header>
 
 
@@ -206,13 +206,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <p>每个区块上的 bundle 都是<strong>逐位相同</strong>的（同一份预注册，只换 held-out 种子）。
     后来两个策略各自补到了<strong>三个区块</strong>，于是离散度第一次有了真估计：</p>
     <div class="tw"><table>
-      <thead><tr><th>策略</th><th>三个区块的 delta</th><th>跨度</th><th>sd</th><th>合并 n=600</th></tr></thead>
+      <thead><tr><th>策略</th><th>四个区块的 delta</th><th>跨度</th><th>sd</th><th>合并 n=800</th></tr></thead>
       <tbody>
-        <tr><td>脚本</td><td class="n">+30.5 / +20.5 / +29.0</td><td class="n">10.0pp</td><td class="n">5.4pp</td><td class="n"><b>+26.7pp</b>，160 修 <b>0 破</b></td></tr>
-        <tr><td>行为克隆</td><td class="n">+17.5 / +16.5 / +23.0</td><td class="n">6.5pp</td><td class="n">3.5pp</td><td class="n"><b>+19.0pp</b>，117 修 3 破</td></tr>
+        <tr><td>脚本</td><td class="n">+30.5 / +20.5 / +29.0 / +27.5</td><td class="n">10.0pp</td><td class="n">4.4pp</td><td class="n"><b>+26.9pp</b>，215 修 <b>0 破</b></td></tr>
+        <tr><td>行为克隆</td><td class="n">+17.5 / +16.5 / +23.0 / +17.0</td><td class="n">6.5pp</td><td class="n">3.0pp</td><td class="n"><b>+18.5pp</b>，152 修 4 破</td></tr>
       </tbody>
     </table></div>
-    <p>两个 sd（5.4 与 3.5）在各自 n=3 的情况下<strong>分不出高下</strong>，
+    <p>两个 sd（4.4 与 3.0）在各自 n=4 的情况下<strong>分不出高下</strong>，
     但都落在按 McNemar 算出的 SE 3-4pp 附近 —— 理论与实测对上了。</p>
     <p><strong>这条限定适用于本报告里每一个单区块数字：n=200 的 delta 应当读作一个带 ±7pp 的量，
     几个 pp 的跨区块比较是噪声，不是发现。</strong>
@@ -577,8 +577,89 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">06 / 过程</p>
-  <h2>四十一轮里被自己抓到的十九个错误</h2>
+  <p class="num">06 / 自查</p>
+  <h2>第三个策略让方法抓住了自己</h2>
+  <p class="w">
+    前两个策略是脚本的和克隆的。第三个是<strong>更弱</strong>的克隆
+    （DART 噪声注入，σ=0.30，闭环基线 <strong>15.8%</strong>）。
+    它的 campaign 长出一条规则，held-out <strong>+38.5pp</strong>。
+    看起来是第三个成功案例 —— <strong>它不是。</strong>
+  </p>
+
+  <h3>那条规则在每个 episode 上都触发</h3>
+  <p class="w">
+    <code>running_min(joint_speed) &gt; 0.2</code>，held-out <strong>fires = 200/200</strong>。
+    一条在所有回合都触发的规则不在做选择，它是<strong>无条件恢复穿了 critic 的外衣</strong>。
+    第 4 轮就为这种情况建过对照臂 —— 同一套恢复、同一个武装步、<strong>不看状态直接发</strong>：
+  </p>
+  <div class="tw"><table>
+    <thead><tr><th>臂（held-out n=200，同块）</th><th>提升</th><th>修复 / 破坏</th><th>触发</th></tr></thead>
+    <tbody>
+      <tr><td>演化出的（critic 触发）</td><td class="n">+38.5pp</td><td class="n">85 / 8</td><td class="n">200</td></tr>
+      <tr><td><b>盲发（无条件）</b></td><td class="n"><b>+39.5pp</b></td><td class="n">86 / 7</td><td class="n">200</td></tr>
+      <tr class="hi"><td><b>演化 vs 盲发（正面对比）</b></td><td class="n"><b>−1.0pp</b></td><td class="n">1 / 3</td><td class="n">p=0.625</td></tr>
+    </tbody>
+  </table></div>
+  <p class="w">
+    <strong>+38.5pp 是真的，但它不是治理的证据。</strong>
+    这个策略弱到「总是重抓一次」本身就值 +39.5pp，critic 一点判断都没做。
+  </p>
+
+  <h3>洞：盲对照一直是我手工做的检查，不是门禁的一部分</h3>
+  <div class="call">
+    <h4>为什么前两个策略没暴露它</h4>
+    <p><code>run_campaign</code> 只把候选和「未治理基线」比。
+    <strong>一条行为上无条件的规则可以完全合法地通过</strong>，
+    而自动化流程里没有任何东西会发现 —— 盲对照只出现在我为报告手工跑的那几次里。</p>
+    <p>前两个策略没暴露它<strong>纯属运气</strong>：它们的失败足够稀疏，
+    盲发会打断本来会成功的抓取，所以在脚本策略上盲发是 <strong>−6.5pp</strong>。
+    <strong>一个只在被治理对象足够强时才成立的保护，不是保护。</strong></p>
+  </div>
+  <p class="w">
+    现在每个候选都必须和<strong>自己的盲发孪生</strong>（同恢复、同武装步、无条件触发）
+    做同种子成对对比才能被提升。
+  </p>
+
+  <h3>第一版补法太弱，在同一轮里被抓了第二次</h3>
+  <div class="call">
+    <h4>净数比大小 ≠ 有判断</h4>
+    <p>第一版判据写的是「净修复数大于孪生」。重跑之后<strong>同一条规则照样通过</strong>：
+    盲发净 34、演化净 35 —— <strong>1 个 episode 的差被当成了「做了判断」</strong>。</p>
+    <p>正确的统计量是成对正面对比，不是净数比大小。改成要求正面对比
+    <code>p &lt; α</code> 且 <code>fixed &gt; broken</code> 之后，该候选被拒
+    （<strong>+1.7%，p=1.0</strong>），第三个策略的 campaign <strong>产出零条规则</strong>。</p>
+  </div>
+
+  <h3>严格不等于正确：确认性检验</h3>
+  <p class="w">
+    一个把什么都拒掉的门禁是严格，不是正确。用新门禁在<strong>全新区块</strong>上重跑前两个策略：
+  </p>
+  <div class="tw"><table>
+    <thead><tr><th>策略 / 世代</th><th>对自己的盲发孪生</th><th>裁决</th><th>held-out</th></tr></thead>
+    <tbody>
+      <tr><td>脚本 gen1</td><td class="n"><b>+52.6%</b>，p&lt;1e-5</td><td>提升</td><td class="n">9600-9799：<b>+27.5pp</b>，55 修 <b>0 破</b></td></tr>
+      <tr><td>克隆 gen1</td><td class="n">+26.7%，p=0.00086</td><td>提升</td><td class="n">—</td></tr>
+      <tr><td>克隆 gen2</td><td class="n"><b>+29.1%</b>，p&lt;1e-5</td><td>提升</td><td class="n">9800-9999：<b>+17.0pp</b>，35 修 1 破</td></tr>
+    </tbody>
+  </table></div>
+  <p class="w">
+    <strong>两个已确立策略的规则一条没丢，而且对盲发的优势都是压倒性的。</strong>
+    真正在做判断的规则不怕这道题。
+  </p>
+
+  <div class="call ok">
+    <h4>第三个策略给出的不是失败，是这套方法的下界</h4>
+    <p><strong>当策略弱到「无条件干预」本身就有巨大收益时，判断没有可赚的空间。</strong>
+    governor 的价值区间有下界：被治理的策略必须好到
+    <strong>「什么时候插手」这件事本身值钱</strong>。</p>
+    <p>这条边界只有第三个策略能给出 —— 前两个都在下界之上，
+    <strong>而正是那条被自动化门禁放行、又被同一套纪律拦下的退化规则，把下界标了出来。</strong></p>
+  </div>
+</section>
+
+<section>
+  <p class="num">07 / 过程</p>
+  <h2>四十六轮里被自己抓到的二十一个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -671,6 +752,19 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
             <strong>两臂结果逐位相同，本身就该起疑</strong></td>
       </tr>
       <tr>
+        <td class="n">21</td>
+        <td><strong>盲对照从来不在门禁里</strong></td>
+        <td>第三个策略长出一条 fires=200/200 的规则</td>
+        <td>只和「未治理基线」比，无条件恢复就能合法通过；
+            前两个策略没暴露它<strong>纯属它们够强</strong> —— 见第 6 节</td>
+      </tr>
+      <tr>
+        <td class="n">20</td>
+        <td>补这个洞的第一版判据太弱，同一轮里又放行了同一条规则</td>
+        <td>盲发净 34、演化净 35，照样「通过」</td>
+        <td>用净数比大小当判据，1 个 episode 的差就算判断；应当用成对显著性</td>
+      </tr>
+      <tr>
         <td class="n">19</td>
         <td><strong>从 n=2 读出了一个关于离散度的结论</strong></td>
         <td>第三个区块把「跨度 1.0pp」变成 6.5pp</td>
@@ -726,7 +820,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">07 / 架构</p>
+  <p class="num">08 / 架构</p>
   <h2>从哪抄的什么</h2>
   <div class="tw"><table>
     <thead><tr><th>来自 DeepSeek Harness</th><th>来自 Zetta</th><th>Governor 自己的</th></tr></thead>
@@ -764,7 +858,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">08 / 天花板</p>
+  <p class="num">09 / 天花板</p>
   <h2>harness 不可能超过它手上的修复原语</h2>
   <p class="w" style="color:var(--ink-3)"><strong>作用域：</strong>本节的天花板全部在 <strong>Lift</strong> 上测得，
   诊断数字来自<strong>克隆策略</strong>。它是一条实测的边界，不是一条被证明的普遍定理。</p>
@@ -839,7 +933,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">09 / 关掉的方向</p>
+  <p class="num">10 / 关掉的方向</p>
   <h2>建好了、对症了、测下来更差</h2>
   <p class="w">
     上一节关掉的是修复那一侧。这一节是搜索那一侧的两个负面结果 ——
@@ -939,24 +1033,28 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">10 / 边界</p>
+  <p class="num">11 / 边界</p>
   <h2>还没做的，和已知的局限</h2>
   <ul>
     <li><strong>沙箱代码执行没做。</strong>实测 <code>(allow default)(deny file-write*)</code> 这条 SBPL 并不拦网络，
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
     <li><strong>修复原语的天花板</strong> —— 见上一节。两次手写更强原语的尝试都失败了，
       所以这不是一条待办事项，是这套方法的边界。</li>
-    <li><strong>异质失败仍然更难治理：+19.0pp 对 +26.7pp</strong>（两者都是三区块合并 n=600）。
+    <li><strong>异质失败仍然更难治理：+18.5pp 对 +26.9pp</strong>（两者都是四区块合并 n=800）。
       克隆策略现在能长出两条规则的链，见第 5 节 —— 这一条取代了原来的「失败形态是我们设计的」。</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
       真正的 VLA 会有感知本身的失败模式，这里没有。</li>
     <li><strong>贪心收敛的结构性风险仍在，但 beam 不是解药 ——</strong> 已经测了两次（第 24、40 轮），
-      第二次还先修掉了 beam 自己的三个实验缺陷，结果仍是同块 <strong>+15.0pp 对贪心 +23.0pp、成本 3 倍</strong>（见第 9 节）。
+      第二次还先修掉了 beam 自己的三个实验缺陷，结果仍是同块 <strong>+15.0pp 对贪心 +23.0pp、成本 3 倍</strong>（见第 10 节）。
       没试过的是「单独不显著但组合显著」的候选批量入选。</li>
     <li><strong>只有一个物理场景族。</strong>三个任务共享 Panda 臂和桌面抓取。真正的跨形态迁移没碰。</li>
+    <li><strong>这套方法有一条实测的下界，第三个策略标出了它。</strong>
+      在基线 15.8% 的弱克隆上，campaign 在新门禁下<strong>产出零条规则</strong> ——
+      因为「总是重抓一次」本身就值 +39.5pp，判断没有可赚的空间。
+      <strong>被治理的策略必须好到「什么时候插手」这件事本身值钱。</strong>见第 6 节。</li>
     <li><strong>几处结论的作用域比它们看起来窄，逐一标注在正文里：</strong>
       跨任务迁移（第 4 节）只在<strong>脚本策略</strong>上做过 —— 克隆策略是在 Lift 上训的，根本执行不了 Stack；
-      修复原语的天花板（第 8 节）只在 <strong>Lift</strong> 上测过；
+      修复原语的天花板（第 9 节）只在 <strong>Lift</strong> 上测过；
       「瓶颈在哪一侧」是<strong>策略</strong>的性质；「检测还是修复」是<strong>当前 bundle</strong> 的性质。
       <strong>把一次测量的适用范围写宽，是本项目犯过三次的同一类错误。</strong></li>
     <li><strong>没有调用过任何真实语言模型。</strong>proposer 接缝建好并跑通了，
@@ -967,12 +1065,12 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">11 / 复现</p>
+  <p class="num">12 / 复现</p>
   <h2>怎么跑</h2>
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 87 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 90 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -991,7 +1089,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  43 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，43 篇过程记录。
+  46 轮自主循环，3800+ 行实现 + 1500 行测试，90 个测试全绿，46 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
