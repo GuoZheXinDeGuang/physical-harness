@@ -218,3 +218,26 @@ def test_earliness_weight_changes_which_trigger_wins():
     at1 = search_triggers(traces, labels, privilege_budget=0, top_k=1, earliness=1.0)
     assert at0 and at1
     assert at0[0].trigger != at1[0].trigger or at0[0].score != at1[0].score
+
+
+def test_zero_fp_penalty_admits_the_degenerate_fire_on_everything_trigger():
+    """The penalty's one job. At 0.0 the search picks a trigger with recall 1.00
+    AND false-positive rate 1.00 -- exactly round 4's blind-firing control, which
+    scored -4.0pp. Any positive value excludes it."""
+    import numpy as np
+    from governor.search import search_triggers
+
+    traces, labels = [], []
+    for i in range(30):
+        failing = i % 2 == 0
+        traces.append({
+            "observable.finger_gap": np.full(60, 0.001 if failing else 0.04),
+            "observable.eef_z": np.full(60, 1.0),          # constant: fires on everything
+            "observable.gripper_effort": np.zeros(60),
+            "observable.joint_speed": np.zeros(60),
+        })
+        labels.append(not failing)
+    lax = search_triggers(traces, labels, privilege_budget=0, top_k=1, fp_penalty=0.0)[0]
+    strict = search_triggers(traces, labels, privilege_budget=0, top_k=1, fp_penalty=1.2)[0]
+    assert strict.false_positive < 1.0, "a positive penalty must exclude fire-on-everything"
+    assert strict.false_positive <= lax.false_positive

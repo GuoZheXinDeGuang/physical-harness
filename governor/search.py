@@ -200,7 +200,13 @@ def earliest_divergence(traces, labels, feature: str, sigma: float = GENERATION_
 #: positive weight, and +23.5pp against +18.5pp on a fresh held-out block. The
 #: weight was worth -5.0pp.
 DEFAULT_EARLINESS = 0.0
-#: Weight on false positives, likewise never calibrated.
+#: Weight on false positives. Swept 0 / 0.6 / 1.2 / 2.5 / 5.0 and INSENSITIVE:
+#: every value at or above 0.6 selects the same trigger and scores identically
+#: (+24.0%, zero regressions, on the selection block). Its one job is to exclude
+#: the degenerate candidate -- at 0.0 the search picks `eef_z > 0.839`, recall
+#: 1.00 with false-positive rate 1.00, which fires on every episode and scores
+#: +1.3% with 36 fixed against 34 broken. That is precisely the blind-firing arm
+#: round 4 used as a control (-4.0pp). Any positive value does the job; 1.2 stays.
 DEFAULT_FP_PENALTY = 1.2
 
 
