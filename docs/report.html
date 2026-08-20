@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 27 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 30 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -116,13 +116,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
   <div class="band">
     <div><span class="k">+30.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>46.5% → 77.0%，全新区块 n=200</span></div>
-    <div><span class="k">+12.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
+    <div><span class="k">+11.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
-    <div><span class="k">−5.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>目标函数里的 earliness 权重</span></div>
+    <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">77</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
+    <div><span class="k">79</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">当前数字取自 Round 27（标定后的目标函数、全新 held-out 区块 6000-6199）、Round 10 的迁移实验与 Round 14 的克隆策略验收。每个 held-out 区块只评分一次。</p>
+  <p class="bandnote">当前数字取自 Round 27（脚本策略，全新 held-out 区块 6000-6199）、Round 29（克隆策略，全新区块 7000-7199）与 Round 10 的迁移实验。两者都在标定后的目标函数下取得。每个 held-out 区块只评分一次（7000-7199 承载了一次事先定好的两臂对照，两臂都报）。</p>
 </header>
 
 
@@ -197,6 +197,24 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     抓住它的不是代码审查，而是第 25 轮接进来的一个 LLM proposer ——
     它不知道有 earliness 这回事，于是挑了个我的目标函数会扣分的候选，然后赢了 5.5pp。
     扫一遍权重（0 / 0.1 / 0.25 / 0.5）确认：<strong>W=0 最优，那个权重值 −5.0pp。</strong></p>
+  </div>
+  <div class="call ok">
+    <h4>换一种策略，同一个常数值的不是 5pp，是全部</h4>
+    <p>第 29 轮把这个常数拿到行为克隆策略上做同块成对对照 —— 同一批 dev 种子、同一个
+    held-out 区块，只差那一个权重：</p>
+    <div class="tw"><table>
+      <thead><tr><th>earliness</th><th>选出的触发器</th><th>dev 门禁</th><th>held-out</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td class="n">0.0（标定后）</td><td><code>finger_gap &gt; 0.079</code> @t=58</td><td class="n">+13.3%，8 修 0 破，<b>过</b></td><td class="n"><b>+11.0pp</b>，22 修 0 破</td></tr>
+        <tr><td class="n">0.25（旧）</td><td><code>running_min(eef_z) &gt; 0.904</code> @t=28</td><td class="n">−28.3%，10 修 <b>27 破</b>，拒</td><td class="n"><b>0 条规则</b></td></tr>
+      </tbody>
+    </table></div>
+    <p>机制是可读的：这一项奖励提前量，于是它挑了个在 t=28 就触发的候选 ——
+    那时机械臂还在下行，恢复程序打断了本来会成功的抓取，<strong>27 个破坏</strong>。
+    <strong>提前量若以特异性为代价买来，价值是负的。</strong>
+    dev 门禁把它挡在了 held-out 之外，这正是门禁存在的意义。</p>
+    <p><strong>在脚本策略上这个常数值 5pp，在克隆策略上它是「有 governor」和「没有 governor」的差别。</strong>
+    一个从没人验证过的默认值，能决定整套方法产不产出东西。</p>
   </div>
 </section>
 
@@ -461,11 +479,19 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     而特权在这里同样买不到东西（真值 +12.5 对板载 +12.0，在噪声内），
     这是特权预算论据的<strong>第四条独立证据</strong>，且是在没人设计的失败上取得的。
   </p>
+  <p class="w">
+    <strong>第 29 轮补充：</strong>上表是旧目标函数下、在自己的区块上取得的，不能和后来的数字横比。
+    标定后在全新区块 7000-7199 重跑完整 campaign：基线 26.5% → <strong>37.5%，+11.0pp，
+    22 修复 / 0 破坏，零特权</strong>。消融梯这次把两件事干净地分开了 ——
+    选出的触发器是纯本体感受（<code>finger_gap</code>），物体位姿噪声动不了它，
+    四档消融下<strong>触发次数恒为 86</strong>；掉下去的是恢复程序的修复率（22 → 11 → 6）。
+    <strong>critic 免疫感知噪声，recovery 不免疫</strong>，这是两个可以分别定价的部件。
+  </p>
 </section>
 
 <section>
   <p class="num">06 / 过程</p>
-  <h2>二十二轮里被自己抓到的十三个错误</h2>
+  <h2>三十轮里被自己抓到的十五个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -549,6 +575,21 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td>探测段 60/60 从未横移</td>
         <td>前一段让夹爪张着，固定步数把还在合拢的读成握住</td>
       </tr>
+      <tr>
+        <td class="n">14</td>
+        <td><strong>A/B 的两臂跑成了同一臂</strong></td>
+        <td>离线重打分预测的 argmax 和 campaign 实际选的对不上</td>
+        <td><code>def f(..., w=DEFAULT_W)</code> 的默认值在 def 时绑定，
+            import 后改 <code>mod.DEFAULT_W</code> 够不到它。
+            <strong>两臂结果逐位相同，本身就该起疑</strong></td>
+      </tr>
+      <tr>
+        <td class="n">15</td>
+        <td>样本外筛选里的目标函数权重写成字面量</td>
+        <td>读代码时顺着上一条查出来的</td>
+        <td>第 26 轮改了默认值，筛选路径仍按旧权重排序 ——
+            同一次 campaign 的两半对「什么算好触发器」意见不一致</td>
+      </tr>
     </tbody>
   </table></div>
 
@@ -595,6 +636,11 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td>fail-closed 的安全默认</td>
         <td>preregistration + 内容哈希产物</td>
         <td><strong>盲对照</strong>：证明赢的是判断不是时间</td>
+      </tr>
+      <tr>
+        <td>配置分层（profile / bundle / patch）：改了什么是可 diff 的</td>
+        <td>preregistration 冻结实验参数</td>
+        <td><strong>目标函数的手调常数也进预注册</strong>：能改变结论的东西必须可审计</td>
       </tr>
     </tbody>
   </table></div>
@@ -659,7 +705,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
     <li><strong>修复原语的天花板</strong> —— 见上一节。两次手写更强原语的尝试都失败了，
       所以这不是一条待办事项，是这套方法的边界。</li>
-    <li><strong>异质失败仍然更难治理：+12.0pp 对 +17.5pp</strong>，且克隆策略上只长出一条规则。
+    <li><strong>异质失败仍然更难治理：+11.0pp 对 +30.5pp</strong>，且克隆策略上只长出一条规则。
       （这一条取代了原来的「失败形态是我们设计的」—— 克隆策略已经跑通并通过门禁，见第 5 节。）</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
       真正的 VLA 会有感知本身的失败模式，这里没有。</li>
@@ -677,7 +723,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 77 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 79 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -696,7 +742,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  27 轮自主循环，3600+ 行实现 + 1400 行测试，77 个测试全绿，27 篇过程记录。
+  30 轮自主循环，3600+ 行实现 + 1400 行测试，79 个测试全绿，30 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
