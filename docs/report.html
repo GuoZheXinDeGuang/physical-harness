@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 33 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 39 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -116,13 +116,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
   <div class="band">
     <div><span class="k">+25.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>两个独立区块合并 n=400</b>，102 修 0 破</span></div>
-    <div><span class="k">+17.5<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>两条规则的链</b>，失败不是任何人设计的</span></div>
+    <div><span class="k">+17.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>同样两个独立区块</b>，71 修 3 破</span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">81</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
+    <div><span class="k">87</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">脚本策略的数字是 Round 27（区块 6000-6199，+30.5pp）与 Round 32（区块 8200-8399，+20.5pp）两次独立评分的合并；克隆策略取自 Round 32（区块 8000-8199）；迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节。</b></p>
+  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略 6000-6199（+30.5pp）与 8200-8399（+20.5pp）；克隆策略 8000-8199（+17.5pp）与 8400-8599（+16.5pp）。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
 </header>
 
 
@@ -533,6 +533,11 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <p><strong>held-out（全新区块 8000-8199，只评一次，n=200）：28.0% → 45.5%，+17.5pp，
     35 修复 / 0 破坏，零特权。</strong>
     消融里真值与板载完全相同（45.5% = 45.5%），特权买不到东西的<strong>第五条独立证据</strong>。</p>
+    <p><strong>克隆策略的复现比脚本策略紧得多。</strong>同一套两条规则的 bundle
+    在第二个全新区块 8400-8599 上是 <strong>41.0% → 57.5%，+16.5pp</strong>（36 修 3 破），
+    与第一个区块的 +17.5pp <strong>只差 1.0pp</strong> ——
+    脚本策略那一对差了 10.0pp。合并 n=400：<strong>34.5% → 51.5%，+17.0pp，71 修 3 破</strong>。
+    区块噪声不是常数，它取决于基线离 50% 有多远和失败的同质程度。</p>
     <p><strong>我是在已经知道那条候选符号正确的情况下改的规划器，所以必须自证不是在调旋钮。</strong>
     用同一份脚本策略的预注册、只换一个全新 held-out 区块，在新规划器下重跑：
     第 1 代与第 27 轮<strong>逐位相同</strong>（n=60，15 修 0 破，p=6.1e-5），
@@ -542,7 +547,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
 <section>
   <p class="num">06 / 过程</p>
-  <h2>三十三轮里被自己抓到的十六个错误</h2>
+  <h2>三十九轮里被自己抓到的十七个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -635,6 +640,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
             <strong>两臂结果逐位相同，本身就该起疑</strong></td>
       </tr>
       <tr>
+        <td class="n">17</td>
+        <td><strong>设计了一个分不清两种解释的对照</strong></td>
+        <td>预筛臂输得太惨，反而可疑</td>
+        <td>预筛只给搜索一半样本，两臂的搜索证据不等 ——
+            「预筛有害」和「30 个 episode 太少」在这个设计下无法区分</td>
+      </tr>
+      <tr>
         <td class="n">16</td>
         <td><strong>功效规划器把「介入」当成了「改变结局」</strong></td>
         <td>一个 3 修 0 破的候选死于 p=0.25</td>
@@ -719,7 +731,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <div class="tw"><table>
     <thead><tr><th>候选解释</th><th>实测</th><th>结论</th></tr></thead>
     <tbody>
-      <tr><td>检测不够</td><td>54 个残余失败里 <strong>42 个已被检测到</strong>，只有 12 个漏检</td><td>否</td></tr>
+      <tr><td>检测不够</td><td>54 个残余失败里 <strong>42 个已被检测到</strong>，只有 12 个漏检<br><span style="color:var(--ink-3);font-size:.9em">（后续更正：这个比例是<strong>当前 bundle</strong> 的属性，不是策略的。同一策略在单规则下是 56/44，长出第二条规则后回到 75/25 —— 见下方）</span></td><td>否<span style="color:var(--ink-3)">（有条件）</span></td></tr>
       <tr><td>状态不可恢复</td><td>42 个里 <strong>39 个把夹爪送到了 3cm 以内</strong></td><td>否</td></tr>
       <tr><td>接近的形状不对</td><td>四种不同形状，<strong>现役最好</strong>（+11.1% vs 7.8/4.4/2.2）</td><td>否</td></tr>
       <tr><td>感知精度不够</td><td>给<strong>完美感知</strong>，最好仍只有 15.6%</td><td>不充分</td></tr>
@@ -747,6 +759,25 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     改成 settle 判据后搜索会启动了：<strong>14/60 次启动，成功 0/14</strong>。</p>
   </div>
 
+  <div class="call">
+    <h4>第三次：允许再试一次 —— +1.0pp，噪声内</h4>
+    <p>把这 65 个修复缺口的终态量清楚之后，机制是明确的：恢复程序在
+    <strong>离物体 1.4cm 处夹空</strong>，然后<strong>无条件交还</strong>，
+    策略从抬升阶段恢复、举着空夹爪走到 12.8cm 外。既然没有第二次机会，就给它第二次：
+    <code>max_invocations</code> 1 → 2 → 3 在选择切片上是 <strong>56.5% → 57.5% → 58.0%</strong>。
+    <strong>在 ±7pp 区块噪声之内。</strong>重试是用新抽的感知把同一个开环程序再跑一遍 ——
+    换来的是另一次 1.4cm 误差，是抽奖不是修复。</p>
+  </div>
+  <div class="call ok">
+    <h4>而且瓶颈根本不在感知那一侧</h4>
+    <p>消融梯早就答了这个问题，只是之前没这么读：
+    <strong>给恢复程序物体的精确真值，结果与板载感知完全相同（45.5% = 45.5%）。</strong>
+    既然精确位置也不改变结果，那 1.4cm 就不是感知造成的，
+    是固定步数的开环程序放不准。</p>
+    <p>这让「特权买不到东西」有了更强的读法：<strong>不是噪声小到无所谓，
+    是瓶颈根本不在感知这一侧。</strong>零特权下唯一可用的信号 <code>finger_gap</code>
+    只告诉你「miss 了」，不告诉你「往哪边偏」—— 而找方向正是上面第二次尝试输掉的那件事。</p>
+  </div>
   <p class="w">
     <strong>这条限制对 Zetta 更硬。</strong>它的恢复步骤从一个已发布的工具目录里组装，
     天花板由那个目录的能力决定。而真正抬得起来的东西 ——
@@ -756,7 +787,68 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">09 / 边界</p>
+  <p class="num">09 / 关掉的方向</p>
+  <h2>建好了、对症了、测下来更差</h2>
+  <p class="w">
+    上一节关掉的是修复那一侧。这一节是搜索那一侧的两个负面结果 ——
+    <strong>都不是「没做」，是做了、量了、比不做差。</strong>
+  </p>
+
+  <h3>样本外预筛：三臂同块，端到端更差</h3>
+  <p class="w">
+    第 7 轮就建好了预筛：在一半 episode 上搜索，在另一半上重新打分，
+    让只拟合了搜索那一半的候选沉下去。当时测出一个候选的收缩是 <strong>+0.45</strong> ——
+    <strong>偏差是真的。</strong>但它默认关闭，从没有任何一次 campaign 开过，
+    而<strong>它从没被端到端测过</strong>。
+  </p>
+  <div class="tw"><table>
+    <thead><tr><th>臂（held-out 8400-8599，事先定好，三个都报）</th><th>长出的规则</th><th>held-out</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td>预筛<b>关</b></td><td class="n">2</td><td class="n"><b>+16.5pp</b>，36 修 3 破</td></tr>
+      <tr><td>预筛<b>开</b>，未补偿</td><td class="n"><b>0</b></td><td class="n">0.0pp（gen1 −23.3%，13 修 27 破，被拒）</td></tr>
+      <tr><td>预筛<b>开</b>，补偿到同等搜索证据</td><td class="n">1</td><td class="n">+10.0pp，20 修 0 破</td></tr>
+    </tbody>
+  </table></div>
+  <div class="call">
+    <h4>第一次对照是不公平的，我自己拆了它</h4>
+    <p>预筛把每代样本切一半：关的那臂搜索看 60 个 episode，开的那臂只看 30 个。
+    <strong>那这测的是「30 个太少」还是「预筛有害」？分不清就不算结论。</strong></p>
+    <p>规划器本来不知道这个耦合。加了 <code>search_fraction</code> 让它在预筛开启时
+    把种子数按 0.5 放大，gen1 从 60 涨到 120 —— <strong>候选立刻从 <code>eef_z</code>（−23.3%）
+    变回 <code>finger_gap</code>（+9.2%，11 修 0 破）</strong>，这一臂从颗粒无收变成 +10.0pp。
+    补偿救了它一大截，但<strong>给了同等搜索证据之后预筛仍然更差</strong>，
+    而且种子需求翻倍，第二代要 526 个而水库只有 400，直接被截断。</p>
+    <p><strong>预筛用一个更嘈杂的估计换掉一个有偏的估计；在这个样本量下，方差压过偏差。</strong>
+    默认值不变，但理由从「没人开过」变成「测过端到端，更差」。</p>
+  </div>
+
+  <h3>合取 critic 语言：前提验证为负，没有造</h3>
+  <p class="w">
+    最该被质疑的一点是：所谓「演化 critic」其实是
+    <code>4 个零特权特征 × 4 个 reducer × 2 个算符 × 3 个 dwell × 阈值 × 武装时刻</code>
+    的<strong>阈值检测器</strong> —— 没有合取、没有序列、没有算术。
+    Zetta 的 DSL 也一样，而且它真正的代码通路在发布版里是关掉的，
+    但「我们和它一样」不是辩护。
+  </p>
+  <p class="w">
+    所以按前两次造原语的教训，<strong>先不实现语言，在已录轨迹上离线枚举合取</strong>：
+    最好的单条件 <code>gripper_effort &gt; 0.0159</code> 得分 <strong>+0.672</strong>，
+    132 个两两合取里最好的 <strong>+0.619</strong>。<strong>合取更差 0.053。</strong>
+    前五名全是「最好的那个单条件 AND 一个只砍掉真阳性的条件」——
+    AND 只会降 recall，而没有哪一对能靠降 fpr 赚回来。
+  </p>
+  <div class="call ok">
+    <h4>顺带否掉的一个「被漏掉的强候选」</h4>
+    <p>枚举时注意到 <code>gripper_effort</code> 在残余种群上排第一，而 campaign 提升的两条规则
+    全在 <code>finger_gap</code> 上，一度怀疑搜索漏了它。在那一代自己的切片上<strong>逐位复现</strong>
+    了搜索结果 —— 没有 bug，只是 <strong>argmax 随切片翻转而前二名集合稳定</strong>。</p>
+    <p>后来预筛那一臂真的把它选了出来：<strong>265 次触发，24 修 13 破，p=0.099，被门禁拒。</strong>
+    <strong>样本内分离度高，不等于干预有用。</strong></p>
+  </div>
+</section>
+
+<section>
+  <p class="num">10 / 边界</p>
   <h2>还没做的，和已知的局限</h2>
   <ul>
     <li><strong>沙箱代码执行没做。</strong>实测 <code>(allow default)(deny file-write*)</code> 这条 SBPL 并不拦网络，
@@ -776,12 +868,12 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">10 / 复现</p>
+  <p class="num">11 / 复现</p>
   <h2>怎么跑</h2>
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 81 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 87 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -800,7 +892,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  33 轮自主循环，3600+ 行实现 + 1400 行测试，81 个测试全绿，33 篇过程记录。
+  39 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，39 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
