@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 39 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 41 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -116,13 +116,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
   <div class="band">
     <div><span class="k">+25.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>两个独立区块合并 n=400</b>，102 修 0 破</span></div>
-    <div><span class="k">+17.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>同样两个独立区块</b>，71 修 3 破</span></div>
+    <div><span class="k">+19.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>三个独立区块 n=600</b>，117 修 3 破</span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
     <div><span class="k">87</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略 6000-6199（+30.5pp）与 8200-8399（+20.5pp）；克隆策略 8000-8199（+17.5pp）与 8400-8599（+16.5pp）。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
+  <p class="bandnote">两个策略的数字都是两个独立区块的合并：脚本策略 6000-6199（+30.5pp）与 8200-8399（+20.5pp）；克隆策略 8000-8199（+17.5pp）、8400-8599（+16.5pp）与 8600-8799（+23.0pp）。迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节 —— 也正因如此这里报的是合并值。</b></p>
 </header>
 
 
@@ -533,11 +533,26 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <p><strong>held-out（全新区块 8000-8199，只评一次，n=200）：28.0% → 45.5%，+17.5pp，
     35 修复 / 0 破坏，零特权。</strong>
     消融里真值与板载完全相同（45.5% = 45.5%），特权买不到东西的<strong>第五条独立证据</strong>。</p>
-    <p><strong>克隆策略的复现比脚本策略紧得多。</strong>同一套两条规则的 bundle
-    在第二个全新区块 8400-8599 上是 <strong>41.0% → 57.5%，+16.5pp</strong>（36 修 3 破），
-    与第一个区块的 +17.5pp <strong>只差 1.0pp</strong> ——
-    脚本策略那一对差了 10.0pp。合并 n=400：<strong>34.5% → 51.5%，+17.0pp，71 修 3 破</strong>。
-    区块噪声不是常数，它取决于基线离 50% 有多远和失败的同质程度。</p>
+    <p><strong>同一套两条规则的 bundle 现在在三个全新区块上各评过一次：</strong></p>
+    <div class="tw"><table>
+      <thead><tr><th>held-out 区块</th><th>基线</th><th>受治理</th><th>delta</th><th>修复 / 破坏</th></tr></thead>
+      <tbody>
+        <tr><td class="n">8000-8199</td><td class="n">28.0%</td><td class="n">45.5%</td><td class="n">+17.5pp</td><td class="n">35 / 0</td></tr>
+        <tr><td class="n">8400-8599</td><td class="n">41.0%</td><td class="n">57.5%</td><td class="n">+16.5pp</td><td class="n">36 / 3</td></tr>
+        <tr><td class="n">8600-8799</td><td class="n">28.0%</td><td class="n">51.0%</td><td class="n">+23.0pp</td><td class="n">46 / 0</td></tr>
+        <tr class="hi"><td class="n">合并 n=600</td><td class="n">32.3%</td><td class="n">51.3%</td><td class="n"><b>+19.0pp</b></td><td class="n">117 / 3</td></tr>
+      </tbody>
+    </table></div>
+    <div class="call">
+      <h4>这里撤回一个我在上一版报告里下的结论</h4>
+      <p>只有前两个区块时，我写过「克隆策略的复现比脚本策略紧得多（只差 1.0pp，
+      脚本差 10.0pp）」。第三个区块给出 <strong>+23.0pp</strong>，
+      跨度立刻变成 <strong>6.5pp（sd 3.5pp）</strong>，与脚本策略同一量级。</p>
+      <p><strong>两个样本估不出离散度。</strong>那句话是从 n=2 里读出来的，
+      而 n=2 唯一能告诉你的是两个点之间的距离，不是分布的宽度。
+      现在能说的是：三区块的 sd 3.5pp 与前面按 McNemar 算出的 SE 3-4pp 相符，
+      而脚本策略只有两个区块，它那个 10.0pp <strong>同样不是离散度的估计</strong>。</p>
+    </div>
     <p><strong>我是在已经知道那条候选符号正确的情况下改的规划器，所以必须自证不是在调旋钮。</strong>
     用同一份脚本策略的预注册、只换一个全新 held-out 区块，在新规划器下重跑：
     第 1 代与第 27 轮<strong>逐位相同</strong>（n=60，15 修 0 破，p=6.1e-5），
@@ -547,7 +562,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
 <section>
   <p class="num">06 / 过程</p>
-  <h2>三十九轮里被自己抓到的十七个错误</h2>
+  <h2>四十一轮里被自己抓到的十九个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -638,6 +653,19 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td><code>def f(..., w=DEFAULT_W)</code> 的默认值在 def 时绑定，
             import 后改 <code>mod.DEFAULT_W</code> 够不到它。
             <strong>两臂结果逐位相同，本身就该起疑</strong></td>
+      </tr>
+      <tr>
+        <td class="n">19</td>
+        <td><strong>从 n=2 读出了一个关于离散度的结论</strong></td>
+        <td>第三个区块把「跨度 1.0pp」变成 6.5pp</td>
+        <td>两个样本只能告诉你两点之间的距离，不是分布的宽度 ——
+            而这条已经写进上一版报告了</td>
+      </tr>
+      <tr>
+        <td class="n">18</td>
+        <td>修一个样本量不等的对照时，引入了第三次样本量不等</td>
+        <td>beam 第 2 代的 n 仍钉在种子切片大小</td>
+        <td>按「分支深度」判断，而分支提升后第 2 代开始时深度仍是 1</td>
       </tr>
       <tr>
         <td class="n">17</td>
@@ -822,6 +850,45 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     默认值不变，但理由从「没人开过」变成「测过端到端，更差」。</p>
   </div>
 
+  <h3>beam 搜索：被一个错误的理由关掉，重开，修了三次实验，仍然是负面</h3>
+  <p class="w">
+    第 24 轮试过 beam：并行长 K 条链，用一个独立的选择区块挑赢家。当时三条分支全部止步深度 1，
+    结论写的是「第二条 critic 无事可做」。<strong>那个理由后来被推翻了</strong> ——
+    它引的是一次归因，而那次归因是<strong>欠采样</strong>的产物（功效规划器把「候选会介入」
+    当成了「候选会改变结局」）。理由失效，结论就必须重测。
+  </p>
+  <div class="call">
+    <h4>但直接重跑等于重跑同一个坏实验</h4>
+    <p><code>beam.py</code> 写于第 24 轮，带着三个当时看不见的缺陷，
+    <strong>每一个都会独立地让 beam 显得更差</strong>：</p>
+    <p>① 分支的样本量仍按被推翻的固定假设 0.7 定，过了深度 1 就欠采样。
+    ② <strong>用 120 个 episode 搜索种子候选，却在 60 个上过门禁</strong> ——
+    而本项目自己的规则是「测量、搜索、门禁必须同切片，否则候选在一个它没被拟合过的种群上受审」，
+    <strong>beam 违反了这条不变量</strong>。
+    ③ 我修 ② 时按「分支深度」判断，太宽：分支提升后第 2 代开始时深度仍是 1，
+    于是第 2 代也被钉在种子切片的大小上 —— <strong>我自己引入了第三次样本量不等</strong>。</p>
+    <p>每修一次都真跑一次。b0 分支的命运随之改变：p=0.092 被拒 → 通过第 1 代（+9.2%）
+    → 第 2 代拿到 n=152 后仍然停住。</p>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>臂（held-out 8600-8799，同块）</th><th>长出的规则</th><th>held-out</th><th>成本</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td>贪心</td><td class="n">2</td><td class="n"><b>+23.0pp</b>，46 修 0 破</td><td class="n">1x</td></tr>
+      <tr><td>beam（宽度 3）</td><td class="n">1</td><td class="n">+15.0pp，34 修 4 破</td><td class="n"><b>3x</b></td></tr>
+    </tbody>
+  </table></div>
+  <p class="w">
+    <strong>机制比第 24 轮的解释深：</strong>排第 2、第 3 的种子候选不是「差一点」，
+    是<strong>主动有害</strong> —— 它们各自的第 1 代门禁是 <strong>−30.0%</strong> 和 <strong>−5.8%</strong>。
+    <strong>加宽 beam 加进来的不是次优解，是有害解。</strong>
+    而且 beam 的根是在 120 个 episode 上搜出来的，比贪心在 60 个上搜出来的<strong>更差</strong>，
+    且贪心那条根能长出第二条规则，beam 的不能。
+  </p>
+  <p class="w" style="color:var(--ink-3)">
+    <strong>限定：</strong>beam 的根来自一个更大的种子搜索（120 对 60），这个差别本身就让它吃亏；
+    严格的「beam ⊇ 贪心」变体没有跑。但两条额外分支主动有害这一点与种子切片无关。
+  </p>
+
   <h3>合取 critic 语言：前提验证为负，没有造</h3>
   <p class="w">
     最该被质疑的一点是：所谓「演化 critic」其实是
@@ -892,7 +959,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  39 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，39 篇过程记录。
+  41 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，41 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
