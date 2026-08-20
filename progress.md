@@ -186,3 +186,41 @@ campaign 生命周期（多代原子增量 + preregistration + 内容哈希产�
    换 provider 即可。用 dsh 的 mock server 思路验证，零 API 成本。
 5. **recovery 也进演化**：现在 recovery 程序是手写常量，只有 trigger 在演化。
    让 proposer 同时搜索恢复程序（阶段与时长）是更大的搜索空间，也是更真的「自演化」。
+
+## Round 5 — 2026-08-19 — 持久日志 + 离线审计 + shadow replay
+
+### 做成了什么
+
+1. `governor/episode_log.py`：行日志（`seq==行号`）+ 内容寻址列块。
+   **链式承诺** `h_t = sha256(h_{t-1} ‖ digest(view_t))` —— 每 episode 一个 32 字节值就能
+   承诺整条决策序列，比每步存 sha256 便宜得多，且审计是从存储值重算而非比对缓存，不循环。
+2. `governor/audit.py`：离线审计（40/40 通过；改一个存储值被抓）+ shadow replay。
+3. **shadow replay 抓到一个真 bug**：离线预测 vs 实跑 40 个里 6 个不一致，
+   根因是 `governed_rollout` 用 1-based 步索引而 trace/search 是 0-based，
+   每个触发器早武装一步。修正后 40/40 一致。
+4. **重跑 campaign 重新赚数字**：+27.5pp held-out（n=200，零特权），每档消融 0 破坏。
+   （round 4 的 +22.0pp 作废：那是靠误触发换来的，且有 4 个破坏。）
+
+### 什么没成 / 教训
+
+- **单元测试和端到端成功率都抓不到这个 bug。** 每个模块自己是自洽的，
+  而 bug 让数字更好看（+22.0 > 修正后同规则的 +17.5）。
+  只有「离线重放必须与在线逐步一致」这个交叉检验能暴露它。
+  => 日志的价值不是记账，是可证伪性基础设施。
+- 审计一开始因为一个坏块直接抛异常中断整轮，已改成 per-episode 容纳。
+
+### 下一轮种子
+
+shadow replay 接进 proposer 做离线预筛：候选池从几十筛到 top-3 再花真实 rollout。
+
+## Frontier（Round 5 后更新）
+
+**当前天花板：** 零特权两条规则，held-out n=200 上 +27.5pp、0 破坏，通过盲对照，日志可离线审计。
+
+**下一个 frontier：**
+1. **shadow-replay 预筛**（Round 6 计划）：把搜索空间放大一个数量级而不增加真实 rollout。
+2. **recovery 也进演化**：现在 recovery 程序是手写常量，只有 trigger 在演化。
+   让 proposer 同时搜索恢复程序（阶段与时长）才是更真的自演化。
+3. **跨任务迁移**：stack / pickcan，验证规则链能否 zero-shot 迁移。
+4. **早期预警 × 廉价 recovery**：用误报成本给早期预警定价。
+5. **LLM proposer**：契约已是 `(traces, labels) -> Rule`，换 provider 即可，用 mock server 验证。
