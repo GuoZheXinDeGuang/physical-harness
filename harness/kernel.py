@@ -33,7 +33,7 @@ class Kernel:
             if d.name in self._defs:
                 raise ValueError(f"duplicate capability definition: {d.name}")
             self._defs[d.name] = d
-        self._providers: dict[str, tuple[Any, str]] = {}
+        self._providers: dict[str, tuple[Any, str, dict]] = {}
         self._resolutions: list[Resolution] = []
         self._privileged_used: set[str] = set()
         self._log = log
@@ -48,8 +48,20 @@ class Kernel:
             raise MissingProvider(f"{name} has no provider mounted")
         return self._providers[name][1]
 
+    def provider_params(self, name: str) -> dict:
+        """The Mount params the provider was constructed with.
+
+        Workers reconstruct providers from the bare ref string, which cannot
+        carry params; callers that stamp refs onto specs must check this is
+        empty and fail loudly instead of letting params silently vanish.
+        """
+        if name not in self._providers:
+            raise MissingProvider(f"{name} has no provider mounted")
+        return dict(self._providers[name][2])
+
     # -- mounting -----------------------------------------------------------
-    def provide(self, name: str, provider: Any, *, ref: str) -> None:
+    def provide(self, name: str, provider: Any, *, ref: str,
+                params: dict | None = None) -> None:
         definition = self._defs.get(name)
         if definition is None:
             raise UnknownCapability(name)
@@ -58,16 +70,17 @@ class Kernel:
         if not isinstance(provider, definition.contract):
             raise ContractViolation(
                 f"{ref} does not satisfy {definition.contract.__name__} for {name}")
-        self._providers[name] = (provider, ref)
+        self._providers[name] = (provider, ref, dict(params or {}))
         if self._log is not None:
             self._log.append("capability.provide",
                              {"capability": name, "ref": ref,
+                              "params": dict(sorted((params or {}).items())),
                               "privileged": definition.privileged})
 
     def mount(self, plan: MountPlan) -> None:
         for m in plan.mounts:
             self.provide(m.capability, load_provider(m.provider, m.params),
-                         ref=m.provider)
+                         ref=m.provider, params=dict(m.params))
         if self._log is not None:
             self._log.append("kernel.mount",
                              {"plan_sha": plan.sha(),
@@ -80,7 +93,7 @@ class Kernel:
             raise UnknownCapability(name)
         if name not in self._providers:
             raise MissingProvider(f"{name} has no provider mounted")
-        provider, ref = self._providers[name]
+        provider, ref, _params = self._providers[name]
         if definition.privileged:
             would_use = self._privileged_used | {name}
             if self._budget is not None and len(would_use) > self._budget:

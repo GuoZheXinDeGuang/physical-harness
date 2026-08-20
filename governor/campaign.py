@@ -125,6 +125,17 @@ class Preregistration:
     prior_judgement_yield: float = 0.35
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
+    #: L0 capability-seam refs ("module:factory" strings, harness/registry.py):
+    #: which embodiment.env / policy.driver provider built this run's episodes.
+    #: None keeps every existing archived campaign's replay path byte-identical
+    #: (see governor.env.make_env / governor.policy.make_driver's dispatch --
+    #: no ref falls back to the original code exactly). Threaded into every
+    #: EpisodeSpec by `_specs` below. Preregistered rather than passed
+    #: out-of-band because ARCHITECTURE.md's rule is that anything able to move
+    #: a conclusion enters the content hash, and which provider built an
+    #: episode qualifies even when that provider is a byte-identical adapter.
+    env_provider: str | None = None
+    policy_provider: str | None = None
 
     def __post_init__(self) -> None:
         overlap = set(self.dev) & set(self.heldout)
@@ -168,7 +179,9 @@ class CampaignStore:
 
 def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
     return [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
-                        percept_noise=prereg.percept_noise) for s in seeds]
+                        percept_noise=prereg.percept_noise,
+                        env_provider=prereg.env_provider,
+                        policy_provider=prereg.policy_provider) for s in seeds]
 
 
 def propose_rule(

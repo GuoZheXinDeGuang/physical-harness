@@ -29,7 +29,8 @@ from typing import Protocol
 
 import numpy as np
 
-from governor.env import PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, object_key, phase_at
+from governor.env import PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, phase_at
+from harness.registry import load_provider
 
 
 class PolicyDriver(Protocol):
@@ -207,6 +208,23 @@ class RecoveryActor:
 
 
 def make_driver(spec: EpisodeSpec) -> PolicyDriver:
+    """Resolve the spec's frozen policy driver.
+
+    Dispatch point for the policy.driver capability seam: when `spec.policy_provider`
+    names a provider ("module:factory"), it is loaded via
+    `harness.registry.load_provider` and asked to build the driver. With no ref,
+    this falls back to `_default_make_driver`, the original scripted/cloned
+    dispatch -- so a spec with no ref behaves byte-identically to before this
+    seam existed. Same string-not-hook rationale as `governor.env.make_env`.
+    """
+    ref = spec.policy_provider
+    if ref is not None:
+        provider = load_provider(ref)
+        return provider.make_driver(spec)
+    return _default_make_driver(spec)
+
+
+def _default_make_driver(spec: EpisodeSpec) -> PolicyDriver:
     """Resolve the spec's frozen policy."""
     if spec.policy in (None, "", "scripted"):
         return ScriptedDriver(spec)

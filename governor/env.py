@@ -23,10 +23,12 @@ governing.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Iterator, Mapping
 
 import numpy as np
+
+from harness.registry import load_provider
 
 CONTROL_FREQ = 20
 PHASE_HEIGHT = {"above": 0.10, "descend": 0.005, "close": 0.005, "lift": 0.25}
@@ -70,8 +72,17 @@ class EpisodeSpec:
     #: black box either way; only the harness knows which one it is.
     policy: str = "scripted"
     schedule: tuple[tuple[str, int], ...] = NOMINAL_SCHEDULE
+    #: L0 capability-seam dispatch: "module:factory" refs for embodiment.env and
+    #: policy.driver (see harness/registry.py). None keeps the pre-kernel path
+    #: byte-identical. These travel as strings rather than module-global hooks
+    #: because a hook does not survive multiprocessing spawn -- measured in
+    #: phase 1, see docs/design/observability.md -- while a string pickles,
+    #: content-hashes, and audits cleanly. Appended at the end: this codebase's
+    #: dataclasses require new fields last, defaulted (see ARCHITECTURE.md).
+    env_provider: str | None = None
+    policy_provider: str | None = None
 
-    def child(self, **kw) -> "EpisodeSpec":
+    def child(self, **kw) -> EpisodeSpec:
         return replace(self, **kw)
 
 
@@ -88,6 +99,22 @@ def object_key(spec: EpisodeSpec) -> str:
 
 
 def make_env(spec: EpisodeSpec):
+    """Build one environment for `spec`.
+
+    Dispatch point for the embodiment.env capability seam: when `spec.env_provider`
+    names a provider ("module:factory"), it is loaded via
+    `harness.registry.load_provider` and asked to build the env. With no ref, this
+    falls back to `_default_make_env`, the original robosuite path -- so a spec
+    with no ref behaves byte-identically to before this seam existed.
+    """
+    ref = spec.env_provider
+    if ref is not None:
+        provider = load_provider(ref)
+        return provider.make_env(spec)
+    return _default_make_env(spec)
+
+
+def _default_make_env(spec: EpisodeSpec):
     """Build one deterministic robosuite environment for `spec`."""
     import robosuite as suite
 

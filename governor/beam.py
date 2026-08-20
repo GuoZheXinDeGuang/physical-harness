@@ -86,7 +86,9 @@ def run_beam_campaign(
                                                "selection": list(selection)})
     reservoir = _specs(prereg.dev, prereg)
     sel_specs = [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
-                             percept_noise=prereg.percept_noise) for s in selection]
+                             percept_noise=prereg.percept_noise,
+                             env_provider=prereg.env_provider,
+                             policy_provider=prereg.policy_provider) for s in selection]
     if verbose:
         print(f"preregistration {prereg_sha[:12]}  beam={beam_width} "
               f"dev={len(reservoir)} select={len(sel_specs)} heldout={len(prereg.heldout)}")
