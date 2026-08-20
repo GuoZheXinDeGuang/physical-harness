@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 11 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 15 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,14 +115,14 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+27.5<span style="font-size:.9rem">pp</span></span><span class="v">held-out 成功率提升<br>48.5% → 76.0%，n=200</span></div>
-    <div><span class="k">0</span><span class="v">回归破坏<br>每一档消融都是 0</span></div>
+    <div><span class="k">+29.0<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>48.5% → 77.5%，n=200</span></div>
+    <div><span class="k">+12.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
-    <div><span class="k">&lt;1e-5</span><span class="v">精确 McNemar p<br>配对同种子</span></div>
+    <div><span class="k">0</span><span class="v">回归破坏<br>脚本策略每一档消融都是 0</span></div>
     <div><span class="k">+28.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">30</span><span class="v">测试全绿<br>1954 行实现 / 362 行测试</span></div>
+    <div><span class="k">41</span><span class="v">测试全绿<br>2100+ 行实现 / 520 行测试</span></div>
   </div>
-  <p class="bandnote">数字取自 Round 9 的干净 campaign 与 Round 10 的迁移实验；每个 held-out 区块只评分一次。</p>
+  <p class="bandnote">数字取自 Round 15 的 campaign、Round 10 的迁移实验与 Round 14 的克隆策略验收；每个 held-out 区块只评分一次。</p>
 </header>
 
 <section>
@@ -156,13 +156,15 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <div class="tw"><table>
     <thead><tr><th>代</th><th>候选（自动搜索，零特权）</th><th>提升 vs 父代</th><th>修复</th><th>破坏</th><th>p</th><th>判定</th></tr></thead>
     <tbody>
-      <tr><td class="n">1</td><td class="m">gripper_effort &gt; 0.0509 dwell2 @59</td><td class="n">+12.5%</td><td class="n">15</td><td class="n">0</td><td class="n">6e-5</td><td><span class="tag p">提升</span></td></tr>
-      <tr><td class="n">2</td><td class="m">finger_gap &lt; 0.00223 dwell1 @63</td><td class="n">+10.8%</td><td class="n">13</td><td class="n">0</td><td class="n">2.4e-4</td><td><span class="tag p">提升</span></td></tr>
-      <tr><td class="n">3</td><td class="m">finger_gap &lt; 0.00229 dwell3 @77</td><td class="n">+0.0%</td><td class="n">0</td><td class="n">0</td><td class="n">1.0</td><td><span class="tag r">拒绝</span></td></tr>
+      <tr><td class="n">1</td><td class="m">running_min(finger_gap) &lt; 0.00447 @58</td><td class="n">+14.2%</td><td class="n">17</td><td class="n">0</td><td class="n">2e-5</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">2</td><td class="m">finger_gap &lt; 0.00276 @57</td><td class="n">+7.5%</td><td class="n">9</td><td class="n">0</td><td class="n">3.9e-3</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">3</td><td class="m">running_range(finger_gap) &gt; 0.0784 @43</td><td class="n">−21.7%</td><td class="n">6</td><td class="n">32</td><td class="n">2e-5</td><td><span class="tag r">拒绝</span></td></tr>
     </tbody>
   </table></div>
 
-  <p><strong>held-out（只评一次，n=200）：48.5% → 76.0%，+27.5pp，55 修复 / 0 破坏，p&lt;1e-5。</strong></p>
+  <p><strong>held-out（只评一次，n=200）：48.5% → 77.5%，+29.0pp，58 修复 / 0 破坏，p&lt;1e-5。</strong></p>
+  <p>第 3 代被拒的方式值得看：它在全部 120 个回合上都触发，修好 6 个、<strong>打坏 32 个</strong>。
+  门禁既能拒「没效果」（早先一轮的第 3 代是 +0.0%），也能拒「主动有害」。</p>
 
   <h3>赢的是判断，不是时间</h3>
   <p class="w">受治理的回合因为插入恢复动作会多跑控制步。所以设了盲对照：<strong>同一套 recovery、同样次数、同样的步触发，但无条件触发，不看状态。</strong></p>
@@ -209,10 +211,10 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       <circle cx="260" cy="40" r="5" fill="var(--pass)"/>
       <circle cx="400" cy="111" r="5" fill="var(--pass)"/>
       <circle cx="540" cy="146" r="5" fill="var(--pass)"/>
-      <text class="val" x="120" y="22" text-anchor="middle">99.0%</text>
-      <text class="val" x="260" y="30" text-anchor="middle">98.0%</text>
-      <text class="val" x="400" y="101" text-anchor="middle">76.0%</text>
-      <text class="val" x="540" y="136" text-anchor="middle">66.5%</text>
+      <text class="val" x="120" y="22" text-anchor="middle">100.0%</text>
+      <text class="val" x="260" y="30" text-anchor="middle">97.5%</text>
+      <text class="val" x="400" y="101" text-anchor="middle">77.5%</text>
+      <text class="val" x="540" y="136" text-anchor="middle">65.0%</text>
       <text class="lbl" x="120" y="218" text-anchor="middle">0.000</text>
       <text class="lbl" x="120" y="232" text-anchor="middle" fill="var(--fail)">真值·特权</text>
       <text class="lbl" x="260" y="218" text-anchor="middle">0.010</text>
@@ -222,7 +224,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     </svg>
     </div>
     <figcaption>
-      <strong>sd=0.010 的板载感知拿到 98.0%，真值 99.0%。</strong>只要传感器精度到 1cm，特权买不到任何东西；
+      <strong>sd=0.010 的板载感知拿到 97.5%，真值 100.0%。</strong>只要传感器精度到 1cm，特权买不到任何东西；
       退化的拐点在 sd=0.020。n=200，每点都是一次配对同种子门禁。
     </figcaption>
   </figure>
@@ -311,8 +313,80 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">05 / 过程</p>
-  <h2>十一轮里被自己抓到的五个错误</h2>
+  <p class="num">05 / 最难的一关</p>
+  <h2>失败不是任何人设计的时候</h2>
+  <p class="w">
+    到第 11 轮为止，冻结策略是一段脚本，它的失败形态是<strong>我们选的</strong> ——
+    基于一个错误感知开环执行、无接触感知、无重试。这是真实 VLA 失败的合理模型，
+    但留下一个明摆着的质疑：<strong>这套 harness 会不会只对它作者设计成「可被发现」的失败有效？</strong>
+  </p>
+  <p class="w">
+    行为克隆能回答这个问题。克隆策略在成功演示上拟合，然后闭环运行，它的错误是拟合本身产生的
+    复合误差和分布偏移 —— 哪里坏、怎么坏，都不是我们选的。
+    （纯 numpy 两层 MLP，h=256，闭环成功率 47.5%，正好落在难度带。）
+  </p>
+
+  <div class="call">
+    <h4>第一次尝试：搜索返回零个候选</h4>
+    <p>克隆策略基线 45.8%，把同一套搜索原样跑上去 —— <strong>零个候选</strong>。
+    所有可观测特征的逐步散度峰值 ≤ 1.19σ，而门槛是 2.0σ。</p>
+    <p>当时的归因是「失败异质，单谓词阈值不够」。<strong>这个归因只对了一半。</strong></p>
+  </div>
+
+  <p class="w">
+    动手扩表达力之前先验了一个更简单的解释：<strong>克隆策略没有固定日程，
+    失败发生在不同的步上，逐步散度是在对错位的事件求平均。</strong>
+    脚本策略因为阶段固定所以天然对齐。用时间不变的聚合量检验：
+  </p>
+  <div class="tw"><table>
+    <thead><tr><th>聚合量（全部零特权）</th><th>Cohen d</th><th>逐步扫描峰值</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td class="m">observable.eef_z.min</td><td class="n">−1.43</td><td class="n">1.16σ</td></tr>
+      <tr><td class="m">observable.eef_z.min_after_50</td><td class="n">−1.14</td><td class="n">—</td></tr>
+      <tr><td class="m">observable.joint_speed.min</td><td class="n">−1.07</td><td class="n">0.95σ</td></tr>
+    </tbody>
+  </table></div>
+  <p class="w"><strong>失败是可观测的，只是时间上错位。</strong>挡路的是两个我们自己设的约束：</p>
+  <ol>
+    <li><strong>触发器语言是瞬时的</strong>，表达不了「到目前为止到过的最低点」。
+      加了运行时归约 <code>min</code>/<code>max</code>/<code>range</code>，四种都是 O(1) 每步维护，
+      仍可在动作频率求值，shadow replay 仍然精确。</li>
+    <li><strong>生成阶段的 2σ 门槛从没标定过</strong> —— 那是第 2 轮随手定的（当时脚本策略有 8σ）。
+      它在候选被任何东西评判<em>之前</em>就把它们静默压掉了。改法不是调到刚好放行，而是分清职责：
+      <strong>生成宽松、验证严格</strong>。过滤属于下游那些配对的、样本外的、做显著性检验的环节。</li>
+  </ol>
+
+  <div class="call ok">
+    <h4>搜索自己发现了相反的失败模式</h4>
+    <p>放开之后，克隆策略上的最佳零特权候选是 <code>observable.finger_gap &gt; 0.060</code> ——
+    注意是 <strong>&gt;</strong> 不是 &lt;。脚本策略的失败是「合拢在空气上」（gap 趋近 0）；
+    <strong>克隆策略的失败是夹爪始终没合拢</strong>。完全相反的失败模式，没有任何人提示。</p>
+  </div>
+
+  <p class="w">第一次过门禁是 <strong>−2.0pp（修 3 破 7）</strong>：交还控制权时把克隆策略的时钟重置为 0，
+  于是它从头「张开夹爪接近」，把恢复动作刚做完的抓取撤销了。
+  改成在恢复动作把任务推进到的那个阶段交还之后：</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>recovery 感知 sd</th><th>基线</th><th>受治理</th><th>提升</th><th>修复</th><th>破坏</th><th>p</th><th>特权</th></tr></thead>
+    <tbody>
+      <tr><td class="n">0.000 真值</td><td class="n">35.5%</td><td class="n">48.0%</td><td class="n">+12.5%</td><td class="n">29</td><td class="n">4</td><td class="n">1e-5</td><td class="n">1</td></tr>
+      <tr class="hi"><td class="n">0.010 板载</td><td class="n">35.5%</td><td class="n">47.5%</td><td class="n">+12.0%</td><td class="n">27</td><td class="n">3</td><td class="n">1e-5</td><td class="n">0</td></tr>
+      <tr><td class="n">0.020</td><td class="n">35.5%</td><td class="n">42.0%</td><td class="n">+6.5%</td><td class="n">17</td><td class="n">4</td><td class="n">7e-3</td><td class="n">0</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="w">
+    <strong>答案是：会，但需要一个能表达时间不变量的 critic 语言。</strong>
+    幅度低于脚本策略（+12.0 对 +29.0），这是诚实且符合预期的 —— 异质失败确实更难治理。
+    而特权在这里同样买不到东西（真值 +12.5 对板载 +12.0，在噪声内），
+    这是特权预算论据的<strong>第四条独立证据</strong>，且是在没人设计的失败上取得的。
+  </p>
+</section>
+
+<section>
+  <p class="num">06 / 过程</p>
+  <h2>十五轮里被自己抓到的八个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -348,6 +422,24 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td>跨轮对照：同一改动干净切分 p=0.096、半样本内 p=0.039</td>
         <td><strong>4.5pp</strong>，且表现为「结果变好然后提前收敛」</td>
       </tr>
+      <tr>
+        <td class="n">6</td>
+        <td>判断「让行为克隆工作超出一轮的工作量」</td>
+        <td>容量对照：h=256/3000ep</td>
+        <td>诊断是对的，判断是错的 —— 多训 651 秒，闭环 0% → 47.5%</td>
+      </tr>
+      <tr>
+        <td class="n">7</td>
+        <td>生成阶段的 2σ 门槛从没标定过</td>
+        <td>克隆策略上零候选，而 Cohen d=1.43 是大效应量</td>
+        <td>在候选被评判之前静默压掉它们</td>
+      </tr>
+      <tr>
+        <td class="n">8</td>
+        <td>交还控制权时重置克隆策略的时钟</td>
+        <td>门禁 −2.0pp（修 3 破 7）</td>
+        <td>策略回到「接近」阶段，撤销了刚做完的恢复</td>
+      </tr>
     </tbody>
   </table></div>
 
@@ -370,7 +462,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">06 / 架构</p>
+  <p class="num">07 / 架构</p>
   <h2>从哪抄的什么</h2>
   <div class="tw"><table>
     <thead><tr><th>来自 DeepSeek Harness</th><th>来自 Zetta</th><th>Governor 自己的</th></tr></thead>
@@ -403,13 +495,16 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">07 / 边界</p>
+  <p class="num">08 / 边界</p>
   <h2>还没做的，和已知的局限</h2>
   <ul>
     <li><strong>沙箱代码执行没做。</strong>实测 <code>(allow default)(deny file-write*)</code> 这条 SBPL 并不拦网络，
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
-    <li><strong>基础策略是脚本，不是学出来的 VLA。</strong>失败形态是刻意设计成「基于错误感知开环执行」的，
-      像真实 VLA 的复合误差，但终究不是。用 BC 训一个弱策略是下一个真实的抬升。</li>
+    <li><strong>异质失败仍然更难治理：+12.0pp 对 +29.0pp。</strong>
+      （这一条取代了原来的「失败形态是我们设计的」—— 行为克隆策略已经跑通并通过门禁，见第 5 节。
+      但幅度差距是真实的，而且克隆策略上只找到一条规则，没有形成规则链。）</li>
+    <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
+      真正的 VLA 会有感知本身的失败模式，这里没有。</li>
     <li><strong>贪心收敛的结构性风险仍在。</strong>Round 8 演示过一次提前收敛（虽然那次的触发原因是泄漏的门禁）。
       每代保留 top-K 做 beam、或允许「单独不显著但组合显著」的候选批量入选，都还没试。</li>
     <li><strong>只有一个物理场景族。</strong>三个任务共享 Panda 臂和桌面抓取。真正的跨形态迁移没碰。</li>
@@ -419,12 +514,12 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">08 / 复现</p>
+  <p class="num">09 / 复现</p>
   <h2>怎么跑</h2>
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 30 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 41 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -443,7 +538,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  11 轮自主循环，21 次提交，1954 行实现 + 362 行测试，12 篇过程记录。
+  15 轮自主循环，2100+ 行实现 + 520 行测试，41 个测试全绿，15 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
