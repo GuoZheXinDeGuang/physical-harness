@@ -45,15 +45,12 @@ PRIVILEGED_SENSOR_SD = 0.0
 class RecoverySpec:
     """A bounded, scripted repair. Phases and durations only -- no free code."""
 
-    name: str = "reapproach"
-    #: (phase, duration) pairs replayed after a trigger fires.
-    program: tuple[tuple[str, int], ...] = (
-        ("descend", 18),   # lower and open: grip=-1 releases whatever is (not) held
-        ("above", 15),     # re-stage above the re-estimated pose
-        ("descend", 25),
-        ("close", 14),
-        ("lift", 40),
-    )
+    #: Name of a strategy in governor.repertoire. Different SHAPES of repair, which
+    #: is the axis that matters -- round 6 searched durations and the gain did not
+    #: survive a clean gate.
+    name: str = "regrasp"
+    #: Explicit program overriding the named strategy; None uses the repertoire.
+    program: tuple[tuple[str, int], ...] | None = None
     #: Std-dev of the percept the recovery re-reads. 0.0 == ground truth == privileged.
     sensor_sd: float = 0.020
     max_invocations: int = 1
@@ -61,6 +58,14 @@ class RecoverySpec:
     @property
     def percept_privilege(self) -> int:
         return 1 if self.sensor_sd <= PRIVILEGED_SENSOR_SD else 0
+
+    def steps(self):
+        """Resolve to (phase, duration, dx, dy) steps."""
+        from governor.repertoire import strategy
+
+        if self.program is not None:
+            return tuple((n, d, 0.0, 0.0) for n, d in self.program)
+        return strategy(self.name).steps
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +87,8 @@ class Rule:
             },
             "recovery": {
                 "name": self.recovery.name,
-                "program": [list(p) for p in self.recovery.program],
+                "strategy": self.recovery.name,
+                "program": [list(p) for p in self.recovery.steps()],
                 "sensor_sd": round(float(self.recovery.sensor_sd), 9),
                 "max_invocations": int(self.recovery.max_invocations),
             },
@@ -248,7 +254,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
         percept = _percept_object(obs, spec, triggered.recovery.sensor_sd, used[triggered.rule_id])
         driver.retarget(percept)
-        recovery = RecoveryActor(triggered.recovery.program, percept)
+        recovery = RecoveryActor(triggered.recovery.steps(), percept)
         for rid in consec:
             consec[rid] = 0
 

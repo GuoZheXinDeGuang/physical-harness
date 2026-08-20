@@ -153,12 +153,13 @@ class RecoveryActor:
     """Scripted repair that owns control for the length of its program."""
 
     def __init__(self, program, target: np.ndarray) -> None:
-        self.queue = [(name, i) for name, dur in program for i in range(dur)]
+        self.queue = [(name, dx, dy) for name, dur, dx, dy in program for _ in range(dur)]
         self.target = target
 
     def act(self, obs) -> np.ndarray:
-        name, _ = self.queue.pop(0)
-        goal = np.array([self.target[0], self.target[1], self.target[2] + PHASE_HEIGHT[name]])
+        name, dx, dy = self.queue.pop(0)
+        goal = np.array([self.target[0] + dx, self.target[1] + dy,
+                         self.target[2] + PHASE_HEIGHT[name]])
         delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * 8.0, -1, 1)
         grip = 1.0 if name in ("close", "lift") else -1.0
         return np.array([*delta, 0.0, 0.0, 0.0, grip])

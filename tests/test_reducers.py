@@ -109,3 +109,36 @@ def test_recovery_steps_do_not_advance_the_policy_clock():
     plain = governed_rollout(spec, None)
     assert r["steps"] > plain["steps"], "a fired recovery must add env steps"
     assert r["fires"], "the always-true trigger must fire"
+
+
+# --- recovery repertoire ----------------------------------------------------
+
+def test_every_strategy_resolves_to_offset_steps():
+    from governor.repertoire import REPERTOIRE
+    from governor.env import PHASE_HEIGHT
+    for s in REPERTOIRE:
+        assert s.steps, f"{s.name} has no steps"
+        for name, dur, dx, dy in s.steps:
+            assert name in PHASE_HEIGHT, f"{s.name} uses unknown phase {name!r}"
+            assert dur > 0 and isinstance(dur, int)
+            assert abs(dx) < 0.2 and abs(dy) < 0.2, "an offset that large leaves the workspace"
+        assert s.rationale, f"{s.name} must say what failure it is for"
+
+
+def test_unknown_strategy_is_rejected():
+    from governor.repertoire import strategy
+    with pytest.raises(KeyError, match="unknown recovery strategy"):
+        strategy("teleport")
+
+
+def test_explicit_program_overrides_the_named_strategy():
+    spec = RecoverySpec(name="regrasp", program=(("lift", 5),))
+    assert spec.steps() == (("lift", 5, 0.0, 0.0))[0:1] or spec.steps() == (("lift", 5, 0.0, 0.0),)
+
+
+def test_strategy_choice_changes_behaviour():
+    """A repertoire whose members behave identically would be decoration."""
+    from governor.repertoire import strategy
+    assert strategy("settle").steps != strategy("regrasp").steps
+    assert strategy("lateral").steps != strategy("regrasp").steps
+    assert any(dx != 0.0 for _n, _d, dx, _dy in strategy("lateral").steps)
