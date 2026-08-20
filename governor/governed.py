@@ -32,6 +32,7 @@ from governor.env import PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, make_env, phas
 from governor.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )
+from governor.episode_log import chain_start, chain_step
 from governor.percept import FeatureView, PrivilegePolicy, project
 from governor.search import Trigger
 
@@ -175,14 +176,20 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     t = 0
     queue: list[tuple[str, int]] = list(spec.schedule)
     history: dict[str, list[float]] = {}
+    # commitment over every decision view this episode produced; see episode_log
+    chain = chain_start()
 
     while queue:
         phase, dur = queue.pop(0)
         interrupted = False
         for _ in range(dur):
             obs, _r, done, _info = env.step(policy.act(obs, phase))
-            t += 1
+            # `t` is the ZERO-BASED index of the step just taken, matching the
+            # trace index the search and shadow replay use. A 1-based counter
+            # here armed every trigger one step early; shadow replay caught it
+            # as 6/40 disagreements with the live run.
             if done:
+                t += 1
                 queue = []
                 interrupted = True
                 break
@@ -191,7 +198,9 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             snap = view.snapshot()
             for name, value in snap.items():
                 history.setdefault(name, []).append(value)
+            chain = chain_step(chain, logged.digest)
             if not rules:
+                t += 1
                 continue
 
             # --- critic dispatch, behind both invariants ---------------------
@@ -214,6 +223,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             privilege_used = max(privilege_used, view.privilege_used())
 
             if triggered is None:
+                t += 1
                 continue
 
             # --- recovery dispatch, its own stricter budget ------------------
@@ -227,6 +237,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             queue = list(triggered.recovery.program) + queue
             for k in consec:
                 consec[k] = 0
+            t += 1
             interrupted = True
             break
         if interrupted and queue:
@@ -243,6 +254,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         "fires": fires,
         "fired_at": fires[0]["step"] if fires else None,
         "fired_rules": sorted({f["rule_id"] for f in fires}),
+        "chain": chain,
         "critic_privilege_used": privilege_used,
         "declared_privilege": bundle.declared_privilege() if bundle else 0,
         "trace": {k: np.asarray(v) for k, v in history.items()},
