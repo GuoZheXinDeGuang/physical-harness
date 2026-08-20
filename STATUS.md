@@ -26,3 +26,4 @@
 - 不要试图跑 LIBERO / RoboCasa：flash-attn 只有 linux_x86_64 wheel，需 nvidia-smi + CUDA 12.6 + EGL。已确认不可行。
 - 不要用 mujoco 3.11 配 robosuite 1.5.2：`MjData.qM` 已改名 `M`，必须 pin mujoco==3.3.7。
 - 不要在 mac 上设 MUJOCO_GL=osmesa：非法值，直接抛。无头就不设。
+- 不要用 `np.random.seed()` 给 robosuite 播种：环境自持 RNG，必须走 `suite.make(seed=N)`，否则配对门禁静默失效。
