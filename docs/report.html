@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 42 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 43 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -225,9 +225,15 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <strong>但第 17 轮把恢复动作改成拥有自己的步数之后，这个约束就不存在了</strong> ——
     实测总步数最大 209，horizon 900，恢复从未被截断。</p>
     <p><strong>一个在第 2 轮合理的常数，在第 17 轮的重构之后变成有害的，中间没有任何信号。</strong>
-    抓住它的不是代码审查，而是第 25 轮接进来的一个 LLM proposer ——
-    它不知道有 earliness 这回事，于是挑了个我的目标函数会扣分的候选，然后赢了 5.5pp。
-    扫一遍权重（0 / 0.1 / 0.25 / 0.5）确认：<strong>W=0 最优，那个权重值 −5.0pp。</strong></p>
+    抓住它的不是代码审查，而是第 25 轮接上的<strong>第二个 proposer</strong> ——
+    它的挑选规则只有「取分离度最强的那一行」，<strong>目标函数里没有 earliness 这一项</strong>，
+    于是挑了个我的目标函数会扣分的候选，然后赢了 5.5pp。</p>
+    <p style="color:var(--ink-3)"><strong>这里必须说准确：那不是一个真实的语言模型。</strong>
+    它是一个走 proposer 接缝的脚本化 stand-in（<strong>全程零外部 API 调用是刻意的</strong>），
+    选择规则是我写的。所以「一个不共享我假设的外部智能体发现了问题」<strong>这个说法是过头的</strong> ——
+    准确的说法是：<strong>两个目标函数不同的 proposer 给出了不一致的答案，而不一致本身就是信号。</strong>
+    真正的证据不是它，是随后那次权重扫描（0 / 0.1 / 0.25 / 0.5，三路划分）：
+    <strong>W=0 最优，那个权重值 −5.0pp。</strong></p>
   </div>
   <div class="call ok">
     <h4>换一种策略，同一个常数值的不是 5pp，是全部</h4>
@@ -371,6 +377,8 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <section>
   <p class="num">04 / 最强的一个结果</p>
   <h2>零特权链跨任务零退化，特权触发器静默失效</h2>
+  <p class="w" style="color:var(--ink-3)"><strong>作用域：</strong>本节全部是<strong>脚本策略</strong>的结果。
+  克隆策略是在 Lift 上训出来的，它执行不了 Stack 或 PickPlaceCan，所以这条迁移证据不覆盖它。</p>
   <p class="w">
     在 Lift 上演化出的两条规则，<strong>原样搬到 Stack 和 PickPlaceCan，一个字没改</strong>，零重新搜索。
     三个任务的成功判据不同（举起 / 放到 B 上 / 送进料箱），而冻结策略只会「抓起来」，
@@ -758,6 +766,8 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <section>
   <p class="num">08 / 天花板</p>
   <h2>harness 不可能超过它手上的修复原语</h2>
+  <p class="w" style="color:var(--ink-3)"><strong>作用域：</strong>本节的天花板全部在 <strong>Lift</strong> 上测得，
+  诊断数字来自<strong>克隆策略</strong>。它是一条实测的边界，不是一条被证明的普遍定理。</p>
   <p class="w">
     这是整套方法最根本的一条局限，而且它不是一句谨慎的免责声明 ——
     我们按诊断指的方向<strong>手写了两个更强的原语，两次都没抬起来</strong>。
@@ -936,15 +946,23 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
     <li><strong>修复原语的天花板</strong> —— 见上一节。两次手写更强原语的尝试都失败了，
       所以这不是一条待办事项，是这套方法的边界。</li>
-    <li><strong>异质失败仍然更难治理：+17.5pp 对 +25.5pp</strong>（克隆策略现在能长出两条规则的链，见第 5 节）。
-      （这一条取代了原来的「失败形态是我们设计的」—— 克隆策略已经跑通并通过门禁，见第 5 节。）</li>
+    <li><strong>异质失败仍然更难治理：+19.0pp 对 +26.7pp</strong>（两者都是三区块合并 n=600）。
+      克隆策略现在能长出两条规则的链，见第 5 节 —— 这一条取代了原来的「失败形态是我们设计的」。</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
       真正的 VLA 会有感知本身的失败模式，这里没有。</li>
-    <li><strong>贪心收敛的结构性风险仍在。</strong>Round 8 演示过一次提前收敛（虽然那次的触发原因是泄漏的门禁）。
-      每代保留 top-K 做 beam、或允许「单独不显著但组合显著」的候选批量入选，都还没试。</li>
+    <li><strong>贪心收敛的结构性风险仍在，但 beam 不是解药 ——</strong> 已经测了两次（第 24、40 轮），
+      第二次还先修掉了 beam 自己的三个实验缺陷，结果仍是同块 <strong>+15.0pp 对贪心 +23.0pp、成本 3 倍</strong>（见第 9 节）。
+      没试过的是「单独不显著但组合显著」的候选批量入选。</li>
     <li><strong>只有一个物理场景族。</strong>三个任务共享 Panda 臂和桌面抓取。真正的跨形态迁移没碰。</li>
-    <li><strong>LLM proposer 没接。</strong>契约已经是 <code>(traces, labels) -&gt; Rule</code>，换 provider 即可，
-      但今晚全程零外部 API 是刻意的 —— 循环必须能在没有网络和密钥的情况下跑完。</li>
+    <li><strong>几处结论的作用域比它们看起来窄，逐一标注在正文里：</strong>
+      跨任务迁移（第 4 节）只在<strong>脚本策略</strong>上做过 —— 克隆策略是在 Lift 上训的，根本执行不了 Stack；
+      修复原语的天花板（第 8 节）只在 <strong>Lift</strong> 上测过；
+      「瓶颈在哪一侧」是<strong>策略</strong>的性质；「检测还是修复」是<strong>当前 bundle</strong> 的性质。
+      <strong>把一次测量的适用范围写宽，是本项目犯过三次的同一类错误。</strong></li>
+    <li><strong>没有调用过任何真实语言模型。</strong>proposer 接缝建好并跑通了，
+      对抗测试覆盖了真实模型会犯的每种错（编造特征、越预算、散文、NaN、越界），
+      但驱动它的是脚本化 stand-in。契约是 <code>(traces, labels) -&gt; Rule</code>，换 <code>transport</code> 即可 ——
+      全程零外部 API 是刻意的：循环必须能在没有网络和密钥的情况下跑完。</li>
   </ul>
 </section>
 
@@ -973,7 +991,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  42 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，42 篇过程记录。
+  43 轮自主循环，3600+ 行实现 + 1400 行测试，87 个测试全绿，43 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
