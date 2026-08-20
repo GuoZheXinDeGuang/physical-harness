@@ -41,6 +41,11 @@ class Branch:
     alive: bool = True
     history: list[dict] = field(default_factory=list)
     residual_rate: float | None = None
+    #: Discordant pairs per residual failure, measured from this branch's own
+    #: last sealed generation. Round 24 ran beam with the fixed 0.7 assumption
+    #: that round 32 disproved, so every branch past depth 1 was undersampled --
+    #: which is the same defect that made the greedy chain look exhausted.
+    discordance_yield: float | None = None
 
     @property
     def depth(self) -> int:
@@ -57,6 +62,13 @@ def _measure(specs, bundle, workers):
     from multiprocessing import Pool
     with Pool(workers) as pool:
         return pool.map(_run, [(s, bundle if bundle.rules else None) for s in specs])
+
+
+#: Episodes the seeding search sees. Generation 1's gate must use the SAME
+#: slice: `run_campaign` sizes measurement, search and gate together precisely
+#: so a candidate is never judged on a population it was not fitted to, and
+#: beam quietly searched 120 while gating 60 until round 40.
+SEED_SLICE = 120
 
 
 def run_beam_campaign(
@@ -80,7 +92,7 @@ def run_beam_campaign(
               f"dev={len(reservoir)} select={len(sel_specs)} heldout={len(prereg.heldout)}")
 
     root = Bundle(rules=(), critic_budget=prereg.critic_budget, action_budget=prereg.action_budget)
-    base = _measure(reservoir[:120], root, workers)
+    base = _measure(reservoir[:SEED_SLICE], root, workers)
     ranked = search_triggers([r["trace"] for r in base], [r["success"] for r in base],
                              privilege_budget=prereg.critic_budget, top_k=beam_width)
     if not ranked:
@@ -107,7 +119,7 @@ def run_beam_campaign(
                             action_budget=b.bundle.action_budget) if gen == 1 else b.bundle
             child = b.bundle
             if gen > 1:
-                dev = _size_slice(b, reservoir, prereg)
+                dev = _size_slice(b, reservoir, prereg, gen)
                 cur = _measure(dev, b.bundle, workers)
                 labels = [r["success"] for r in cur]
                 if all(labels):
@@ -122,7 +134,7 @@ def run_beam_campaign(
                 child.assert_atomic_child_of(b.bundle)
                 parent = b.bundle
             else:
-                dev = _size_slice(b, reservoir, prereg)
+                dev = _size_slice(b, reservoir, prereg, gen)
             verdict = paired_gate(dev, child, baseline=parent if parent.rules else None,
                                   workers=workers)
             ok = (verdict.fixed >= prereg.min_fixed and verdict.p_value < prereg.alpha
@@ -135,6 +147,9 @@ def run_beam_campaign(
             if ok:
                 b.bundle = child
                 b.residual_rate = 1.0 - verdict.governed_rate
+                residual = max(round((1.0 - verdict.base_rate) * verdict.n), 1)
+                b.discordance_yield = max((verdict.fixed + verdict.broken) / residual,
+                                          prereg.min_discordance_yield)
             else:
                 b.alive = False
 
@@ -174,14 +189,25 @@ def run_beam_campaign(
     return result
 
 
-def _size_slice(branch: Branch, reservoir, prereg: Preregistration):
+def _size_slice(branch: Branch, reservoir, prereg: Preregistration, gen: int):
     """Power-size this branch's dev slice from ITS OWN residual rate."""
+    if gen == 1:
+        # Generation 1 was seeded by a search over SEED_SLICE; gate it there.
+        # Keyed on the GENERATION, not the depth: a promoted branch still has
+        # depth 1 when generation 2 starts, so keying on depth silently pinned
+        # every later generation to the seeding size too.
+        return reservoir[:SEED_SLICE]
     if not prereg.scale_dev_by_power:
-        return reservoir[:120]
+        return reservoir[:SEED_SLICE]
     from governor.power import plan_generation
 
     rate = branch.residual_rate if branch.residual_rate is not None else 0.5
     plan = plan_generation(branch.depth + 1, round(rate * len(reservoir)), len(reservoir),
                            len(reservoir), fix_share=prereg.power_fix_share,
-                           alpha=prereg.alpha, power=prereg.power_target)
+                           alpha=prereg.alpha, power=prereg.power_target,
+                           discordance_yield=(branch.discordance_yield
+                                              if branch.discordance_yield is not None
+                                              else prereg.prior_discordance_yield),
+                           search_fraction=(prereg.screen_search_fraction
+                                            if prereg.screen_triggers else 1.0))
     return reservoir[: plan.seeds_used]
