@@ -257,3 +257,23 @@ shadow replay 接进 proposer 做离线预筛：候选池从几十筛到 top-3 �
 3. **跨任务迁移**：stack / pickcan，验证规则链能否 zero-shot 迁移
 4. **早期预警 × 廉价 recovery**：`privileged.grasp_error` 在 step 27 触发，比零特权早一倍；用误报成本定价
 5. **LLM proposer**：契约已是 `(traces, labels) -> Rule`，用 mock server 验证，零 API 成本
+
+## Round 7 — 2026-08-19 — 样本外预筛
+
+### 做成了什么
+
+1. 想清楚了 shadow 预筛的真正增量：`search_triggers` 本来就离线，重跑无意义；
+   缺的是**样本外估计**。做法是把已录 episode 对半切，一半搜、一半 shadow 打分。
+2. `governor/screen.py` + `Preregistration.screen_triggers` 开关。
+3. **实测抓到过拟合**：`finger_gap > 0.0798 @41` 样本内 r=0.88/fp=0.00，
+   样本外 r=0.54/fp=0.12，shrinkage +0.45。会白花 240 个真实 episode。
+   同时诚实记录：真正强的信号 shrinkage ≈ 0.00，预筛是在过滤排行榜尾部而不是推翻搜索。
+4. 合成测试抓到切分缺陷：交错切分假设索引顺序与结果无关；退化切分回落到样本内排序。
+
+### 在飞行中
+
+`search_recovery=True` 的完整 campaign 后台运行（约 40 分钟）。下一轮收结果。
+
+### 下一轮种子
+
+收 campaign 结果 → `screen_triggers` + `search_recovery` 联合跑一次 → 跨任务迁移。

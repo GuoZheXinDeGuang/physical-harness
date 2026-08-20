@@ -68,6 +68,11 @@ class Preregistration:
     search_recovery: bool = False
     #: Seeds used for the recovery coordinate descent; a subset of `dev`.
     recovery_search_n: int = 60
+    #: Rank trigger candidates by an out-of-sample shadow score instead of the
+    #: in-sample search score. Costs no rollouts and demotes candidates that only
+    #: fit the half they were searched on (round 7 measured a shrinkage of +0.45
+    #: on one such candidate).
+    screen_triggers: bool = False
 
     def __post_init__(self) -> None:
         overlap = set(self.dev) & set(self.heldout)
@@ -125,6 +130,14 @@ def propose_rule(
     """
     if not any(labels) or all(labels):
         return None
+    if prereg.screen_triggers:
+        from governor.screen import screen
+
+        screened = screen(traces, labels, privilege_budget=prereg.critic_budget, pool=8)
+        if screened:
+            return Rule(rule_id=f"g{generation}", trigger=screened[0].trigger,
+                        recovery=RecoverySpec(sensor_sd=prereg.recovery_sensor_sd))
+        # too few episodes to split; fall through to the in-sample ranking
     ranked = search_triggers(traces, labels, privilege_budget=prereg.critic_budget, top_k=3)
     if not ranked:
         return None

@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 6 完成
+**Round:** 7 完成（campaign 跨轮运行中）
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -33,15 +33,18 @@
 - [x] Round 4 campaign 生命周期：多代原子增量 + preregistration + 内容哈希产物 + 盲对照
 - [x] Round 5 持久事件日志 + 链式承诺 + 离线审计 + shadow replay（抓到 step 索引 off-by-one）
 - [x] Round 6 recovery 程序进搜索空间（坐标下降）+ 门禁化采纳；实测被门禁拒绝一次
+- [x] Round 7 触发器样本外预筛（抓到 shrinkage +0.45 的过拟合候选）
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 7：跑一次 `search_recovery=True` 的完整 campaign（约 20 分钟），
-看多代 + recovery 搜索联合起来能到哪，以及 recovery 门禁在每代的判定。
-之后做 shadow-replay 离线预筛（扩大触发器搜索空间，不增加真实 rollout）。
+**后台有一个 campaign 在跑**（`runs/campaign-recovery-search`，`search_recovery=True`，
+约 40 分钟，日志 `/tmp/campaign_rs.log`）。下一轮第一件事是收它的结果并记录。
+
+之后：`screen_triggers=True` + `search_recovery=True` 一起跑一次，
+再往前是跨任务迁移（stack / pickcan）。
 
 ## 阻塞
 
