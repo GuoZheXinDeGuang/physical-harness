@@ -147,3 +147,17 @@ def test_containment_holds_in_a_fresh_worker_process():
     assert not any(n.startswith("privileged.") for n in view_keys), (
         "containment breached: a zero-budget view exposed a privileged feature in a worker"
     )
+
+
+def test_a_blind_twin_fires_the_moment_it_arms():
+    """The judgement gate depends on the twin actually being unconditional."""
+    import numpy as np
+
+    from governor.campaign import _ALWAYS
+    from governor.search import Trigger
+
+    twin = Trigger("observable.finger_gap", "gt", -_ALWAYS, 1, 5, "value")
+    trace = {"observable.finger_gap": np.zeros(20)}
+    assert twin.fire_step(trace) == 5, "the blind twin did not fire at its arm step"
+    trace_neg = {"observable.finger_gap": np.full(20, -1e6)}
+    assert twin.fire_step(trace_neg) == 5, "a large negative value defeated the twin"

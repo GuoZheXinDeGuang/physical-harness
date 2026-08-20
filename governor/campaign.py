@@ -39,6 +39,9 @@ from governor.parallel import rollout_many
 from governor.search import (DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger,
                              search_triggers)
 
+#: Threshold a `gt` trigger can never fail, so the twin fires the moment it arms.
+_ALWAYS = 1e12
+
 
 def sha_json(payload) -> str:
     return hashlib.sha256(
@@ -106,6 +109,10 @@ class Preregistration:
     #: `screen()` splits each generation in half, so a screened generation must
     #: be sized larger to leave the search the same evidence.
     screen_search_fraction: float = 0.5
+    #: A candidate must out-net a blind twin of itself -- same recovery, same
+    #: arm step, fired without looking at state. Off only to reproduce the
+    #: pre-round-45 promotion rule.
+    require_judgement: bool = True
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
 
@@ -268,11 +275,36 @@ def run_campaign(
         dev_result = paired_gate(dev_specs, child, baseline=bundle if bundle.rules else None,
                                  workers=workers)
 
+        # The blind control was a per-report check by hand until round 45, when a
+        # third policy grew a rule that fired on 200/200 held-out episodes and
+        # tied its own blind arm. Beating the ungoverned baseline is not enough:
+        # a recovery that runs unconditionally can do that on a weak policy
+        # without the critic judging anything. The win has to come from choosing
+        # WHEN, so every candidate now runs against a blind twin of itself.
+        blind_rule = Rule(f"{rule.rule_id}-blind",
+                          Trigger(rule.trigger.feature, "gt", -_ALWAYS, 1,
+                                  rule.trigger.arm_after, "value"),
+                          rule.recovery)
+        blind_child = bundle.append(blind_rule)
+        # Head to head on the SAME seeds, not two separate comparisons against the
+        # parent: netting 35 against a blind twin's 34 is one episode of noise, and
+        # that is exactly what slipped through when this gate first shipped.
+        blind_result = paired_gate(dev_specs, child, baseline=blind_child, workers=workers)
+        judged = (blind_result.p_value < prereg.alpha
+                  and blind_result.fixed > blind_result.broken)
+
         promoted = (dev_result.fixed >= prereg.min_fixed
                     and dev_result.p_value < prereg.alpha
-                    and dev_result.fixed > dev_result.broken)
+                    and dev_result.fixed > dev_result.broken
+                    and (judged or not prereg.require_judgement))
         reason = ("promoted" if promoted else
+                  "rejected (no judgement vs its blind twin: "
+                  f"delta={blind_result.delta:+.1%} p={blind_result.p_value:.4f})"
+                  if not judged and prereg.require_judgement else
                   f"rejected (fixed={dev_result.fixed} broken={dev_result.broken} p={dev_result.p_value:.4f})")
+        if verbose:
+            print(f"  vs its blind twin (same recovery, unconditional at t={rule.trigger.arm_after}): "
+                  f"{blind_result.line()}")
         rec = GenerationRecord(gen, rule.rule_id, rule.trigger.describe(), bundle.sha(),
                                child.sha(), dev_result, promoted, reason)
         # Sized from a SEALED generation, never from the candidate being planned.
@@ -281,6 +313,7 @@ def run_campaign(
                          prereg.min_discordance_yield)
         history.append(rec)
         store.put("generation", {
+            "blind_gate": asdict(blind_result),
             "preregistration_sha": prereg_sha, "generation": gen,
             "rule": rule.canonical(), "parent_sha": bundle.sha(), "child_sha": child.sha(),
             "dev_gate": asdict(dev_result), "promoted": promoted, "reason": reason,
