@@ -171,6 +171,8 @@ class RecoveryActor:
                 kw = {"max_steps": budget}
                 if kind == "servo_descend":
                     kw["target_xy"] = np.asarray(target)[:2]
+                if kind == "servo_probe":
+                    kw["centre"] = np.asarray(target)
                 self.segments.append(make_servo(kind, **kw))
             else:
                 name, dur, dx, dy = step

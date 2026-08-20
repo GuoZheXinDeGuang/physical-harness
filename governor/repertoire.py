@@ -85,6 +85,18 @@ REPERTOIRE = REPERTOIRE + (
     ),
 )
 
+REPERTOIRE = REPERTOIRE + (
+    Strategy(
+        "probe_regrasp",
+        (("descend", 10, 0.0, 0.0), ("above", 20, 0.0, 0.0), ("descend", 24, 0.0, 0.0),
+         ("servo_probe", 160, 0.0, 0.0), ("lift", 40, 0.0, 0.0)),
+        "Approach, then close-and-step-sideways until the fingers settle on something. "
+        "Measured before building: planar percept error is 1.24cm mean / 2.25cm p90, "
+        "the gripper-object offset tracks it at r=+0.67, and misses sit at 1.64cm "
+        "against 1.05cm for holds. Two probe rings at 1.2 and 2.4cm cover the p90 miss.",
+    ),
+)
+
 BY_NAME = {s.name: s for s in REPERTOIRE}
 DEFAULT = "regrasp"
 
