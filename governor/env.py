@@ -42,7 +42,10 @@ class EpisodeSpec:
     seed: int
     task: str = "Lift"
     robot: str = "Panda"
-    horizon: int = 400
+    #: robosuite terminates at the horizon and refuses further steps. A governed
+    #: episode can splice several recovery programs into its schedule, so this
+    #: must cover base + max_generations * program length, not just the nominal 100.
+    horizon: int = 900
     #: Std-dev of the frozen policy's one-shot cube-pose percept. The difficulty knob.
     percept_noise: float = 0.020
     #: Std-dev of joint-space reset noise; robosuite's own initialization randomness.

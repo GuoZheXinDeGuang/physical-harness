@@ -66,11 +66,20 @@ def _run(job):
     return governed_rollout(spec, bundle)
 
 
-def paired_gate(specs: Sequence[EpisodeSpec], bundle: Bundle, workers: int = 10) -> PairedResult:
-    """Run both arms on identical seeds and test the discordant pairs."""
+def paired_gate(
+    specs: Sequence[EpisodeSpec], bundle: Bundle,
+    baseline: Bundle | None = None, workers: int = 10,
+) -> PairedResult:
+    """Run both arms on identical seeds and test the discordant pairs.
+
+    `baseline=None` measures the bundle against the ungoverned frozen policy.
+    Passing the PARENT bundle instead is what makes a generation's gain
+    attributable to the single rule it appended -- the atomic-increment
+    discipline is only meaningful if the comparison is against the parent.
+    """
     from multiprocessing import Pool
 
-    jobs = [(s, None) for s in specs] + [(s, bundle) for s in specs]
+    jobs = [(s, baseline) for s in specs] + [(s, bundle) for s in specs]
     with Pool(workers) as pool:
         out = pool.map(_run, jobs)
     n = len(specs)
@@ -94,6 +103,10 @@ def ablation_curve(
     """The transfer curve: same bundle, recovery percept degraded rung by rung."""
     rows = []
     for sd in sensor_sds:
-        degraded = replace(bundle, recovery=replace(bundle.recovery, sensor_sd=sd))
-        rows.append((sd, paired_gate(specs, degraded, workers=workers)))
+        # degrade EVERY rule's percept: a chain is only as transferable as its
+        # most privileged recovery, so ablating one rule would understate the gap.
+        degraded = replace(bundle, rules=tuple(
+            replace(r, recovery=replace(r.recovery, sensor_sd=sd)) for r in bundle.rules
+        ))
+        rows.append((sd, paired_gate(specs, degraded, baseline=None, workers=workers)))
     return rows

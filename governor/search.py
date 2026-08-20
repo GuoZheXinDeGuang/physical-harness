@@ -88,22 +88,62 @@ def _quantile_grid(values: np.ndarray, n: int = 12) -> np.ndarray:
     return grid
 
 
+#: Minimum real (unheld) samples per group before a step is allowed to carry a verdict.
+MIN_GROUP_SAMPLES = 8
+
+
+def align(series: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """Pad variable-length episode traces to a common length by holding the last value.
+
+    Governed episodes are NOT fixed length: a fired recovery splices extra phases
+    into the schedule, so a generation-2 population mixes 100-step and 212-step
+    episodes. Absolute step index is still the right axis -- a trigger's
+    ``arm_after`` is an absolute index -- so traces are right-padded with their
+    final value (a settled arm holds its state) and a validity count is returned
+    so the tail, where only a few long episodes have real data, can be masked.
+    """
+    n = max(len(x) for x in series)
+    padded = np.stack([
+        np.concatenate([x, np.full(n - len(x), x[-1])]) if len(x) < n else x
+        for x in series
+    ])
+    valid = np.zeros(n, dtype=int)
+    for x in series:
+        valid[: len(x)] += 1
+    return padded, valid
+
+
 def divergence_profile(traces, labels, feature: str) -> np.ndarray:
     """Per-step standardized separation between failing and succeeding episodes.
 
-    Positive means successes read higher. The first step whose magnitude clears
-    a threshold is the Earliest Observable Divergence for that feature.
+    Positive means successes read higher. Steps where either group has fewer
+    than :data:`MIN_GROUP_SAMPLES` real (unheld) observations are NaN: a tail
+    driven by two surviving episodes is noise, not divergence.
     """
-    ok = np.stack([t[feature] for t, y in zip(traces, labels) if y])
-    bad = np.stack([t[feature] for t, y in zip(traces, labels) if not y])
+    ok, ok_valid = align([t[feature] for t, y in zip(traces, labels) if y])
+    bad, bad_valid = align([t[feature] for t, y in zip(traces, labels) if not y])
+    n = max(ok.shape[1], bad.shape[1])
+
+    def _fit(arr, valid):
+        if arr.shape[1] == n:
+            return arr, valid
+        pad = n - arr.shape[1]
+        return (np.concatenate([arr, np.repeat(arr[:, -1:], pad, axis=1)], axis=1),
+                np.concatenate([valid, np.zeros(pad, dtype=int)]))
+
+    ok, ok_valid = _fit(ok, ok_valid)
+    bad, bad_valid = _fit(bad, bad_valid)
     pooled = np.sqrt((ok.var(axis=0) + bad.var(axis=0)) / 2) + 1e-9
-    return (ok.mean(axis=0) - bad.mean(axis=0)) / pooled
+    prof = (ok.mean(axis=0) - bad.mean(axis=0)) / pooled
+    enough = (ok_valid >= min(MIN_GROUP_SAMPLES, ok.shape[0])) & \
+             (bad_valid >= min(MIN_GROUP_SAMPLES, bad.shape[0]))
+    return np.where(enough, prof, np.nan)
 
 
 def earliest_divergence(traces, labels, feature: str, sigma: float = 2.0) -> int | None:
     """First control step where `feature` separates the two outcome groups."""
     prof = np.abs(divergence_profile(traces, labels, feature))
-    idx = np.flatnonzero(prof >= sigma)
+    idx = np.flatnonzero(np.nan_to_num(prof, nan=0.0) >= sigma)
     return int(idx[0]) if idx.size else None
 
 
@@ -125,7 +165,7 @@ def search_triggers(
     labels = np.asarray(labels, dtype=bool)
     if labels.all() or (~labels).any() is False:
         raise ValueError("trigger search needs both successful and failed episodes")
-    n_steps = len(next(iter(traces[0].values())))
+    n_steps = max(len(next(iter(t.values()))) for t in traces)
     admissible = [n for n, f in REGISTRY.items()
                   if (0 if f.privilege is Privilege.OBSERVABLE else 1) <= privilege_budget]
     out: list[TriggerScore] = []
@@ -135,7 +175,7 @@ def search_triggers(
             continue
         # Arm at or after the divergence: firing before the signal exists is noise.
         arms = sorted({eod, min(eod + 2, n_steps - 1), min(eod + 6, n_steps - 1)})
-        values = np.concatenate([t[feature][eod:] for t in traces])
+        values = np.concatenate([t[feature][eod:] for t in traces if len(t[feature]) > eod])
         for thr in _quantile_grid(values):
             for op in ("lt", "gt"):
                 for dwell in dwells:

@@ -37,3 +37,42 @@ def test_global_numpy_seed_does_not_leak_into_the_environment():
     np.random.seed(9999)
     b = _digest(rollout(EpisodeSpec(seed=5)))
     assert a == b, "episode depends on global numpy state; seeding channel is wrong"
+
+
+def test_search_handles_variable_length_governed_traces():
+    """A fired recovery makes episodes longer; generation 2 mixes lengths.
+
+    This is a regression for a crash that only appeared at generation 2 of a
+    real campaign: np.stack over ragged traces.
+    """
+    import numpy as np
+    from governor.search import align, divergence_profile, earliest_divergence
+
+    short = {"observable.finger_gap": np.full(100, 0.04)}
+    long_ = {"observable.finger_gap": np.concatenate([np.full(100, 0.001), np.full(112, 0.001)])}
+    traces = [short] * 10 + [long_] * 10
+    labels = [True] * 10 + [False] * 10
+    padded, valid = align([t["observable.finger_gap"] for t in traces])
+    assert padded.shape == (20, 212)
+    assert valid[0] == 20 and valid[-1] == 10, "validity count must track real samples"
+    prof = divergence_profile(traces, labels, "observable.finger_gap")
+    assert prof.shape == (212,)
+    assert earliest_divergence(traces, labels, "observable.finger_gap") == 0
+
+
+def test_governed_episode_never_steps_a_terminated_env():
+    """Three chained recoveries exceed the nominal horizon; the runner must stop cleanly.
+
+    Regression for a generation-3 campaign crash: robosuite raises
+    'executing action in terminated episode' once the horizon is passed.
+    """
+    from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
+    from governor.search import Trigger
+
+    always = lambda i: Rule(f"g{i}", Trigger("observable.eef_z", "gt", -1e9, 1, 1),
+                            RecoverySpec(sensor_sd=0.02))
+    bundle = Bundle(rules=tuple(always(i) for i in range(1, 5)),
+                    critic_budget=0, action_budget=0)
+    r = governed_rollout(EpisodeSpec(seed=42), bundle)
+    assert isinstance(r["success"], bool)
+    assert r["steps"] <= EpisodeSpec(seed=42).horizon
