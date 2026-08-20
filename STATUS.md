@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 44 部分完成（网格训练在后台）
+**Round:** 44 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -144,20 +144,22 @@
       抓到报告**自相矛盾**（第 00 节「LLM proposer 抓住了它」vs 第 10 节「LLM proposer 没接」）
       —— 那是我写的脚本化 stand-in，**从没调过真实模型**，措辞把功劳给错了对象，已改准；
       另修 5 处（2 处过期数字、3 处作用域头）
+- [x] Round 44 **第三种策略拿到了**：`bc_dart30.npz` 基线 **15.8%**。
+      路上复现了 round 12 的「干净演示 → 0.0%」（诊断：新旧模型拟合几乎相同，
+      MSE 0.01329 vs 0.01315，差别在状态覆盖不在训练）。**σ 才是旋钮**：
+      0.05/0.15 → 0.0%，0.30 → 15.8%，中间有陡坎。
+      演示管线进仓库 `governor/demos.py` + 确定性测试（89 绿）
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 45：**接着 round 44。** 后台在扫 (hidden, epochs) 网格（演示已缓存 3000 条，
-在 scratchpad/demos.npz）。逐个量基线 → 选 10-20% 那档 → 完整 campaign + 三区块。
-
-**已知：** h96=2.5%、h160(900 条/900 epochs)=**0.0%**、h256(3000 条)=32.5%。
-容量不是唯一旋钮，数据量同样是。**跑 campaign 前必须先量基线**（round 34）。
-
-**同时要做：** 把演示采集脚本从 /tmp 收进仓库 —— `bc_h256.npz` 在版本控制里
-而生成它的管线不在，产物不可复现。
+Round 45：**第三种策略跑完整 campaign**。`policy="runs/bc_dart30.npz"`，
+dev 2000-2399，held-out 三区块 **9000-9199 / 9200-9399 / 9400-9599**，
+percept_noise=0.004，recovery_sensor_sd=0.010，max_generations=4，scale_dev_by_power=True。
+问题：结论在第三种失败形态上还成立吗？重点看「特权买不到东西」和
+**「瓶颈在哪一侧」——已知那是策略的性质（克隆 0pp / 脚本 +25.0pp），第三个点看它落在哪。**
 
 **frontier 排序：** 1. 第三种策略 → 2. 沙箱化 critic 代码执行。
 **要先问我（gate）：** 接真实模型 transport 跑一次 proposer —— 需要网络和密钥。
@@ -202,6 +204,9 @@ round 21/22 否的是原语形状不是命题，且只在脚本策略的失败�
 - **序列化形式漏一个字段 = 两道检查同时失明**：`parent_sha` 是从 canonical 算的，
   不能当 canonical 的 backstop。加字段到 Trigger/Rule 时必须同步 `canonical()`。
 - 不要用 `bc_h96.npz` 当「更弱的策略」：它是 2.5%，不工作，不是更弱。
+- **干净演示克隆恒为 0.0%**，与宽度/epoch/数据量无关（round 12 已记录，round 44 又复现一遍）。
+  能用的克隆必须走 DART：`governor/demos.py`，**σ 是旋钮**，0.15 → 0.30 之间有陡坎。
+- **冷启动不能只读 STATUS 的下一步**：round 12 的表里就有答案，我花了一整轮重新发现它。
 - **`finger_gap < 0.005` 是「夹空」不是「握住」**：方块把手指撑开到 ~0.043 才是握住。
   round 22 把还在合拢的读成握住，round 35 把夹空的读成握住 —— 同一个坑的两面。
 - dev 种子 2200-2399 已用于诊断+选择，不能再当门禁切片。
