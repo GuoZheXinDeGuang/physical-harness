@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 5 完成
+**Round:** 6 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -32,16 +32,16 @@
 - [x] Round 3 隔离边界 + 运行时不变量 + 受治理 rollout + 配对门禁 + 消融曲线
 - [x] Round 4 campaign 生命周期：多代原子增量 + preregistration + 内容哈希产物 + 盲对照
 - [x] Round 5 持久事件日志 + 链式承诺 + 离线审计 + shadow replay（抓到 step 索引 off-by-one）
+- [x] Round 6 recovery 程序进搜索空间（坐标下降）+ 门禁化采纳；实测被门禁拒绝一次
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 6：把 shadow replay 接进 proposer 做**离线预筛**。
-现在每个候选都要花 240 个真实 episode 过门禁；shadow replay 已经证明能逐步精确预测，
-可以先用它把候选池从几十个筛到 top-3，再花真实 rollout。这是 Zetta 那条流水线里
-我们已经有能力但还没接上的一段，且能大幅扩大搜索空间。
+Round 7：跑一次 `search_recovery=True` 的完整 campaign（约 20 分钟），
+看多代 + recovery 搜索联合起来能到哪，以及 recovery 门禁在每代的判定。
+之后做 shadow-replay 离线预筛（扩大触发器搜索空间，不增加真实 rollout）。
 
 ## 阻塞
 
@@ -63,5 +63,7 @@ Round 6：把 shadow replay 接进 proposer 做**离线预筛**。
 - 不要混用步索引约定：trace / search / shadow / governed_rollout 全部 **0-based**。
   1-based 会让触发器早武装一步，单元测试和成功率都抓不到（数字还更好看）。
 - 不要在改了触发语义之后沿用旧数字：必须重跑 campaign 重新赚。
+- 不要在看到 p=0.096 之后加大 held-out 样本量重测：那是 p-hacking。
+- 不要用 shadow replay 预筛 recovery 候选：换修复动作就换轨迹，录像不再描述它。只能真跑。
 - 不要今晚做沙箱代码执行：SBPL `(allow default)(deny file-write*)` 不拦网络（实测），
   且 10-way 并行下 critic tick p99 = 108-169ms，500µs 硬预算会作废几乎全部 episode。

@@ -62,6 +62,12 @@ class Preregistration:
     max_generations: int
     min_fixed: int = 3
     alpha: float = 0.05
+    #: Search the recovery program per generation, not just the trigger. The
+    #: searched program is adopted only if it clears the same paired gate the
+    #: trigger must clear, against the hand-written program as baseline.
+    search_recovery: bool = False
+    #: Seeds used for the recovery coordinate descent; a subset of `dev`.
+    recovery_search_n: int = 60
 
     def __post_init__(self) -> None:
         overlap = set(self.dev) & set(self.heldout)
@@ -171,6 +177,9 @@ def run_campaign(
             break
 
         rule = propose_rule([r["trace"] for r in cur], labels, generation=gen, prereg=prereg)
+        if rule is not None and prereg.search_recovery:
+            rule = _maybe_search_recovery(rule, bundle, dev_specs, prereg, store, gen,
+                                          workers=workers, verbose=verbose)
         if rule is None:
             if verbose:
                 print("  proposer produced no admissible candidate; stopping")
@@ -221,3 +230,38 @@ def run_campaign(
                 print(f"  sensor_sd={sd:.3f}  {r.line()}  [{tag}]")
         store.put("campaign_result", result)
     return result
+
+
+def _maybe_search_recovery(rule: Rule, parent: Bundle, dev_specs, prereg: Preregistration,
+                           store: CampaignStore, gen: int, *, workers: int, verbose: bool) -> Rule:
+    """Search a recovery program for `rule`, and adopt it only if it clears the gate.
+
+    Round 6 measured what happens without that guard: a coordinate descent found
+    a program worth +5pp on the 60 dev seeds it was searched on, and +4.0pp on
+    held-out at p=0.096 -- directionally right, not significant. Adopting it on
+    the dev number alone would have been exactly the failure this project's
+    methodology exists to prevent, so the searched program has to earn its place
+    against the hand-written one on the same paired test.
+    """
+    from governor.recovery_search import program_of, search_recovery
+
+    subset = list(dev_specs)[: prereg.recovery_search_n]
+    found = search_recovery(subset, rule.trigger, sensor_sd=prereg.recovery_sensor_sd,
+                            critic_budget=prereg.critic_budget,
+                            action_budget=prereg.action_budget, workers=workers, verbose=verbose)
+    candidate = Rule(rule.rule_id, rule.trigger,
+                     RecoverySpec(program=program_of(found.durations),
+                                  sensor_sd=prereg.recovery_sensor_sd))
+    hand_bundle = parent.append(rule)
+    found_bundle = parent.append(candidate)
+    verdict = paired_gate(list(dev_specs), found_bundle, baseline=hand_bundle, workers=workers)
+    adopt = verdict.p_value < prereg.alpha and verdict.fixed > verdict.broken
+    store.put("recovery_search", {
+        "generation": gen, "durations": found.durations, "dev_subset_rate": found.rate,
+        "evaluations": found.evaluations, "gate": asdict(verdict), "adopted": adopt,
+    })
+    if verbose:
+        print(f"  recovery search: {found.evaluations} evals, subset {found.rate:.1%}")
+        print(f"  recovery gate vs hand-written: {verdict.line()} -> "
+              f"{'adopted' if adopt else 'rejected, keeping hand-written'}")
+    return candidate if adopt else rule

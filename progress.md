@@ -224,3 +224,36 @@ shadow replay 接进 proposer 做离线预筛：候选池从几十筛到 top-3 �
 3. **跨任务迁移**：stack / pickcan，验证规则链能否 zero-shot 迁移。
 4. **早期预警 × 廉价 recovery**：用误报成本给早期预警定价。
 5. **LLM proposer**：契约已是 `(traces, labels) -> Rule`，换 provider 即可，用 mock server 验证。
+
+## Round 6 — 2026-08-19 — recovery 进搜索空间，并被门禁拒绝一次
+
+### 做成了什么
+
+1. `governor/recovery_search.py`：recovery 程序进搜索空间。阶段顺序固定（编码重抓的物理结构），
+   搜索拥有每阶段的步数。162 种组合，从手写程序出发做坐标下降，每趟 9 次评估。
+2. dev 60 种子上 70.0% → 75.0%，两趟收敛，120 秒。找到「更短后撤 + 更长重新定位」。
+3. **held-out 验证：+4.0pp，p=0.096，不显著。** 门禁会拒绝。
+4. 把 recovery 搜索按同一套门禁纪律接进 campaign（`Preregistration.search_recovery`）：
+   只有打赢手写程序才采纳，判定和证据（含被拒的）都进内容哈希产物。
+
+### 什么没成（这才是本轮的价值）
+
+- **recovery 搜索的 dev 提升没有迁移到 held-out。** +5pp → +4pp 且失去显著性。
+- 如果没有对手写程序做**配对**检验，我会采纳它：
+  单看 dev（70→75%）或单看 vs 无治理（+19.0→+23.0pp）都指向「更好」。
+- **没有加大样本量重测。** 看到 p=0.096 再去凑显著就是 p-hacking。
+
+### 下一轮种子
+
+跑一次 `search_recovery=True` 的完整多代 campaign（约 20 分钟）。
+
+## Frontier（Round 6 后更新）
+
+**当前天花板：** 零特权两条规则 +27.5pp held-out（round 5）；recovery 搜索可用但尚未证明能通过门禁。
+
+**下一个 frontier：**
+1. 完整 campaign × recovery 搜索（Round 7 计划）
+2. **shadow-replay 离线预筛**：只对触发器有效（recovery 换了轨迹就变），但能把触发器搜索空间放大一个数量级
+3. **跨任务迁移**：stack / pickcan，验证规则链能否 zero-shot 迁移
+4. **早期预警 × 廉价 recovery**：`privileged.grasp_error` 在 step 27 触发，比零特权早一倍；用误报成本定价
+5. **LLM proposer**：契约已是 `(traces, labels) -> Rule`，用 mock server 验证，零 API 成本
