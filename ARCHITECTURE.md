@@ -33,7 +33,14 @@ governor.env.make_env / governor.policy.make_driver 变为派发点:
 spec 携带 env_provider / policy_provider ref 时经 registry 加载 provider, 缺省走原路径。
 加字段只加在 dataclass 末尾(phase 1 的字段顺序教训)。
 Preregistration 增加同名可选字段并由 _specs 下传; 由此 prereg sha 会变, 这是预期且诚实的(挂载进哈希)。
-parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 preregistration, 经 kernel 路径重跑, 比对每代规则 canonical、dev 门禁的 fixed/broken/p、held-out 数字。
+parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 preregistration, 经 kernel 路径重跑, 比对每代规则 canonical + bundle sha、dev/blind 门禁与 held-out 的全部配对字段。
+已验证: 脚本与克隆两个策略均四组 PASS(round 54/55)。
+
+## L0 已知限制(有意, 待 L1 清除)
+
+- worker 里 provider 由裸 ref 字符串重建, Mount params 到不了 worker; workload 在 params 非空时拒绝启动(fail loud), L1 把 params 编进 spec。
+- governor/demos.py 的演示采集不携带 provider ref, 永远走 legacy 路径; 采集是训练数据管线不是 campaign 路径, L1 一并迁移。
+- provider 在 make_env/make_driver 里每 episode 重建一次; 对无状态适配器免费, L1 引入 per-worker 缓存。
 
 ## 不变量(从 phase 1 原样上提)
 

@@ -1,0 +1,64 @@
+"""Plugin-side boundary rules, enforced mechanically (review round 54, minor #3).
+
+The kernel-side rule (harness imports nothing) lives in test_kernel.py; these
+cover the other direction: plugins never import each other, and profiles stay
+declarative.
+"""
+
+import ast
+import pathlib
+
+import sys
+
+#: Transitional L0 allowance: plugins may import the legacy governor library
+#: (ARCHITECTURE.md migration ladder); it goes away at L2. Any stdlib module
+#: plus numpy is fine; what matters is harness/governor/plugins discipline.
+_PLUGIN_ALLOWED = ("harness", "governor", "numpy")
+
+
+def _allowed(root: str) -> bool:
+    return root in _PLUGIN_ALLOWED or root in sys.stdlib_module_names
+
+
+def _imports(path: pathlib.Path):
+    tree = ast.parse(path.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield node.lineno, alias.name
+        elif isinstance(node, ast.ImportFrom):
+            yield node.lineno, node.module or ""
+
+
+def _plugin_package(path: pathlib.Path) -> str:
+    rel = path.relative_to("plugins")
+    return rel.parts[0].removesuffix(".py")
+
+
+def test_plugins_never_import_each_other():
+    for path in pathlib.Path("plugins").rglob("*.py"):
+        own = _plugin_package(path)
+        for lineno, name in _imports(path):
+            if name.startswith("plugins"):
+                parts = name.split(".")
+                imported = parts[1] if len(parts) > 1 else ""
+                assert imported in ("", own), \
+                    f"{path}:{lineno} imports sibling plugin {name}"
+
+
+def test_plugins_import_only_the_allowed_surfaces():
+    for path in pathlib.Path("plugins").rglob("*.py"):
+        for lineno, name in _imports(path):
+            root = name.split(".")[0]
+            assert _allowed(root) or root.startswith("plugins"), \
+                f"{path}:{lineno} imports {name}, outside the allowed plugin surface"
+
+
+def test_profiles_stay_declarative():
+    """profiles/ holds Mounts and prereg overrides; provider code stays out."""
+    for path in pathlib.Path("profiles").rglob("*.py"):
+        for lineno, name in _imports(path):
+            root = name.split(".")[0]
+            assert root == "harness" or root in sys.stdlib_module_names, \
+                f"{path}:{lineno} imports {name}; profiles reference providers " \
+                "by string, never by import"

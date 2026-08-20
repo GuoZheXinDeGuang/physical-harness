@@ -2099,3 +2099,32 @@ held-out 复现 41.5% -> 72.5%, +31.0pp, 62 修 0 破, 与 round 47 存档逐位
 - review 的 minor 残留: 跨进程 spawn 冒烟测试、demos.py 不传 ref(记录为 L0 已知限制)、
   插件间边界的机械测试(现在只有内核侧 AST 测试)。
 - GitHub push agent 在后台跑(用户指令, 建私有库)。
+
+## Round 55 - 2026-08-20 - 克隆 parity 全 PASS; L0 收口
+
+### VERIFY
+
+克隆策略 parity(runs/campaign-pj-clone, kernel 路径重跑): **四组全 PASS**。
+held-out 复现 31.0% -> 46.0%, 33 修 3 破; gen2 拒绝(7 修 2 破 p=0.1797)逐位一致。
+**两个策略都通过, GOAL v2 验收 #3 完整达成。至此 5 条验收全部落地:**
+#1 内核 AST 边界 / #2 配置矩阵 / #3 双策略 parity / #4 SkillRecord 真发布 / #5 全测试绿。
+
+### review minor 残留清掉
+
+- tests/test_boundaries.py: 插件互不 import、插件 import 面(harness/governor/numpy/stdlib)、
+  profiles 保持声明式(只准 import harness+stdlib), 全部机械强制。
+  第一版 allowlist 手工枚举 stdlib 被 collections.abc 打脸, 改用 sys.stdlib_module_names。
+- tests/test_spawn_safety.py: spawn 出来的 worker 只拿 ref 字符串重建 provider(无仿真, 快)。
+  parity 重跑本身已在真仿真里证明了 spawn 路径, 这个测试把性质钉住。
+- ARCHITECTURE.md 增补 "L0 已知限制"(params 到不了 worker -> fail loud; demos 不带 ref;
+  provider 每 episode 重建), 全部标注 L1 清除。
+- GitHub 已同步: https://github.com/yusenthebot/physical-harness (私有)。每轮 RECORD 后 push。
+
+156 测试绿。
+
+### 下一轮种子(L1 第一级)
+
+percept.model 真正走能力接缝: _percept_object 现在写死在 governor.governed 里,
+它是消融梯的载体、也是真机上要换掉的第一个东西(板载感知 provider)。
+迁移方式: percept 逻辑移入 plugins/embodiment_robosuite, spec 携带 percept ref,
+governed_rollout 经派发点取用; 迁完跑双策略 parity。
