@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 36 完成
+**Round:** 37 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -118,22 +118,24 @@
 - [x] Round 36 **Review 轮**：三次对抗攻击（特权记账 / 就地篡改日志 / 确定性）全部没弄坏系统；
       canonical 字段完整性变成常驻不变量（86 绿）；标注 `docs/design/` 为实现前探索并列出偏离；
       **更正 round 24 —— beam 的关闭理由已被 round 32 推翻，beam.py 是活候选不是死代码**
+- [x] Round 37 合取语言**前提为负**（最好合取 +0.619 < 最好单条件 +0.672），没造。
+      复现 gen3 搜索逐位一致（无 bug），但发现 **argmax 随切片翻转、前二名稳定**，
+      且 gen3 候选样本内 fpr 0.01 / 门禁 2 修 2 破 = 搜索切片过拟合 ——
+      **`screen_triggers` 正是为此而建，却默认关闭**
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 37：**critic 语言加合取（两特征 AND）**，在克隆策略上与单特征对照。
-理由（ambition critic）：现在的「演化 critic」其实是
-`4 特征 × 4 reducer × 2 算符 × 3 dwell × 阈值 × arm_after` 的**阈值检测器**，
-没有合取/序列/算术。这是 Zetta 停下的地方，纯 CPU 可行。
+Round 38：**克隆策略 campaign 开 `screen_triggers=True` 重跑**，held-out 用全新 8400-8599。
+理由：gen3 的候选样本内 fpr 0.01、门禁 2 修 2 破，正是 round 7 造预筛要挡的东西，
+而预筛默认关闭、从没在任何 campaign 里开过。
+**必须两臂都报**：预筛把每代搜索样本切一半，可能反而变弱。
 
-**先验前提（round 21/35 的教训）：** 现语言选出的两条规则都在 `finger_gap` 上。
-**先量四个零特权特征各自的可分性** —— 若只有一个有信息量，合取买不到东西，不要造。
-
-**frontier 排序：** 1. 合取语言 → 2. beam 重测（理由已失效，见 round 24 更正块）
+**frontier 排序：** 1. 预筛开关对照 → 2. beam 重测（理由已失效，见 round 24 更正块）
 → 3. 真正的第三种策略（需训中间容量 BC）→ 4. 沙箱化 critic 代码执行。
+**已关闭：** 合取语言（round 37 实测买不到东西）、修复原语（round 35）。
 
 **重排后的 frontier：** 1. 克隆策略的第二条规则 → 1.5 修复原语（条件性重开，
 round 21/22 否的是原语形状不是命题，且只在脚本策略的失败状态上测过）
