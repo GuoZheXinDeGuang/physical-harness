@@ -34,7 +34,12 @@ class Strategy:
 
     @property
     def length(self) -> int:
+        """Upper bound: servo segments may finish early."""
         return sum(d for _n, d, _x, _y in self.steps)
+
+    @property
+    def uses_feedback(self) -> bool:
+        return any(n.startswith("servo_") for n, _d, _x, _y in self.steps)
 
 
 REPERTOIRE: tuple[Strategy, ...] = (
@@ -64,6 +69,19 @@ REPERTOIRE: tuple[Strategy, ...] = (
          ("close", 16, 0.0, 0.0), ("lift", 40, 0.0, 0.0)),
         "Clear the workspace vertically first, then descend fresh. For a configuration "
         "where retreating in place keeps the arm in contact with the scene.",
+    ),
+)
+
+REPERTOIRE = REPERTOIRE + (
+    Strategy(
+        "servo_regrasp",
+        (("descend", 10, 0.0, 0.0), ("above", 20, 0.0, 0.0),
+         ("servo_descend", 40, 0.0, 0.0), ("servo_close", 30, 0.0, 0.0),
+         ("lift", 40, 0.0, 0.0)),
+        "Approach open loop, then descend until contact is FELT and close until the "
+        "fingers stop. Round 19 showed the gap is the grasp, not the approach: the "
+        "naive repair aims at percept_z, which is the quantity that was wrong. Contact "
+        "and finger motion are proprioceptive, so the privilege budget stays at zero.",
     ),
 )
 

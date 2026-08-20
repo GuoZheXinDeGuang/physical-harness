@@ -119,7 +119,9 @@ def test_every_strategy_resolves_to_offset_steps():
     for s in REPERTOIRE:
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:
-            assert name in PHASE_HEIGHT, f"{s.name} uses unknown phase {name!r}"
+            assert name in PHASE_HEIGHT or name.startswith("servo_"), (
+                f"{s.name} uses unknown step {name!r}"
+            )
             assert dur > 0 and isinstance(dur, int)
             assert abs(dx) < 0.2 and abs(dy) < 0.2, "an offset that large leaves the workspace"
         assert s.rationale, f"{s.name} must say what failure it is for"
@@ -134,6 +136,44 @@ def test_unknown_strategy_is_rejected():
 def test_explicit_program_overrides_the_named_strategy():
     spec = RecoverySpec(name="regrasp", program=(("lift", 5),))
     assert spec.steps() == (("lift", 5, 0.0, 0.0))[0:1] or spec.steps() == (("lift", 5, 0.0, 0.0),)
+
+
+def test_servo_strategy_is_declared_as_feedback():
+    """A feedback segment decides its own length, so `length` is an upper bound."""
+    from governor.repertoire import strategy
+    servo = strategy("servo_regrasp")
+    assert servo.uses_feedback
+    assert not strategy("regrasp").uses_feedback
+
+
+def test_servo_primitives_read_only_proprioception():
+    """The whole point: contact and finger motion are things a real robot feels."""
+    import inspect
+    from governor import servo
+    src = inspect.getsource(servo)
+    for privileged in ("cube_pos", "cubeA_pos", "Can_pos", "object_z", "grasp_error"):
+        assert privileged not in src, (
+            f"servo primitive reads {privileged!r}; that would spend privilege"
+        )
+
+
+def test_recovery_actor_runs_a_mixed_program():
+    """Fixed and servo segments must compose in one program."""
+    import numpy as np
+    from governor.policy import RecoveryActor
+    from governor.repertoire import strategy
+
+    actor = RecoveryActor(strategy("servo_regrasp").steps, np.array([0.0, 0.0, 0.83]))
+    obs = {"robot0_eef_pos": np.array([0.0, 0.0, 1.0]),
+           "robot0_gripper_qpos": np.array([0.04, -0.04])}
+    steps = 0
+    while not actor.done and steps < 400:
+        a = actor.act(obs)
+        assert a.shape == (7,) and np.all(np.abs(a) <= 1.0 + 1e-9)
+        obs["robot0_eef_pos"] = obs["robot0_eef_pos"] - np.array([0.0, 0.0, 0.002])
+        steps += 1
+    assert actor.done, "a mixed program must terminate"
+    assert steps > 0
 
 
 def test_strategy_choice_changes_behaviour():

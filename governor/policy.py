@@ -150,23 +150,58 @@ class ClonedDriver:
 
 
 class RecoveryActor:
-    """Scripted repair that owns control for the length of its program."""
+    """Scripted repair that owns control for the length of its program.
+
+    A program is a sequence of SEGMENTS. A fixed segment replays a phase for a
+    set number of steps; a servo segment runs a closed-loop primitive from
+    :mod:`governor.servo` and decides its own length from proprioception. Mixing
+    them is the point: the approach can stay open-loop while the part that
+    actually has to make contact stops guessing at an estimated height.
+    """
 
     def __init__(self, program, target: np.ndarray) -> None:
-        self.queue = [(name, dx, dy) for name, dur, dx, dy in program for _ in range(dur)]
+        from governor.servo import make as make_servo
+
         self.target = target
+        self.segments: list = []
+        for step in program:
+            kind = step[0]
+            if kind.startswith("servo_"):
+                _k, budget = step[0], step[1]
+                kw = {"max_steps": budget}
+                if kind == "servo_descend":
+                    kw["target_xy"] = np.asarray(target)[:2]
+                self.segments.append(make_servo(kind, **kw))
+            else:
+                name, dur, dx, dy = step
+                self.segments.append([(name, dx, dy)] * dur)
+        self._i = 0
+
+    def _current(self):
+        while self._i < len(self.segments):
+            seg = self.segments[self._i]
+            if isinstance(seg, list):
+                if seg:
+                    return seg
+            elif not seg.done:
+                return seg
+            self._i += 1
+        return None
 
     def act(self, obs) -> np.ndarray:
-        name, dx, dy = self.queue.pop(0)
-        goal = np.array([self.target[0] + dx, self.target[1] + dy,
-                         self.target[2] + PHASE_HEIGHT[name]])
-        delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * 8.0, -1, 1)
-        grip = 1.0 if name in ("close", "lift") else -1.0
-        return np.array([*delta, 0.0, 0.0, 0.0, grip])
+        seg = self._current()
+        if isinstance(seg, list):
+            name, dx, dy = seg.pop(0)
+            goal = np.array([self.target[0] + dx, self.target[1] + dy,
+                             self.target[2] + PHASE_HEIGHT[name]])
+            delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * 8.0, -1, 1)
+            grip = 1.0 if name in ("close", "lift") else -1.0
+            return np.array([*delta, 0.0, 0.0, 0.0, grip])
+        return seg.act(obs)
 
     @property
     def done(self) -> bool:
-        return not self.queue
+        return self._current() is None
 
 
 def make_driver(spec: EpisodeSpec) -> PolicyDriver:
