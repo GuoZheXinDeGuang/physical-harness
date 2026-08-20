@@ -69,6 +69,17 @@ class Trigger:
     arm_after: int
     reducer: Reducer = "value"
 
+    def __post_init__(self) -> None:
+        # Same principle as the feature contract: a name that is not in the
+        # vocabulary is rejected where it is written, not where it is read.
+        # `reduce_series` would raise eventually, but a trigger that only fails
+        # once an episode is already running is a worse error than one that
+        # cannot be constructed.
+        if self.reducer not in REDUCERS:
+            raise ValueError(f"unknown reducer {self.reducer!r}; expected one of {REDUCERS}")
+        if self.op not in ("lt", "gt"):
+            raise ValueError(f"unknown operator {self.op!r}")
+
     @property
     def privilege(self) -> int:
         return privilege_cost([self.feature])

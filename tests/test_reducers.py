@@ -241,3 +241,15 @@ def test_zero_fp_penalty_admits_the_degenerate_fire_on_everything_trigger():
     strict = search_triggers(traces, labels, privilege_budget=0, top_k=1, fp_penalty=1.2)[0]
     assert strict.false_positive < 1.0, "a positive penalty must exclude fire-on-everything"
     assert strict.false_positive <= lax.false_positive
+
+
+def test_trigger_rejects_an_unknown_reducer_at_construction():
+    """A typo must fail where it is written, not mid-episode."""
+    import pytest
+
+    from governor.search import Trigger
+
+    with pytest.raises(ValueError, match="unknown reducer"):
+        Trigger("observable.finger_gap", "gt", 0.05, 1, 0, "runing_min")
+    with pytest.raises(ValueError, match="unknown operator"):
+        Trigger("observable.finger_gap", "ge", 0.05, 1, 0, "value")
