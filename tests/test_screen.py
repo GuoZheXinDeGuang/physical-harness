@@ -42,3 +42,37 @@ def test_screen_demotes_a_candidate_that_only_fits_the_search_half():
 def test_screen_returns_empty_when_a_half_has_one_class():
     traces = [_trace([0.04] * 20) for _ in range(8)]
     assert screen(traces, [True] * 8, privilege_budget=0) == []
+
+
+def test_screen_rescores_under_the_objective_it_is_given():
+    """The out-of-sample score used the search's weights, not frozen literals.
+
+    Round 26 lowered the earliness default to 0.0 but the screen kept ranking
+    with 0.25 baked in, so the two halves of one campaign disagreed about what
+    a good trigger was.
+    """
+    traces, labels = [], []
+    for i in range(24):
+        failing = i % 4 in (2, 3)
+        # The signal appears at step 5, so every candidate carries a real lead
+        # and the earliness term has something to weigh.
+        series = [0.04] * 5 + ([0.001] * 15 if failing else [0.04] * 15)
+        traces.append(_trace(series))
+        labels.append(not failing)
+    late = screen(traces, labels, earliness=0.0)
+    early = screen(traces, labels, earliness=4.0)
+    assert late and early
+    assert [s.out_score for s in late] != [s.out_score for s in early], (
+        "screen ignored the earliness weight it was handed"
+    )
+
+
+def test_objective_weights_are_preregistered():
+    """A constant that can move the headline belongs in the content hash."""
+    from governor.campaign import Preregistration
+
+    base = dict(dev=tuple(range(10)), heldout=tuple(range(100, 110)),
+                percept_noise=0.004, task="lift", policy="scripted",
+                critic_budget=0, action_budget=0, recovery_sensor_sd=0.010,
+                max_generations=1)
+    assert Preregistration(**base).sha() != Preregistration(**base, earliness=0.25).sha()

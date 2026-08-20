@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 28 完成
+**Round:** 29 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）

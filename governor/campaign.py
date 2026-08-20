@@ -36,7 +36,8 @@ from governor.env import EpisodeSpec
 from governor.gate import PairedResult, ablation_curve, paired_gate
 from governor.governed import Bundle, RecoverySpec, Rule
 from governor.parallel import rollout_many
-from governor.search import Trigger, search_triggers
+from governor.search import (DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger,
+                             search_triggers)
 
 
 def sha_json(payload) -> str:
@@ -89,6 +90,15 @@ class Preregistration:
     #: fit the half they were searched on (round 7 measured a shrinkage of +0.45
     #: on one such candidate).
     screen_triggers: bool = False
+    #: The trigger objective's hand-tuned weights. These live HERE, not as module
+    #: globals, because round 26 measured that one of them was worth 5.0pp of
+    #: held-out success: a constant that can move the headline is part of what
+    #: was preregistered, and belongs in the content hash with everything else.
+    #: Keeping them as defaults bound at import time also made an A/B silently
+    #: run the same arm twice (round 29) -- rebinding the module attribute after
+    #: import cannot reach a default already bound to the function.
+    earliness: float = DEFAULT_EARLINESS
+    fp_penalty: float = DEFAULT_FP_PENALTY
 
     def __post_init__(self) -> None:
         overlap = set(self.dev) & set(self.heldout)
@@ -150,12 +160,14 @@ def propose_rule(
     if prereg.screen_triggers:
         from governor.screen import screen
 
-        screened = screen(traces, labels, privilege_budget=prereg.critic_budget, pool=8)
+        screened = screen(traces, labels, privilege_budget=prereg.critic_budget, pool=8,
+                          earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
         if screened:
             return Rule(rule_id=f"g{generation}", trigger=screened[0].trigger,
                         recovery=RecoverySpec(sensor_sd=prereg.recovery_sensor_sd))
         # too few episodes to split; fall through to the in-sample ranking
-    ranked = search_triggers(traces, labels, privilege_budget=prereg.critic_budget, top_k=3)
+    ranked = search_triggers(traces, labels, privilege_budget=prereg.critic_budget, top_k=3,
+                             earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
     if not ranked:
         return None
     return Rule(

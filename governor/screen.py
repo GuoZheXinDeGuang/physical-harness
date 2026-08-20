@@ -20,7 +20,8 @@ from typing import Sequence
 
 import numpy as np
 
-from governor.search import Trigger, search_triggers
+from governor.search import (DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger,
+                             search_triggers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +62,7 @@ def _score_offline(trigger: Trigger, traces, labels) -> tuple[float, float, floa
 def screen(
     traces: Sequence[dict], labels: Sequence[bool], *, privilege_budget: int = 0,
     pool: int = 8, holdout_fraction: float = 0.5, n_steps: int | None = None,
+    earliness: float = DEFAULT_EARLINESS, fp_penalty: float = DEFAULT_FP_PENALTY,
 ) -> list[Screened]:
     """Search on one half of the recorded episodes, re-score on the other.
 
@@ -84,14 +86,18 @@ def screen(
     if not any(s_labels) or all(s_labels) or not any(h_labels) or all(h_labels):
         return []
 
-    candidates = search_triggers(s_traces, s_labels, privilege_budget=privilege_budget, top_k=pool)
+    candidates = search_triggers(s_traces, s_labels, privilege_budget=privilege_budget,
+                                 top_k=pool, earliness=earliness, fp_penalty=fp_penalty)
     steps = n_steps or max(len(next(iter(t.values()))) for t in traces)
     out: list[Screened] = []
     for cand in candidates:
         in_r, in_fp, _ = _score_offline(cand.trigger, s_traces, s_labels)
         o_r, o_fp, o_med = _score_offline(cand.trigger, h_traces, h_labels)
         lead = steps - (o_med if o_med is not None else steps)
+        # The out-of-sample rescore must use the SAME objective the search used;
+        # these were literals until round 29, so after round 26 lowered the
+        # earliness default the screen was still ranking under the old weights.
         out.append(Screened(cand.trigger, in_r, in_fp, o_r, o_fp, o_med,
-                            o_r - 1.2 * o_fp + 0.25 * (lead / steps)))
+                            o_r - fp_penalty * o_fp + earliness * (lead / steps)))
     out.sort(key=lambda s: -s.out_score)
     return out
