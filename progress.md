@@ -103,3 +103,47 @@ harness 要做到的是**自动**找到这对，并且在声明的特权预算�
 （`privileged.grasp_error` 在 step 27 触发，比零特权早一倍多，代价是 recall 0.88 / fp 0.06）。
 => 新 frontier：**早期预警 + 廉价 recovery** 的组合，可能比「晚检测 + 昂贵 recovery」更省，
 且能用误报成本来定价。这是两个源项目都没探索的方向。
+
+## Round 3 — 2026-08-19 — 隔离边界 + 不变量 + 端到端门禁
+
+### 做成了什么
+
+1. `governor/percept.py`：**隔离**。原始 obs 永不进候选代码；`FeatureView` 继承 `Mapping`
+   并记账每次 `__getitem__`；`digest()` 是方法不是缓存属性。
+   `PrivilegePolicy` 把 critic 和 action 预算分开，默认 action 更严
+   （trigger 里的特权是感知问题，可能被传感器替代；action 里的特权不可替代）。
+2. `governor/invariant.py`：两条运行时不变量 —— I1 critic 可见 ⟺ 已记录；I2 特权预算按**实际读取**核算。
+3. `governor/governed.py`：受治理 rollout。**感知模型即消融梯子** ——
+   `estimate = true + N(0, sensor_sd)`，`sensor_sd=0` 自动被标记为 privilege=1。
+   消融和被测量的东西是同一段代码，不可能漂移。
+4. `governor/gate.py`：配对精确 McNemar + 自动消融曲线。
+5. **VERIFY（真仿真）：零特权 bundle 在 held-out 上 +25.0%，p=0.00073**（docs/round3-result.md）。
+   19 个测试全绿。**GOAL.md 五条验收全部达成。**
+
+### 什么没成 / 修正
+
+- **Round 1 的结论错了一半。** 「零特权只剩 +13.3% 不显著」是那条手写规则的上限，不是任务上限。
+  搜出来的规则零特权下 +25.0% 显著。特权买的是幅度不是有无。已在 docs/round3-result.md 更正。
+- critique agent 实测证伪了原设计三处：缓存 digest 循环、dict 子类漏记账、子进程特权复活。
+  全部已修 + 加回归测试。
+- 沙箱代码执行今晚不做：agent 实测 SBPL 那条 profile 不拦网络，且 10-way 并行下
+  critic tick p99 达 108-169ms，500µs 硬预算会作废几乎所有 episode。保留接缝，标注为 interpreted。
+
+### 下一轮种子
+
+campaign 生命周期（多代原子增量 + preregistration + 内容哈希产物），并把 n 提到 200。
+
+## Frontier（Round 3 后更新）
+
+**当前天花板：** 单代、单 bundle、单任务，零特权 +25.0pp 显著。
+
+**下一个 frontier：**
+1. **多代演化**：每代只加一对、父规则逐字节冻结（Zetta 的 `preserve_parent_rules_byte_for_byte`）。
+   现在只证明了「找得到一条好规则」，没证明「能持续累积」。
+2. **持久事件日志 + 离线重放审计**：现在 trace 在内存里，不变量只在线检查。
+   落盘后才能做 shadow replay 和事后审计。
+3. **早期预警 × 廉价 recovery**：`privileged.grasp_error` 在 step 27 触发（比零特权早一倍），
+   recall 0.88 / fp 0.06。用误报成本给早期预警定价，两个源项目都没探索。
+4. **LLM proposer**：接口已备好（`Trigger` 就是 proposer 的输出类型）。
+   用 dsh 那套 mock server 思路验证，零 API 成本。
+5. **跨任务迁移**：stack / pickcan，证明 critic 能 zero-shot 迁移。
