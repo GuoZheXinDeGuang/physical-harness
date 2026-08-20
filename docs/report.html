@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 51 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 52 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -668,16 +668,23 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <div class="call ok">
     <h4>但停在这里就会读成「优势消失了」—— 那是另一回事</h4>
     <p>不相交切片只有 n=140。在<strong>全新 held-out 区块 n=200</strong> 上重测：</p>
+    <p>而且<strong>每个策略都做了两个区块</strong> —— 上一版报告在这里只放了一个区块就下了结论，
+    复现立刻给它加上了限定：</p>
     <div class="tw"><table>
-      <thead><tr><th>规则（全新区块）</th><th>对自己的盲发孪生</th><th>修复 / 破坏</th><th>裁决</th></tr></thead>
+      <thead><tr><th>规则</th><th>区块 A</th><th>区块 B</th><th>合并 n=400</th></tr></thead>
       <tbody>
-        <tr><td>脚本 12400-12599</td><td class="n"><b>+29.5pp</b>，p&lt;1e-5</td><td class="n">65 / 6</td><td>判断成立</td></tr>
-        <tr><td>行为克隆 12200-12399</td><td class="n"><b>+12.0pp</b>，p=0.00094</td><td class="n">37 / 13</td><td>判断成立</td></tr>
+        <tr><td>脚本</td><td class="n">+29.5pp，p&lt;1e-5</td><td class="n">+26.0pp，p&lt;1e-5</td><td class="n"><b>+27.8pp</b>，127 修 16 破，p=1.3e-22</td></tr>
+        <tr class="hi"><td>行为克隆</td><td class="n">+12.0pp，p=0.0009</td><td class="n"><b>+7.0pp，p=0.081</b></td><td class="n"><b>+9.5pp</b>，72 修 34 破，p=0.0003</td></tr>
       </tbody>
     </table></div>
     <p><strong>p=0.243 是功效不足，不是反驳。</strong>优势是真的，被抬高的是估计值 ——
-    克隆那条从样本内的 +21.4% 收缩到 +12.0%。
+    克隆那条从样本内的 +21.4% 收缩到合并后的 +9.5pp。
     <strong>「收缩很大」和「优势不存在」是两个不同的结论，我差一点把前者写成后者。</strong></p>
+    <p><strong>但克隆的这条主张贴着边界：</strong>合并 n=400 时 p=0.0003 稳稳成立，
+    而<strong>单独看第二个区块是 p=0.081，会被判「未确立」</strong>。
+    这正是前面那条 ±7pp 区块噪声，作用在判断对比上 ——
+    <strong>「至少三个区块」这条纪律对新加的数字同样适用，不因为它是我最得意的检查就例外。</strong>
+    脚本策略那一侧没有这个问题：两个区块都是 p&lt;1e-5。</p>
     <p>修法是把这一项也搬到 held-out：现在每次 campaign 在 held-out 上额外跑一次
     「整条链 vs 全链盲发孪生」，并打印<strong>判断成立 / 未确立</strong>。
     <strong>「赢的是判断，不是多给的控制步」从此是一条 held-out 主张，不是样本内主张。</strong></p>
@@ -1197,7 +1204,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  51 轮自主循环，3800+ 行实现 + 1500 行测试，91 个测试全绿，51 篇过程记录。
+  52 轮自主循环，3800+ 行实现 + 1500 行测试，91 个测试全绿，52 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
