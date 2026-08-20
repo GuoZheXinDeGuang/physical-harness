@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 11 完成
+**Round:** 12 完成（容量对照跨轮运行中）
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -39,14 +39,19 @@
 - [x] Round 10 跨任务零退化迁移（stack +28.5% / pickcan +24.0%）；特权触发器在 pickcan 上静默失效（0 触发）
 - [x] Round 11 盲对照在修正后代码上重测（+31.5pp 正面对比）；出总报告 `docs/report.html`
       （已发布为 artifact: https://claude.ai/code/artifact/a1cae211-14e5-4de8-b0f1-6024a3cc532b ）
+- [~] Round 12 行为克隆基础策略 **未成功**：朴素克隆和 DART 都是 0% 闭环。
+      诊断：位置控制复合误差，20 步内发散（docs/round12-bc-negative.md）。容量对照跑着。
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 12：多任务联合演化（三个任务一起演化 vs 单任务演化+迁移，哪个更好）。
-或者对抗贪心收敛的 beam 搜索 —— round 8 证明了这个问题真实存在。
+Round 13：先收容量对照的结果（区分容量不够 vs 结构性发散），据此决定
+是继续投入 BC 还是把这条局限如实挂着转做 beam 搜索 / 多任务联合演化。
+
+**不要为了让 BC 看起来成功而降低标准**：不放松成功判据，不改残差策略
+（那样失败形态又变回脚本的，等于绕开了要回答的问题）。
 
 ## 阻塞
 
