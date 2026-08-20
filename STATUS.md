@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 2: Agentic Robotics OS 的 backbone harness, 见 GOAL.md v2 + ARCHITECTURE.md。(phase 1 Governor 成为治理层, 其记录不动)
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 54 进行中(L0 迁移 workflow 后台跑)
+**Round:** 54 完成(L0 落地, parity PASS)
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -186,9 +186,12 @@
 ## PHASE 2 状态
 
 - [x] Round 54a: 内核 harness/ + plugins/graphs.py + 11 内核测试(100 全绿), GOAL v2 + ARCHITECTURE.md
-- [ ] Round 54b: workflow wf_10857d18-974(Seam -> Workloads -> Integrate -> Review)完成后:
-      处理 review findings -> 我串行跑真仿真 parity(scripts/parity_check.py 对 runs/campaign-pj-scripted)
-      -> RECORD。**用户重定向已取代 /loop 旧 prompt, 以 GOAL.md v2 为准。**
+- [x] Round 54b: workflow 完成(7 agent), 21 条 review findings 中 critical/major 全修,
+      **真仿真 parity 四组全 PASS**(kernel 路径逐位复现 runs/campaign-pj-scripted)。
+      验收 #1/#2/#3(脚本)/#5 达成, #4 发布路径已真跑。148 测试绿。
+- [ ] Round 55: 克隆策略 parity(runs/campaign-pj-clone, 全新 rerun dir) + review minor 残留
+      (跨进程 spawn 冒烟测试 / demos.py ref 记录为 L0 限制 / 插件间边界机械测试)。
+      GitHub push agent 后台跑着(私有库), 等它的结果。
 - gate(等用户): reasoner 接真实模型需要 key 与选型; 三层团队的契约细化按他们的 spec 迭代。
 
 ## 下一步

@@ -2057,3 +2057,45 @@ Integrate(全套测试) -> Review 三路(parity 风险 opus / 边界 / 可审计
 - provider 身份走 EpisodeSpec 里的字符串 ref, 不走模块全局 hook: hook 不能活过 spawn(phase 1 实测), 字符串可 pickle、进哈希、可审计。
 - Preregistration 增加 provider ref 字段 -> 新 run 的 prereg sha 会变, 预期且诚实(挂载进哈希)。
 - L0 允许插件依赖 governor(legacy 库), L2 清除; 内核边界从第一天由测试强制。
+
+## Round 54b - 2026-08-20 - L0 迁移落地 + review 修复 + parity 全 PASS
+
+### workflow(7 agent, 0 错误)
+
+Seam: EpisodeSpec/Preregistration 末尾加 env_provider/policy_provider(字符串 ref, spawn 安全),
+make_env/make_driver 成为派发点, 三个适配器插件(embodiment_robosuite / policies / reasoner)。
+Workloads: plugins/rsi(经 kernel 解析能力 -> 把 ref 盖进 prereg 哈希 -> run_campaign ->
+把提升规则发布为 SkillRecord) + profiles(3 任务 x 2 策略纯配置矩阵) + scripts/parity_check.py。
+Integrate: 全套绿。Review 三路交 21 条 findings(2+1 critical)。
+
+### review 修复(全部当轮修掉)
+
+- parity 脚本只比 fixed/broken+delta -> 改为全配对字段(n/base/governed/fixed/broken/p) +
+  bundle sha(child/parent) + blind_gate; 拒绝已存在的 rerun store; 老档案缺字段时逐个点名
+  "FILLED WITH TODAY'S DEFAULTS"; kernel 挂 SessionLog; 校验档案确实是 run_campaign store。
+- SkillRecord 证据归属: 规则自己的效果 = 对父代的 dev gate; held-out/判断/消融是
+  **bundle 级证据**, 单独字段并写明 "not attributable to this rule alone"。
+  (原实现会让读者把一条链的 delta 乘以规则数。)
+- kernel 存 Mount params + provider_params(); workload 在 params 非空时**拒绝启动**
+  (ref 字符串带不动 params, 静默丢参数比失败更糟)。
+- reasoner 的 top_k 进 mount plan 哈希(round 29 类错误在新代码里的第一次出现, review 抓住)。
+- beam 选择区块补传 ref; dispatch 的 getattr 静默回退改为直接属性访问。
+- 测试更新 + 新增对称漂移检测 + Preregistration 字段顺序守卫。148 绿。
+
+### VERIFY: 真仿真 parity(runs/campaign-pj-scripted, 全程 kernel 路径)
+
+[PASS] per-generation rule canonicals + bundle shas
+[PASS] dev + blind gates (n/base/governed/fixed/broken/p)
+[PASS] promotion decisions
+[PASS] held-out (n/base/governed/fixed/broken/p)
+
+held-out 复现 41.5% -> 72.5%, +31.0pp, 62 修 0 破, 与 round 47 存档逐位一致。
+**GOAL v2 验收 #3 在脚本策略上达成; #1/#2/#5 已由测试证明; #4 的发布路径已真跑
+(parity rerun 本身就经 workload.run 发布了 SkillRecord)。**
+
+### 未完(下一轮)
+
+- 克隆策略 parity(runs/campaign-pj-clone, ~10min sim)。
+- review 的 minor 残留: 跨进程 spawn 冒烟测试、demos.py 不传 ref(记录为 L0 已知限制)、
+  插件间边界的机械测试(现在只有内核侧 AST 测试)。
+- GitHub push agent 在后台跑(用户指令, 建私有库)。
