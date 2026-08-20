@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 19 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 22 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -119,8 +119,8 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <div><span class="k">+12.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−32.5<span style="font-size:.9rem">pp</span></span><span class="v"><b>方法论收紧的总代价</b><br>从最初的 +50.0pp 一路下修</span></div>
-    <div><span class="k">+28.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">52</span><span class="v">测试全绿<br>2600+ 行实现 / 800 行测试</span></div>
+    <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
+    <div><span class="k">55</span><span class="v">测试全绿<br>2900+ 行实现 / 900 行测试</span></div>
   </div>
   <p class="bandnote">当前数字取自 Round 18（现行代码、全新 held-out 区块）、Round 10 的迁移实验与 Round 14 的克隆策略验收。每个 held-out 区块只评分一次。</p>
 </header>
@@ -131,7 +131,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <h2>每次把方法论收紧，数字就往下走</h2>
   <p class="w">
     这条线比任何单个成绩都更能说明这套东西在干什么。第一轮手写的实验报出 <strong>+50.0pp</strong>；
-    十九轮之后，同一件事在现行代码和干净流程下是 <strong>+17.5pp</strong>。
+    二十二轮之后，同一件事在现行代码和干净流程下是 <strong>+17.5pp</strong>。
     中间没有一次是「效果变差了」—— 每一次下修都是<strong>拆掉一个不该算数的机制</strong>。
   </p>
   <figure>
@@ -447,7 +447,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
 <section>
   <p class="num">06 / 过程</p>
-  <h2>十九轮里被自己抓到的十一个错误</h2>
+  <h2>二十二轮里被自己抓到的十三个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -519,6 +519,18 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td>四种形状对照，现役最好</td>
         <td>天花板在<strong>原语能力</strong>，不在搜索空间</td>
       </tr>
+      <tr>
+        <td class="n">12</td>
+        <td><strong>造原语之前没验证它要解决的问题存在</strong></td>
+        <td>一行 <code>percept − true</code></td>
+        <td>z 误差恒为 0；造花 15 分钟，验证只要 30 秒</td>
+      </tr>
+      <tr>
+        <td class="n">13</td>
+        <td>用固定步数判断「握住了没有」</td>
+        <td>探测段 60/60 从未横移</td>
+        <td>前一段让夹爪张着，固定步数把还在合拢的读成握住</td>
+      </tr>
     </tbody>
   </table></div>
 
@@ -574,20 +586,61 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">08 / 边界</p>
+  <p class="num">08 / 天花板</p>
+  <h2>harness 不可能超过它手上的修复原语</h2>
+  <p class="w">
+    这是整套方法最根本的一条局限，而且它不是一句谨慎的免责声明 ——
+    我们按诊断指的方向<strong>手写了两个更强的原语，两次都没抬起来</strong>。
+  </p>
+
+  <h3>诊断：不是检测，不是接近形状，不是感知精度</h3>
+  <div class="tw"><table>
+    <thead><tr><th>候选解释</th><th>实测</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td>检测不够</td><td>54 个残余失败里 <strong>42 个已被检测到</strong>，只有 12 个漏检</td><td>否</td></tr>
+      <tr><td>状态不可恢复</td><td>42 个里 <strong>39 个把夹爪送到了 3cm 以内</strong></td><td>否</td></tr>
+      <tr><td>接近的形状不对</td><td>四种不同形状，<strong>现役最好</strong>（+11.1% vs 7.8/4.4/2.2）</td><td>否</td></tr>
+      <tr><td>感知精度不够</td><td>给<strong>完美感知</strong>，最好仍只有 15.6%</td><td>不充分</td></tr>
+      <tr class="hi"><td><strong>抓取动作本身</strong></td><td>修复用的是和策略同一套朴素合拢</td><td><strong>是</strong></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>两次尝试，两次失败</h3>
+  <div class="call">
+    <h4>第一次：垂直接触寻找 —— 前提是错的</h4>
+    <p>造了「降到感到接触为止」的原语，理由是「修复瞄准的估计高度是错的」。
+    按纪律测：选择切片领先 → 不相交门禁 p=0.25 → 预注册确认性切片 n=450：
+    <strong>+1.8%，19 修 11 破，p=0.20，不采纳</strong>。</p>
+    <p>然后查出前提本身错了：<code>percept z-error 恒为 0.00000</code> ——
+    感知模型只扰动 x 和 y。<strong>我为一个不存在的失败模式造了原语，造之前从没验证过。</strong>
+    验证只需要 30 秒，造花了 15 分钟。</p>
+  </div>
+  <div class="call">
+    <h4>第二次：横向接触搜索 —— 前提对了，实现也修对了，依然无效</h4>
+    <p>这次先验证：平面误差 1.24cm / p90 2.25cm，与失配偏移<strong>相关 +0.67</strong>，
+    抓住 1.05cm vs 抓空 1.64cm。前提成立。</p>
+    <p>造了按实测半径布点的横向探测。选择切片 <strong>+8.9%，比现役 +11.1% 还差</strong>。
+    查出一个实现 bug：用固定 10 步判断握没握住，而前一段让夹爪张着 ——
+    永远读成「张得很开 = 握住了」，<strong>60/60 从未横移过一次</strong>。
+    改成 settle 判据后搜索会启动了：<strong>14/60 次启动，成功 0/14</strong>。</p>
+  </div>
+
+  <p class="w">
+    <strong>这条限制对 Zetta 更硬。</strong>它的恢复步骤从一个已发布的工具目录里组装，
+    天花板由那个目录的能力决定。而真正抬得起来的东西 ——
+    学出来的抓取策略、力控、触觉 —— 是<strong>一项独立的研究工作，不是演化循环的产物</strong>。
+    演化循环能做的是把现有原语用在对的时刻；它变不出一个更好的原语。
+  </p>
+</section>
+
+<section>
+  <p class="num">09 / 边界</p>
   <h2>还没做的，和已知的局限</h2>
   <ul>
     <li><strong>沙箱代码执行没做。</strong>实测 <code>(allow default)(deny file-write*)</code> 这条 SBPL 并不拦网络，
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
-    <li><strong>最根本的一条：harness 不可能超过它手上修复原语的能力上限。</strong>
-      克隆策略上 42 个「检测到了却修不好」的失败中，<strong>39 个把夹爪送到了距物体 3cm 以内</strong> ——
-      够得着，抓不牢。四种不同形状的修复都没打赢现役方案，而且<strong>即使给完美感知，最好也只有 15.6%</strong>。
-      差距既不在接近的形状，也不在感知精度，而在<strong>抓取动作本身</strong> ——
-      我们的修复用的是和策略同一套朴素的合拢+抬起。
-      <br><br>
-      <strong>这条对 Zetta 更硬：</strong>它的恢复步骤从一个已发布的工具目录里组装，天花板由那个目录的能力决定。
-      抬这个天花板需要往库里加一个真正更强的原语（例如基于接触反馈的抓取控制器），
-      那是一项独立能力，<strong>不是演化循环的产物</strong>。</li>
+    <li><strong>修复原语的天花板</strong> —— 见上一节。两次手写更强原语的尝试都失败了，
+      所以这不是一条待办事项，是这套方法的边界。</li>
     <li><strong>异质失败仍然更难治理：+12.0pp 对 +17.5pp</strong>，且克隆策略上只长出一条规则。
       （这一条取代了原来的「失败形态是我们设计的」—— 克隆策略已经跑通并通过门禁，见第 5 节。）</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
@@ -601,12 +654,12 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 </section>
 
 <section>
-  <p class="num">09 / 复现</p>
+  <p class="num">10 / 复现</p>
   <h2>怎么跑</h2>
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 52 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 55 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -625,7 +678,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  19 轮自主循环，2600+ 行实现 + 800 行测试，52 个测试全绿，19 篇过程记录。
+  22 轮自主循环，2900+ 行实现 + 900 行测试，55 个测试全绿，22 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
