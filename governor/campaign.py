@@ -258,7 +258,18 @@ def _maybe_search_recovery(rule: Rule, parent: Bundle, dev_specs, prereg: Prereg
     """
     from governor.recovery_search import program_of, search_recovery
 
-    subset = list(dev_specs)[: prereg.recovery_search_n]
+    # The recovery gate must not include the seeds the recovery was searched on.
+    # It did until round 8, and the consequence was measurable: the same searched
+    # program cleared the half-in-sample dev gate at +5.8% p=0.039 while a clean
+    # held-out comparison put it at +4.0% p=0.096 (docs/round6-recovery-search.md).
+    all_dev = list(dev_specs)
+    subset = all_dev[: prereg.recovery_search_n]
+    gate_specs = all_dev[prereg.recovery_search_n:]
+    if len(gate_specs) < 20:
+        raise ValueError(
+            f"dev has {len(all_dev)} seeds and recovery_search_n={prereg.recovery_search_n}; "
+            "fewer than 20 seeds are left to gate the searched recovery out of sample"
+        )
     found = search_recovery(subset, rule.trigger, sensor_sd=prereg.recovery_sensor_sd,
                             critic_budget=prereg.critic_budget,
                             action_budget=prereg.action_budget, workers=workers, verbose=verbose)
@@ -267,14 +278,16 @@ def _maybe_search_recovery(rule: Rule, parent: Bundle, dev_specs, prereg: Prereg
                                   sensor_sd=prereg.recovery_sensor_sd))
     hand_bundle = parent.append(rule)
     found_bundle = parent.append(candidate)
-    verdict = paired_gate(list(dev_specs), found_bundle, baseline=hand_bundle, workers=workers)
+    verdict = paired_gate(gate_specs, found_bundle, baseline=hand_bundle, workers=workers)
     adopt = verdict.p_value < prereg.alpha and verdict.fixed > verdict.broken
     store.put("recovery_search", {
-        "generation": gen, "durations": found.durations, "dev_subset_rate": found.rate,
+        "generation": gen, "durations": found.durations, "search_subset_rate": found.rate,
+        "search_seeds": [s.seed for s in subset], "gate_seeds": [s.seed for s in gate_specs],
         "evaluations": found.evaluations, "gate": asdict(verdict), "adopted": adopt,
     })
     if verbose:
-        print(f"  recovery search: {found.evaluations} evals, subset {found.rate:.1%}")
-        print(f"  recovery gate vs hand-written: {verdict.line()} -> "
+        print(f"  recovery search: {found.evaluations} evals on {len(subset)} seeds, "
+              f"subset rate {found.rate:.1%}")
+        print(f"  recovery gate on {len(gate_specs)} DISJOINT seeds: {verdict.line()} -> "
               f"{'adopted' if adopt else 'rejected, keeping hand-written'}")
     return candidate if adopt else rule
