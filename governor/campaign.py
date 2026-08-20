@@ -366,6 +366,25 @@ def run_campaign(
         result["heldout"] = asdict(final)
         if verbose:
             print(f"\nheld-out (scored once, n={len(held)}): {final.line()}")
+        # The judgement test decides promotion on the SAME slice the trigger was
+        # searched on, so its estimate is inflated: round 50 measured a shrinkage
+        # of +5.0pp for one policy and +15.7pp for another. Re-run it on held-out
+        # seeds so "the win is judgement, not extra control steps" is a held-out
+        # claim rather than an in-sample one.
+        if bundle.rules and prereg.require_judgement:
+            blind = Bundle(
+                rules=tuple(Rule(f"{r.rule_id}-blind",
+                                 Trigger(r.trigger.feature, "gt", -_ALWAYS, 1,
+                                         r.trigger.arm_after, "value"), r.recovery)
+                            for r in bundle.rules),
+                critic_budget=bundle.critic_budget, action_budget=bundle.action_budget)
+            held_blind = paired_gate(held, bundle, baseline=blind, workers=workers)
+            result["heldout_vs_blind"] = asdict(held_blind)
+            if verbose:
+                established = (held_blind.p_value < prereg.alpha
+                               and held_blind.fixed > held_blind.broken)
+                print(f"held-out vs blind twin: {held_blind.line()}  "
+                      f"-> judgement {'established' if established else 'NOT established'}")
         curve = ablation_curve(held, bundle, workers=workers)
         result["ablation"] = [(sd, asdict(r)) for sd, r in curve]
         if verbose:

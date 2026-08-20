@@ -161,3 +161,23 @@ def test_a_blind_twin_fires_the_moment_it_arms():
     assert twin.fire_step(trace) == 5, "the blind twin did not fire at its arm step"
     trace_neg = {"observable.finger_gap": np.full(20, -1e6)}
     assert twin.fire_step(trace_neg) == 5, "a large negative value defeated the twin"
+
+
+def test_a_blind_bundle_mirrors_every_rule_it_twins():
+    """The held-out judgement check twins the WHOLE chain, not just its head."""
+    from governor.campaign import _ALWAYS
+    from governor.governed import Bundle, RecoverySpec, Rule
+    from governor.search import Trigger
+
+    rules = tuple(Rule(f"g{i}", Trigger("observable.finger_gap", "gt", 0.05, 1, 10 * i, "value"),
+                       RecoverySpec(sensor_sd=0.01)) for i in (1, 2))
+    bundle = Bundle(rules=rules, critic_budget=0, action_budget=0)
+    blind = Bundle(rules=tuple(Rule(f"{r.rule_id}-blind",
+                                    Trigger(r.trigger.feature, "gt", -_ALWAYS, 1,
+                                            r.trigger.arm_after, "value"), r.recovery)
+                               for r in bundle.rules),
+                   critic_budget=0, action_budget=0)
+    assert len(blind.rules) == len(bundle.rules)
+    for a, b in zip(bundle.rules, blind.rules):
+        assert a.trigger.arm_after == b.trigger.arm_after, "the twin moved the arm step"
+        assert a.recovery == b.recovery, "the twin changed the recovery"
