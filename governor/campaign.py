@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Sequence
 
@@ -113,6 +113,16 @@ class Preregistration:
     #: arm step, fired without looking at state. Off only to reproduce the
     #: pre-round-45 promotion rule.
     require_judgement: bool = True
+    #: Promotion now depends on TWO tests, and round 47 found only the first was
+    #: powered: at 60 seeds the judgement test could see the established rules
+    #: (which beat their twins 86-99% of discordant pairs) but not a modest one
+    #: at 70%, which needs 49 pairs rather than 20. Planning for the weaker
+    #: effect is the point -- a rule that judges moderately still judges.
+    judgement_fix_share: float = 0.70
+    #: Discordant pairs per seed in the judgement comparison. Measured from the
+    #: previous generation; this is the generation-1 prior (observed 0.35-0.54
+    #: across four campaigns, so the low end).
+    prior_judgement_yield: float = 0.35
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
 
@@ -226,6 +236,7 @@ def run_campaign(
     #: completed generation. Generation 1 has nothing to measure and uses the
     #: prior; every later generation is sized on this campaign's own evidence.
     prev_yield: float | None = None
+    prev_j_yield: float | None = None
     for gen in range(1, prereg.max_generations + 1):
         # Size this generation BEFORE anything about its candidate is known, from
         # the previous generation's residual rate. Measurement, search and gate
@@ -242,6 +253,21 @@ def run_campaign(
                                                       else prereg.prior_discordance_yield),
                                    search_fraction=(prereg.screen_search_fraction
                                                     if prereg.screen_triggers else 1.0))
+            # The generation must satisfy BOTH tests it will be judged by.
+            jplan = plan_generation(gen, round(rate * len(reservoir)), len(reservoir),
+                                    len(reservoir), fix_share=prereg.judgement_fix_share,
+                                    alpha=prereg.alpha, power=prereg.power_target,
+                                    discordance_yield=1.0)
+            j_seeds = int(round(jplan.discordant_needed /
+                                max(prev_j_yield if prev_j_yield is not None
+                                    else prereg.prior_judgement_yield, 1e-6)))
+            if prereg.require_judgement and j_seeds > plan.seeds_used:
+                plan = replace(plan, seeds_needed=max(plan.seeds_needed, j_seeds),
+                               seeds_used=min(max(plan.seeds_used, j_seeds), len(reservoir)),
+                               capped=j_seeds > len(reservoir))
+                if verbose:
+                    print(f"  judgement test needs {jplan.discordant_needed} pairs "
+                          f"-> {j_seeds} seeds; generation sized to {plan.seeds_used}")
             dev_specs = reservoir[: plan.seeds_used]
             plans.append(asdict(plan))
             if verbose:
@@ -311,6 +337,8 @@ def run_campaign(
         residual_on_slice = max(len(dev_specs) - sum(labels), 1)
         prev_yield = max((dev_result.fixed + dev_result.broken) / residual_on_slice,
                          prereg.min_discordance_yield)
+        prev_j_yield = max((blind_result.fixed + blind_result.broken) / max(len(dev_specs), 1),
+                           prereg.min_discordance_yield)
         history.append(rec)
         store.put("generation", {
             "blind_gate": asdict(blind_result),
