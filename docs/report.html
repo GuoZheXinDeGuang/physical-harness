@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 15 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 19 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,15 +115,70 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+29.0<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>48.5% → 77.5%，n=200</span></div>
+    <div><span class="k">+17.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>53.0% → 70.5%，全新区块 n=200</span></div>
     <div><span class="k">+12.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
-    <div><span class="k">0</span><span class="v">回归破坏<br>脚本策略每一档消融都是 0</span></div>
+    <div><span class="k">−32.5<span style="font-size:.9rem">pp</span></span><span class="v"><b>方法论收紧的总代价</b><br>从最初的 +50.0pp 一路下修</span></div>
     <div><span class="k">+28.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">41</span><span class="v">测试全绿<br>2100+ 行实现 / 520 行测试</span></div>
+    <div><span class="k">52</span><span class="v">测试全绿<br>2600+ 行实现 / 800 行测试</span></div>
   </div>
-  <p class="bandnote">数字取自 Round 15 的 campaign、Round 10 的迁移实验与 Round 14 的克隆策略验收；每个 held-out 区块只评分一次。</p>
+  <p class="bandnote">当前数字取自 Round 18（现行代码、全新 held-out 区块）、Round 10 的迁移实验与 Round 14 的克隆策略验收。每个 held-out 区块只评分一次。</p>
 </header>
+
+
+<section>
+  <p class="num">00 / 全局</p>
+  <h2>每次把方法论收紧，数字就往下走</h2>
+  <p class="w">
+    这条线比任何单个成绩都更能说明这套东西在干什么。第一轮手写的实验报出 <strong>+50.0pp</strong>；
+    十九轮之后，同一件事在现行代码和干净流程下是 <strong>+17.5pp</strong>。
+    中间没有一次是「效果变差了」—— 每一次下修都是<strong>拆掉一个不该算数的机制</strong>。
+  </p>
+  <figure>
+    <div class="chartscroll">
+    <svg viewBox="0 0 640 260" role="img" aria-label="headline 数字随方法论收紧而下降">
+      <line class="axis" x1="66" y1="200" x2="612" y2="200"/>
+      <line class="axis" x1="66" y1="26" x2="66" y2="200"/>
+      <line class="grid" x1="66" y1="26" x2="612" y2="26"/><text class="lbl" x="30" y="30">+50pp</text>
+      <line class="grid" x1="66" y1="113" x2="612" y2="113"/><text class="lbl" x="30" y="117">+25pp</text>
+      <text class="lbl" x="46" y="204">0</text>
+      <polyline fill="none" stroke="var(--fail)" stroke-width="2.5" points="120,26 240,113 360,122 480,139 600,139"/>
+      <circle cx="120" cy="26"  r="5" fill="var(--fail)"/>
+      <circle cx="240" cy="113" r="5" fill="var(--pass)"/>
+      <circle cx="360" cy="122" r="5" fill="var(--pass)"/>
+      <circle cx="480" cy="139" r="5" fill="var(--pass)"/>
+      <circle cx="600" cy="139" r="6" fill="var(--pass)"/>
+      <text class="val" x="120" y="18" text-anchor="middle">+50.0</text>
+      <text class="val" x="240" y="105" text-anchor="middle">+27.5</text>
+      <text class="val" x="360" y="114" text-anchor="middle">+22.5</text>
+      <text class="val" x="480" y="131" text-anchor="middle">+17.5</text>
+      <text class="val" x="600" y="131" text-anchor="middle">+17.5</text>
+      <text class="lbl" x="120" y="220" text-anchor="middle">手写实验</text>
+      <text class="lbl" x="120" y="234" text-anchor="middle" fill="var(--fail)">recovery 读了真值</text>
+      <text class="lbl" x="240" y="220" text-anchor="middle">特权消融</text>
+      <text class="lbl" x="240" y="234" text-anchor="middle">感知降到板载水平</text>
+      <text class="lbl" x="360" y="220" text-anchor="middle">策略时钟</text>
+      <text class="lbl" x="360" y="234" text-anchor="middle">拆掉恢复期误触发</text>
+      <text class="lbl" x="480" y="220" text-anchor="middle">全新 held-out</text>
+      <text class="lbl" x="480" y="234" text-anchor="middle">+ 按功效定样本量</text>
+      <text class="lbl" x="600" y="220" text-anchor="middle">现值</text>
+      <text class="lbl" x="600" y="234" text-anchor="middle">19 轮之后</text>
+    </svg>
+    </div>
+    <figcaption>
+      每一段下降都对应一次具体的机制拆除，不是效果衰减。最后一点在全新的 held-out 区块上
+      （基线 53.0%，旧块 48.5%），所以严格说不可与前面直接横比 —— 这本身也是纪律的一部分。
+    </figcaption>
+  </figure>
+  <div class="tw"><table>
+    <thead><tr><th>下修</th><th>拆掉了什么</th><th>怎么发现的</th></tr></thead>
+    <tbody>
+      <tr><td class="n">+50.0 → +27.5</td><td>recovery 读仿真器里物体的真实位置</td><td>特权消融</td></tr>
+      <tr><td class="n">+29.0 → +22.5</td><td>critic 在恢复期间仍求值，等于白得一次额外修复</td><td>策略时钟改造</td></tr>
+      <tr><td class="n">+22.5 → +17.5</td><td>旧 held-out 区块已被用于一次事后诊断</td><td>换全新区块 + 按功效定样本量</td></tr>
+    </tbody>
+  </table></div>
+</section>
 
 <section>
   <p class="num">01 / 起点</p>
@@ -154,17 +209,23 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <p>dev 120 个种子，held-out 200 个种子，零特权，recovery 感知 sd=0.020（板载传感器水平，非真值）。每代对<strong>父代</strong>做原子归因。</p>
 
   <div class="tw"><table>
-    <thead><tr><th>代</th><th>候选（自动搜索，零特权）</th><th>提升 vs 父代</th><th>修复</th><th>破坏</th><th>p</th><th>判定</th></tr></thead>
+    <thead><tr><th>代</th><th>候选（自动搜索，零特权）</th><th>样本量</th><th>提升 vs 父代</th><th>修复/破坏</th><th>p</th><th>判定</th></tr></thead>
     <tbody>
-      <tr><td class="n">1</td><td class="m">running_min(finger_gap) &lt; 0.00447 @58</td><td class="n">+14.2%</td><td class="n">17</td><td class="n">0</td><td class="n">2e-5</td><td><span class="tag p">提升</span></td></tr>
-      <tr><td class="n">2</td><td class="m">finger_gap &lt; 0.00276 @57</td><td class="n">+7.5%</td><td class="n">9</td><td class="n">0</td><td class="n">3.9e-3</td><td><span class="tag p">提升</span></td></tr>
-      <tr><td class="n">3</td><td class="m">running_range(finger_gap) &gt; 0.0784 @43</td><td class="n">−21.7%</td><td class="n">6</td><td class="n">32</td><td class="n">2e-5</td><td><span class="tag r">拒绝</span></td></tr>
+      <tr><td class="n">1</td><td class="m">running_min(finger_gap) &lt; 0.0129 @58</td><td class="n">60 种子</td><td class="n">+11.7%</td><td class="n">7 / 0</td><td class="n">0.016</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">2</td><td class="m">gripper_effort &gt; 0.0861 @58</td><td class="n">90 种子</td><td class="n">+7.8%</td><td class="n">8 / 1</td><td class="n">0.039</td><td><span class="tag p">提升</span></td></tr>
+      <tr><td class="n">3</td><td class="m">gripper_effort &gt; 0.0292 dwell3 @56</td><td class="n">112 种子</td><td class="n">+2.7%</td><td class="n">4 / 1</td><td class="n">0.375</td><td><span class="tag r">拒绝</span></td></tr>
     </tbody>
   </table></div>
 
-  <p><strong>held-out（只评一次，n=200）：48.5% → 77.5%，+29.0pp，58 修复 / 0 破坏，p&lt;1e-5。</strong></p>
-  <p>第 3 代被拒的方式值得看：它在全部 120 个回合上都触发，修好 6 个、<strong>打坏 32 个</strong>。
-  门禁既能拒「没效果」（早先一轮的第 3 代是 +0.0%），也能拒「主动有害」。</p>
+  <p><strong>held-out（全新区块，只评一次，n=200）：53.0% → 70.5%，+17.5pp，36 修复 / 1 破坏，p&lt;1e-5。</strong></p>
+  <p class="w"><strong>样本量随世代递增（60 → 90 → 112），这是刻意的。</strong>
+  第一代打整个失败集，第二代只打第一代剩下的 —— 残余效应量变小，固定样本量会让后期世代
+  系统性功效不足。用精确 McNemar 枚举算：80% 功效需要 20 对不一致。
+  第 g 代的样本量由<strong>第 g−1 代已测出的残余率</strong>决定，种子取自预注册的有序池，
+  所以候选自身的结果绝不影响它被判定的样本量 —— 那会是 optional stopping，是另一个过程。</p>
+  <p class="w">固定 120 种子那次只长出<strong>一条</strong>规则；按功效定量之后长出<strong>两条</strong>，
+  而且总门禁成本 60+90+112 = <strong>262 个种子，低于固定的 360</strong>。
+  早期世代效应大本来就不需要那么多 —— 功效更高的同时反而更便宜。</p>
 
   <h3>赢的是判断，不是时间</h3>
   <p class="w">受治理的回合因为插入恢复动作会多跑控制步。所以设了盲对照：<strong>同一套 recovery、同样次数、同样的步触发，但无条件触发，不看状态。</strong></p>
@@ -259,21 +320,21 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       <g>
         <rect x="110" y="52" width="46" height="128" fill="var(--pass)"/>
         <rect x="162" y="94" width="46" height="86" fill="var(--fail)" opacity=".8"/>
-        <text class="val" x="133" y="45" text-anchor="middle">+27.5</text>
+        <text class="val" x="133" y="45" text-anchor="middle">+25.5</text>
         <text class="val" x="185" y="87" text-anchor="middle">+18.5</text>
         <text class="lbl" x="159" y="198" text-anchor="middle">lift（源任务）</text>
       </g>
       <g>
         <rect x="290" y="47" width="46" height="133" fill="var(--pass)"/>
         <rect x="342" y="96" width="46" height="84" fill="var(--fail)" opacity=".8"/>
-        <text class="val" x="313" y="40" text-anchor="middle">+28.5</text>
+        <text class="val" x="313" y="40" text-anchor="middle">+24.5</text>
         <text class="val" x="365" y="89" text-anchor="middle">+18.0</text>
         <text class="lbl" x="339" y="198" text-anchor="middle">stack（迁移）</text>
       </g>
       <g>
         <rect x="470" y="68" width="46" height="112" fill="var(--pass)"/>
         <rect x="522" y="178" width="46" height="2" fill="var(--fail)" opacity=".8"/>
-        <text class="val" x="493" y="61" text-anchor="middle">+24.0</text>
+        <text class="val" x="493" y="61" text-anchor="middle">+21.5</text>
         <text class="val" x="545" y="172" text-anchor="middle" fill="var(--fail)">+0.0</text>
         <text class="lbl" x="519" y="198" text-anchor="middle">pickcan（迁移）</text>
       </g>
@@ -386,7 +447,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 
 <section>
   <p class="num">06 / 过程</p>
-  <h2>十五轮里被自己抓到的八个错误</h2>
+  <h2>十九轮里被自己抓到的十一个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -439,6 +500,24 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td>交还控制权时重置克隆策略的时钟</td>
         <td>门禁 −2.0pp（修 3 破 7）</td>
         <td>策略回到「接近」阶段，撤销了刚做完的恢复</td>
+      </tr>
+      <tr>
+        <td class="n">9</td>
+        <td>所有世代用固定的 dev 样本量</td>
+        <td>被拒候选在 held-out 上值 +6.5pp</td>
+        <td><strong>门禁的第二类错误</strong>：p=0.065，11 对不一致，80% 功效需要 20 对</td>
+      </tr>
+      <tr>
+        <td class="n">10</td>
+        <td>样本量规划放在残余测量之后</td>
+        <td>搜索用 60 个种子、门禁在 90 个上</td>
+        <td>候选在一个它没被拟合过的种群上受审</td>
+      </tr>
+      <tr>
+        <td class="n">11</td>
+        <td>假设更多恢复策略能补上修复差距</td>
+        <td>四种形状对照，现役最好</td>
+        <td>天花板在<strong>原语能力</strong>，不在搜索空间</td>
       </tr>
     </tbody>
   </table></div>
@@ -500,9 +579,17 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <ul>
     <li><strong>沙箱代码执行没做。</strong>实测 <code>(allow default)(deny file-write*)</code> 这条 SBPL 并不拦网络，
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
-    <li><strong>异质失败仍然更难治理：+12.0pp 对 +29.0pp。</strong>
-      （这一条取代了原来的「失败形态是我们设计的」—— 行为克隆策略已经跑通并通过门禁，见第 5 节。
-      但幅度差距是真实的，而且克隆策略上只找到一条规则，没有形成规则链。）</li>
+    <li><strong>最根本的一条：harness 不可能超过它手上修复原语的能力上限。</strong>
+      克隆策略上 42 个「检测到了却修不好」的失败中，<strong>39 个把夹爪送到了距物体 3cm 以内</strong> ——
+      够得着，抓不牢。四种不同形状的修复都没打赢现役方案，而且<strong>即使给完美感知，最好也只有 15.6%</strong>。
+      差距既不在接近的形状，也不在感知精度，而在<strong>抓取动作本身</strong> ——
+      我们的修复用的是和策略同一套朴素的合拢+抬起。
+      <br><br>
+      <strong>这条对 Zetta 更硬：</strong>它的恢复步骤从一个已发布的工具目录里组装，天花板由那个目录的能力决定。
+      抬这个天花板需要往库里加一个真正更强的原语（例如基于接触反馈的抓取控制器），
+      那是一项独立能力，<strong>不是演化循环的产物</strong>。</li>
+    <li><strong>异质失败仍然更难治理：+12.0pp 对 +17.5pp</strong>，且克隆策略上只长出一条规则。
+      （这一条取代了原来的「失败形态是我们设计的」—— 克隆策略已经跑通并通过门禁，见第 5 节。）</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
       真正的 VLA 会有感知本身的失败模式，这里没有。</li>
     <li><strong>贪心收敛的结构性风险仍在。</strong>Round 8 演示过一次提前收敛（虽然那次的触发原因是泄漏的门禁）。
@@ -519,7 +606,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 41 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 52 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -538,7 +625,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  15 轮自主循环，2100+ 行实现 + 520 行测试，41 个测试全绿，15 篇过程记录。
+  19 轮自主循环，2600+ 行实现 + 800 行测试，52 个测试全绿，19 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
