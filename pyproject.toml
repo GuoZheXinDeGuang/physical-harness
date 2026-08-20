@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "governor"
+version = "0.1.0"
+description = "A physical agent harness: frozen policy, evolving runtime critics, auditable episode log, enforced privilege budget"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  # pinned: robosuite 1.5.2 calls mj_fullM(..., data.qM); mujoco >=3.4 renamed qM -> M
+  "mujoco==3.3.7",
+  "robosuite==1.5.2",
+  "numpy>=1.26",
+  "zstandard>=0.22",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-timeout>=2", "ruff>=0.6"]
+
+[project.scripts]
+governor = "governor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["governor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --timeout=300"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
