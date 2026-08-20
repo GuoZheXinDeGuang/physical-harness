@@ -182,7 +182,8 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     chain = chain_start()
     privilege_used = 0
     recovery: RecoveryActor | None = None
-    t = 0
+    t = 0            # env steps, for the horizon budget
+    k = 0            # POLICY-owned steps: the clock a trigger's arm_after counts in
 
     while t < spec.horizon:
         if recovery is not None and recovery.done:
@@ -195,17 +196,28 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         else:
             action = driver.act(obs)
 
+        policy_owned = recovery is None
         obs, _r, done, _info = env.step(action)
+        t += 1
         if done:
-            t += 1
             break
 
-        view = project(obs, critic_names, step=t, episode=f"s{spec.seed}")
+        # The critic governs the POLICY, so it neither observes nor fires while a
+        # scripted recovery owns control, and those steps stay out of the trace.
+        # Without this the search reads a mixture: round 16's second generation
+        # proposed a trigger armed at t=129, inside a recovery program, on a
+        # policy whose own clock is 100 steps long. Trigger `arm_after` therefore
+        # counts policy-owned steps, which is also the only clock that means the
+        # same thing across episodes of different length.
+        if not policy_owned:
+            continue
+
+        view = project(obs, critic_names, step=k, episode=f"s{spec.seed}")
         logged = record_view(view)
         for name, value in view.snapshot().items():
             history.setdefault(name, []).append(value)
         chain = chain_step(chain, logged.digest)
-        t += 1
+        k += 1
         if not rules:
             continue
 
@@ -216,7 +228,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
                 consec[rule.rule_id] = 0
                 continue
             trig = rule.trigger
-            if t - 1 < trig.arm_after:
+            if k - 1 < trig.arm_after:
                 consec[rule.rule_id] = 0
                 continue
             value = view[trig.feature]
@@ -230,15 +242,15 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             continue
 
         used[triggered.rule_id] += 1
-        fires.append({"rule_id": triggered.rule_id, "step": t - 1})
-        act_view = project(obs, action_names, step=t - 1, episode=f"s{spec.seed}")
+        fires.append({"rule_id": triggered.rule_id, "step": k - 1, "env_step": t - 1})
+        act_view = project(obs, action_names, step=k - 1, episode=f"s{spec.seed}")
         assert_view_reconstructable(act_view, record_view(act_view))
         assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
         percept = _percept_object(obs, spec, triggered.recovery.sensor_sd, used[triggered.rule_id])
         driver.retarget(percept)
         recovery = RecoveryActor(triggered.recovery.program, percept)
-        for k in consec:
-            consec[k] = 0
+        for rid in consec:
+            consec[rid] = 0
 
     success = lifted(obs, spec, start_z)
     env.close()
@@ -248,6 +260,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         "policy": driver.identity,
         "success": success,
         "steps": t,
+        "policy_steps": k,
         "fires": fires,
         "fired_at": fires[0]["step"] if fires else None,
         "fired_rules": sorted({f["rule_id"] for f in fires}),
