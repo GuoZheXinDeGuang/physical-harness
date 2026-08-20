@@ -106,7 +106,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <div class="wrap">
 
 <header class="top">
-  <p class="eyebrow">Governor · 30 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
+  <p class="eyebrow">Governor · 33 轮自主循环 · 2026-08-19 → 08-20 · macOS arm64 / CPU</p>
   <h1>Governor 通宵实测报告</h1>
   <p class="lede">
     把 DeepSeek Harness 的<b>事件日志与运行时不变量</b>、Zetta 的<b>冻结策略 + 演化 critic/recovery + 配对显著性门禁</b>
@@ -115,14 +115,14 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   </p>
 
   <div class="band">
-    <div><span class="k">+30.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br>46.5% → 77.0%，全新区块 n=200</span></div>
-    <div><span class="k">+11.0<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>失败不是任何人设计的</b></span></div>
+    <div><span class="k">+25.5<span style="font-size:.9rem">pp</span></span><span class="v">脚本策略 held-out<br><b>两个独立区块合并 n=400</b>，102 修 0 破</span></div>
+    <div><span class="k">+17.5<span style="font-size:.9rem">pp</span></span><span class="v">行为克隆策略 held-out<br><b>两条规则的链</b>，失败不是任何人设计的</span></div>
     <div><span class="k">0</span><span class="v">特权预算<br>critic 与 recovery 全零特权</span></div>
     <div><span class="k">−11.0<span style="font-size:.9rem">pp</span></span><span class="v"><b>一个手调常数的代价</b><br>克隆策略上它让整个 campaign 颗粒无收；脚本策略上 −5.0pp</span></div>
     <div><span class="k">+24.5<span style="font-size:.9rem">pp</span></span><span class="v">跨任务零样本迁移<br>Stack，规则一字未改</span></div>
-    <div><span class="k">79</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
+    <div><span class="k">81</span><span class="v">测试全绿<br>3600+ 行实现 / 1400 行测试</span></div>
   </div>
-  <p class="bandnote">当前数字取自 Round 27（脚本策略，全新 held-out 区块 6000-6199）、Round 29（克隆策略，全新区块 7000-7199）与 Round 10 的迁移实验。两者都在标定后的目标函数下取得。每个 held-out 区块只评分一次（7000-7199 承载了一次事先定好的两臂对照，两臂都报）。</p>
+  <p class="bandnote">脚本策略的数字是 Round 27（区块 6000-6199，+30.5pp）与 Round 32（区块 8200-8399，+20.5pp）两次独立评分的合并；克隆策略取自 Round 32（区块 8000-8199）；迁移取自 Round 10。每个区块只评分一次，全部在标定后的目标函数下取得。<b>单区块 n=200 的 delta 带 ±7pp，见下一节。</b></p>
 </header>
 
 
@@ -130,6 +130,8 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
   <p class="num">00 / 全局</p>
   <h2>数字动过两次，方向相反，性质也不同</h2>
   <p class="w">
+    <span style="color:var(--ink-3);font-size:.9em">（本节全部是<strong>脚本策略</strong>的数字；
+    克隆策略见第 5 节，那里的 +17.5pp 是另一回事。）</span><br>
     第一轮手写的实验报出 <strong>+50.0pp</strong>。之后一路下修到 <strong>+17.5pp</strong>，
     <strong>每一步都是拆掉一个不该算数的机制</strong>，没有一次是效果变差。
     然后标定了目标函数里一个从没被验证过的常数，回到 <strong>+30.5pp</strong> ——
@@ -166,7 +168,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       <text class="lbl" x="480" y="224" text-anchor="middle">全新区块</text>
       <text class="lbl" x="480" y="237" text-anchor="middle">+ 功效定量</text>
       <text class="lbl" x="600" y="224" text-anchor="middle" fill="var(--pass)">标定目标函数</text>
-      <text class="lbl" x="600" y="237" text-anchor="middle" fill="var(--pass)">现值</text>
+      <text class="lbl" x="600" y="237" text-anchor="middle" fill="var(--pass)">区块 6000-6199</text>
       <rect x="110" y="252" width="11" height="11" fill="var(--fail)"/>
       <text class="lbl" x="127" y="262">减去不该有的（拆掉一个机制）</text>
       <rect x="360" y="252" width="11" height="11" fill="var(--pass)"/>
@@ -176,6 +178,8 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     <figcaption>
       不同 held-out 区块基线不同（最后一点 46.5%，前一点 53.0%），所以这条线是<strong>定性的</strong>，
       不能当成精确的逐点比较。每个区块只评分一次。
+      <strong>「定性」现在有了量：</strong>同一套 bundle 在第二个区块上是 +20.5pp 而不是 +30.5pp，
+      合并 n=400 后是 +25.5pp —— 见下方。
     </figcaption>
   </figure>
   <div class="tw"><table>
@@ -187,6 +191,25 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       <tr class="hi"><td class="n">+17.5 → +30.5</td><td><strong>目标函数里一个手调常数编码了已失效的假设</strong></td><td>一个不共享我假设的 proposer</td></tr>
     </tbody>
   </table></div>
+  <div class="call">
+    <h4>同一套规则，两个区块，差 10pp</h4>
+    <p>第 32 轮把同一个 bundle 拿到第二个全新区块上又评了一次。这是全篇最强的一条证据 ——
+    <strong>独立复现</strong> —— 也是最该让人收敛预期的一条：</p>
+    <div class="tw"><table>
+      <thead><tr><th>held-out 区块</th><th>基线</th><th>受治理</th><th>delta</th><th>修复 / 破坏</th><th>SE</th><th>95% CI</th></tr></thead>
+      <tbody>
+        <tr><td class="n">6000-6199</td><td class="n">46.5%</td><td class="n">77.0%</td><td class="n"><b>+30.5pp</b></td><td class="n">61 / 0</td><td class="n">3.9pp</td><td class="n">±7.7pp</td></tr>
+        <tr><td class="n">8200-8399</td><td class="n">52.5%</td><td class="n">73.0%</td><td class="n"><b>+20.5pp</b></td><td class="n">41 / 0</td><td class="n">3.2pp</td><td class="n">±6.3pp</td></tr>
+        <tr class="hi"><td class="n">合并 n=400</td><td class="n">49.5%</td><td class="n">75.0%</td><td class="n"><b>+25.5pp</b></td><td class="n">102 / 0</td><td class="n">2.5pp</td><td class="n">±4.9pp</td></tr>
+      </tbody>
+    </table></div>
+    <p>两个区块的 bundle 是<strong>逐位相同</strong>的（同一份预注册，只换 held-out 种子），
+    两次都 p&lt;1e-5、零破坏。差的 10.0pp 是 <strong>2.0 个标准误</strong> ——
+    大体在抽样噪声内，但已经在边缘。</p>
+    <p><strong>这条限定适用于本报告里每一个单区块数字：n=200 的 delta 应当读作一个带 ±7pp 的量，
+    几个 pp 的跨区块比较是噪声，不是发现。</strong>
+    上面那张轨迹图之所以标注为「定性的」，正是这个原因；现在它有了量。</p>
+  </div>
   <div class="call ok">
     <h4>最后那一行是怎么被抓到的</h4>
     <p>搜索的打分函数里有一项 <code>+0.25 × lead</code>，偏好「早触发」的候选。
@@ -487,11 +510,39 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
     四档消融下<strong>触发次数恒为 86</strong>；掉下去的是恢复程序的修复率（22 → 11 → 6）。
     <strong>critic 免疫感知噪声，recovery 不免疫</strong>，这是两个可以分别定价的部件。
   </p>
+  <div class="call ok">
+    <h4>第 32 轮：克隆策略第一次长出规则链</h4>
+    <p>在此之前，克隆策略上的 campaign 每次都只长出一条规则，我把它当成了策略的性质
+    （「异质失败更难治理」）。<strong>它其实是欠采样的产物。</strong></p>
+    <p>功效规划器里有一个因子叫 <code>engage_rate</code>，取 0.7，含义是「候选会介入的失败比例」。
+    但产生一个<strong>不一致对</strong>需要的不是介入，是<strong>改变结局</strong>。
+    脚本策略上这两件事几乎等价（它触发什么就修好什么），
+    克隆策略上触发后的修复率只有 <strong>27%</strong> ——
+    于是一个按 20 个不一致对规划的世代只拿回 3 对，
+    一个 3 修 0 破、符号完全正确的候选死于第二类错误。</p>
+    <p>把这个因子改成<strong>从上一个已封存的世代实测</strong>（不是从正在被规划的候选测，
+    纪律没破）之后，同一条候选在 203 个种子下拿到 p=0.00012：</p>
+    <div class="tw"><table>
+      <thead><tr><th>世代</th><th>触发器</th><th>n</th><th>dev 门禁</th><th>用的产出率</th></tr></thead>
+      <tbody>
+        <tr><td class="n">gen1</td><td><code>finger_gap &gt; 0.079</code> @t=58</td><td class="n">60</td><td class="n">+13.3%，8 修 0 破，<b>过</b></td><td class="n">0.70 先验</td></tr>
+        <tr class="hi"><td class="n">gen2</td><td><code>running_min(finger_gap) &lt; 0.0032</code> @t=59</td><td class="n">203</td><td class="n">+6.9%，14 修 0 破，p=1e-4，<b>过</b></td><td class="n">0.26 实测</td></tr>
+        <tr><td class="n">gen3</td><td><code>finger_gap &gt; 0.072</code> @t=92</td><td class="n">333</td><td class="n">+0.0%，2 修 2 破，拒</td><td class="n">0.13 实测</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>held-out（全新区块 8000-8199，只评一次，n=200）：28.0% → 45.5%，+17.5pp，
+    35 修复 / 0 破坏，零特权。</strong>
+    消融里真值与板载完全相同（45.5% = 45.5%），特权买不到东西的<strong>第五条独立证据</strong>。</p>
+    <p><strong>我是在已经知道那条候选符号正确的情况下改的规划器，所以必须自证不是在调旋钮。</strong>
+    用同一份脚本策略的预注册、只换一个全新 held-out 区块，在新规划器下重跑：
+    第 1 代与第 27 轮<strong>逐位相同</strong>（n=60，15 修 0 破，p=6.1e-5），
+    第 2 代同样被拒，同样只长出一条规则。<strong>脚本策略的结果一字未动。</strong></p>
+  </div>
 </section>
 
 <section>
   <p class="num">06 / 过程</p>
-  <h2>三十轮里被自己抓到的十五个错误</h2>
+  <h2>三十三轮里被自己抓到的十六个错误</h2>
   <p class="w">这部分比成绩更值得看。每一个都是「跑起来才暴露」，而且其中三个<strong>让数字变得更好看</strong>。</p>
 
   <div class="tw"><table>
@@ -582,6 +633,13 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
         <td><code>def f(..., w=DEFAULT_W)</code> 的默认值在 def 时绑定，
             import 后改 <code>mod.DEFAULT_W</code> 够不到它。
             <strong>两臂结果逐位相同，本身就该起疑</strong></td>
+      </tr>
+      <tr>
+        <td class="n">16</td>
+        <td><strong>功效规划器把「介入」当成了「改变结局」</strong></td>
+        <td>一个 3 修 0 破的候选死于 p=0.25</td>
+        <td>在恢复几乎总能奏效的策略上无害，在只修好 27% 的策略上致命 ——
+            同一个常数在两种策略上的语义不同</td>
       </tr>
       <tr>
         <td class="n">15</td>
@@ -705,7 +763,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
       且 10 路并行下 critic tick 的 p99 达 108-169ms，500µs 硬预算会作废几乎所有回合。接缝留着，标注为 interpreted。</li>
     <li><strong>修复原语的天花板</strong> —— 见上一节。两次手写更强原语的尝试都失败了，
       所以这不是一条待办事项，是这套方法的边界。</li>
-    <li><strong>异质失败仍然更难治理：+11.0pp 对 +30.5pp</strong>，且克隆策略上只长出一条规则。
+    <li><strong>异质失败仍然更难治理：+17.5pp 对 +25.5pp</strong>（克隆策略现在能长出两条规则的链，见第 5 节）。
       （这一条取代了原来的「失败形态是我们设计的」—— 克隆策略已经跑通并通过门禁，见第 5 节。）</li>
     <li><strong>克隆策略仍不是视觉-动作模型。</strong>它读本体感受和一次带噪的位姿估计，不读像素。
       真正的 VLA 会有感知本身的失败模式，这里没有。</li>
@@ -723,7 +781,7 @@ footer{margin-top:5rem;padding-top:1.4rem;border-top:2px solid var(--ink);font-s
 <pre><code>cd ~/Desktop/physical-harness
 uv venv --python 3.12 .venv &amp;&amp; uv pip install -e ".[dev]"
 
-.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 79 tests</span>
+.venv/bin/python -m pytest -q          <span style="color:var(--ink-3)"># 81 tests</span>
 
 <span style="color:var(--ink-3)"># 一次完整的零特权 campaign，约 10 分钟、约 4000 个真实回合</span>
 PYTHONPATH=. .venv/bin/python -c "
@@ -742,7 +800,7 @@ run_campaign(p, CampaignStore(Path('runs/demo')))"</code></pre>
 </section>
 
 <footer>
-  30 轮自主循环，3600+ 行实现 + 1400 行测试，79 个测试全绿，30 篇过程记录。
+  33 轮自主循环，3600+ 行实现 + 1400 行测试，81 个测试全绿，33 篇过程记录。
   全部数字来自 macOS arm64 / Apple Silicon / 无 GPU 上的真实 MuJoCo 回合。
   零外部 API 调用，零 mock 验证。每个 held-out 区块只评分一次。
 </footer>
