@@ -182,3 +182,39 @@ def test_strategy_choice_changes_behaviour():
     assert strategy("settle").steps != strategy("regrasp").steps
     assert strategy("lateral").steps != strategy("regrasp").steps
     assert any(dx != 0.0 for _n, _d, dx, _dy in strategy("lateral").steps)
+
+
+# --- objective calibration --------------------------------------------------
+
+def test_earliness_weight_is_zero_by_measurement():
+    """Swept 0/0.1/0.25/0.5: W=0 wins the selection block by 7.4pp and held-out
+    by 5.0pp. The positive weight assumed a repair must fit in the episode's
+    remaining steps, which stopped being true when recovery got its own clock."""
+    from governor.search import DEFAULT_EARLINESS
+    assert DEFAULT_EARLINESS == 0.0
+
+
+def test_earliness_weight_changes_which_trigger_wins():
+    """If the weight could not change the pick there would be nothing to calibrate."""
+    import numpy as np
+    from governor.search import search_triggers
+
+    traces, labels = [], []
+    for i in range(30):
+        failing = i % 2 == 0
+        early = np.full(80, 0.04)
+        late = np.full(80, 0.04)
+        if failing:
+            early[30:] = 0.02      # weaker, but separates early
+            late[60:] = 0.001      # stronger, separates late
+        traces.append({
+            "observable.eef_z": early,
+            "observable.finger_gap": late,
+            "observable.gripper_effort": np.zeros(80),
+            "observable.joint_speed": np.zeros(80),
+        })
+        labels.append(not failing)
+    at0 = search_triggers(traces, labels, privilege_budget=0, top_k=1, earliness=0.0)
+    at1 = search_triggers(traces, labels, privilege_budget=0, top_k=1, earliness=1.0)
+    assert at0 and at1
+    assert at0[0].trigger != at1[0].trigger or at0[0].score != at1[0].score

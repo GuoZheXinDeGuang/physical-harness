@@ -2,7 +2,7 @@
 
 **Goal:** 见 GOAL.md — Mac 上真跑仿真的具身 harness：冻结策略 + 演化 critic/recovery + 特权预算。
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 25 完成
+**Round:** 26 完成
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -84,17 +84,22 @@
       **端到端跑通，并暴露一个问题**：mock 模型的天真挑法（取最强分离）在 held-out 上
       **+31.5pp 打赢确定性搜索的 +26.0pp** —— 差距来自我手写的 earliness 权重 0.25，
       **它从没被标定过**。详见 docs/round25-llm-proposer.md
+- [x] Round 26 扫 earliness 权重（三路划分）：**W=0 最优**，held-out +23.5pp vs 原默认 0.25 的 +18.5pp。
+      **权重值 −5.0pp**，已改默认并加回归测试。机制查明：它编码的假设在 round 17 改成
+      控制权归属之后就不成立了（recovery 拥有自己的步数，实测总步数 209 / horizon 900，从未截断）。
+      并更正了 round 3 的一处说法。详见 docs/round26-earliness.md
 - [ ] 持久 episode 事件日志（行日志 + 列存），当前 trace 只在内存
 - [ ] LLM proposer（用 mock server 验证，零 API 成本）
 - [ ] 多任务（stack / pickcan）+ 跨任务迁移
 
 ## 下一步
 
-Round 26：**标定搜索目标函数的 earliness 权重**。round 25 暴露它从没被验证过，
-而且在一个 held-out 区块上值 −5.5pp。
-做法：把 `score = recall - 1.2*fp + W*(lead/n_steps)` 里的 W 扫一遍
-（0 / 0.1 / 0.25 / 0.5），每个值选出的候选在**各自的**门禁上判定，
-最后在一个全新 held-out 区块上比。注意每个区块只用一次。
+Round 27：**扫 `fp_penalty`**（同样手调、同样没标定过，现在已暴露成参数）。
+同一套三路划分。注意区块预算：已用掉的选择区块 2400-2549 / 2600-2749，
+held-out 1000-1199 / 1200-1399 / 1400-1599 / 1600-1799 / 1800-1999。下一个用 2000+ 之外的新段。
+
+之后：**重跑一次完整 campaign 拿新默认值下的数字**，并更新报告
+（报告里的 +17.5pp 是 W=0.25 时代的）。
 
 **已关闭的方向：** 修复原语（round 21/22）、beam 搜索（round 24）。
 
@@ -128,6 +133,8 @@ Round 26：**标定搜索目标函数的 earliness 权重**。round 25 暴露它
 - 不要在生成阶段设严格的 σ 门槛：那会在候选被评判之前静默压掉它们。生成宽松、验证严格。
 - 不要对所有世代用固定的 dev 样本量：残余效应量随世代变小，后期会系统性功效不足。
   用 `scale_dev_by_power=True`（精确 McNemar 功效计算）。
+- **手调常数会随设计漂移而失效且不报错**：earliness 权重在 round 2 合理，
+  round 17 重构后有害，中间零信号。抓住它的是一个不共享我假设的 proposer。
 - 不要把手调的目标函数权重当成已验证的：round 25 实测 earliness 权重 0.25 值 −5.5pp。
 - 不要用「模型说的」缩短校验路径：proposer 输出是不可信输入，边界是 schema 不是作者。
 - **前提正确也不代表干预有效**：round 22 前提验证过、实现修对了，横向搜索启动 14 次成功 0 次。

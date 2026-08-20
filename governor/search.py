@@ -186,6 +186,24 @@ def earliest_divergence(traces, labels, feature: str, sigma: float = GENERATION_
     return int(idx[0]) if idx.size else None
 
 
+#: Weight on how much lead time a trigger leaves for a repair. ZERO, measured.
+#:
+#: Hand-picked at 0.25 in round 2 and never calibrated. It encodes an assumption
+#: the design later made false: a repair had to fit in the episode's remaining
+#: steps back when the recovery program was spliced into the policy's schedule.
+#: Since round 17 the recovery OWNS its steps, so a late trigger costs nothing --
+#: measured, total env steps peak at 209 against a horizon of 900 and no recovery
+#: is ever truncated.
+#:
+#: Swept over 0 / 0.1 / 0.25 / 0.5 on a three-way split. W=0 selects a different
+#: trigger and scores +28.7% on the selection block against +21.3% for every
+#: positive weight, and +23.5pp against +18.5pp on a fresh held-out block. The
+#: weight was worth -5.0pp.
+DEFAULT_EARLINESS = 0.0
+#: Weight on false positives, likewise never calibrated.
+DEFAULT_FP_PENALTY = 1.2
+
+
 def search_triggers(
     traces: Sequence[dict[str, np.ndarray]],
     labels: Sequence[bool],
@@ -194,6 +212,8 @@ def search_triggers(
     dwells: Iterable[int] = (1, 2, 3),
     top_k: int = 8,
     min_recall: float = 0.5,
+    earliness: float = DEFAULT_EARLINESS,
+    fp_penalty: float = DEFAULT_FP_PENALTY,
 ) -> list[TriggerScore]:
     """Rank triggers by detection quality under the privilege budget.
 
@@ -235,7 +255,7 @@ def search_triggers(
                         lead = n_steps - med
                         # earliness is worth real weight: a trigger with no lead
                         # cannot be recovered from, however accurate it is.
-                        score = recall - 1.2 * fpr + 0.25 * (lead / n_steps)
+                        score = recall - fp_penalty * fpr + earliness * (lead / n_steps)
                         out.append(TriggerScore(trig, recall, fpr, med, lead, score))
     out.sort(key=lambda s: -s.score)
     # keep the best trigger per (feature, op) so the head is not one rule's neighbours
