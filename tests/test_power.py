@@ -70,3 +70,19 @@ def test_a_low_measured_yield_sizes_the_next_generation_larger():
     assert measured.seeds_needed == pytest.approx(
         optimistic.seeds_needed * 0.70 / 0.26, rel=0.02)
     assert measured.discordance_yield == 0.26
+
+
+def test_screening_doubles_the_seeds_a_generation_needs():
+    """Round 38: the search only sees half a screened generation.
+
+    Sizing a screened generation like an unscreened one runs a different
+    experiment from the one the plan claims -- the proposer learns from half
+    the evidence.
+    """
+    from governor.power import plan_generation
+
+    plain = plan_generation(2, 150, 400, 4000, discordance_yield=0.26)
+    screened = plan_generation(2, 150, 400, 4000, discordance_yield=0.26,
+                               search_fraction=0.5)
+    assert screened.seeds_needed == plain.seeds_needed * 2
+    assert "search sees 50%" in screened.line()

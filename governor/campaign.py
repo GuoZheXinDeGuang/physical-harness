@@ -103,6 +103,9 @@ class Preregistration:
     #: Floor on the carried-forward estimate, so one unlucky generation cannot
     #: demand an unbounded reservoir.
     min_discordance_yield: float = 0.05
+    #: `screen()` splits each generation in half, so a screened generation must
+    #: be sized larger to leave the search the same evidence.
+    screen_search_fraction: float = 0.5
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
 
@@ -229,7 +232,9 @@ def run_campaign(
                                    len(reservoir), fix_share=prereg.power_fix_share,
                                    alpha=prereg.alpha, power=prereg.power_target,
                                    discordance_yield=(prev_yield if prev_yield is not None
-                                                      else prereg.prior_discordance_yield))
+                                                      else prereg.prior_discordance_yield),
+                                   search_fraction=(prereg.screen_search_fraction
+                                                    if prereg.screen_triggers else 1.0))
             dev_specs = reservoir[: plan.seeds_used]
             plans.append(asdict(plan))
             if verbose:

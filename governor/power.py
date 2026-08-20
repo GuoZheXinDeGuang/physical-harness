@@ -70,12 +70,16 @@ class PowerPlan:
     #: Discordant pairs expected per residual failure, measured from the last
     #: completed generation rather than assumed.
     discordance_yield: float = 0.7
+    #: Fraction of the generation's episodes the proposer's search actually sees.
+    search_fraction: float = 1.0
 
     def line(self) -> str:
         return (f"gen {self.generation}: residual {self.residual_failures} "
                 f"({self.residual_rate:.1%}) -> need {self.discordant_needed} discordant "
                 f"-> {self.seeds_needed} seeds, using {self.seeds_used}"
                 + f" [yield {self.discordance_yield:.2f}/failure]"
+                + ("" if self.search_fraction >= 1.0
+                   else f" [search sees {self.search_fraction:.0%}]")
                 + ("  [CAPPED]" if self.capped else ""))
 
 
@@ -83,6 +87,7 @@ def plan_generation(
     generation: int, residual_failures: int, n_observed: int, reservoir: int, *,
     fix_share: float = 0.80, alpha: float = 0.05, power: float = 0.80,
     discordance_yield: float = 0.7, minimum: int = 60,
+    search_fraction: float = 1.0,
 ) -> PowerPlan:
     """Seeds this generation should be gated on.
 
@@ -103,6 +108,12 @@ def plan_generation(
     need_d = discordant_needed(fix_share, alpha, power)
     yield_per_seed = max(residual_rate * discordance_yield, 1e-6)
     seeds = max(minimum, int(round(need_d / yield_per_seed)))
+    # Out-of-sample screening shows the SEARCH only half the episodes. Sizing a
+    # screened generation like an unscreened one silently halves the sample the
+    # proposer actually learns from, which is a different experiment from the
+    # one the plan claims to be running.
+    seeds = int(round(seeds / max(search_fraction, 1e-6)))
     used = min(seeds, reservoir)
     return PowerPlan(generation, residual_failures, residual_rate, need_d, seeds, used,
-                     capped=seeds > reservoir, discordance_yield=discordance_yield)
+                     capped=seeds > reservoir, discordance_yield=discordance_yield,
+                     search_fraction=search_fraction)
