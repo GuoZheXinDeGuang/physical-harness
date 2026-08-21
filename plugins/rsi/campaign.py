@@ -209,6 +209,47 @@ class CampaignStore:
         return json.loads((self.root / "artifacts" / f"{digest}.json").read_text())
 
 
+def stage_attribution(results: Sequence[dict]) -> dict | None:
+    """Per-stage failure attribution over governed rollout results.
+
+    Round 78's ruling made ``stages is not None`` the only opt-in, so the
+    presence of the ``stages`` key on a rollout result IS the switch here:
+    stageless results return None and nothing is written (runs/demo and the
+    lift anchors stay byte-identical). Episodes are bucketed by their FURTHEST
+    reached stage, and each bucket counts the episode's TERMINAL label -- the
+    same boolean the gate consumed -- so the buckets' terminal_success total
+    equals the gate's label count by construction: a descriptive table that
+    could silently diverge from the gated boolean would be worse than none.
+    ``first_failure`` histograms the residual failures by the first stage
+    whose predicate did not hold; ``(terminal)`` catches episodes whose every
+    stage held but whose terminal label still failed, ``(none)`` catches
+    episodes that reached no stage at all.
+    """
+    if not results or "stages" not in results[0]:
+        return None
+    names = [s["name"] for s in results[0]["stages"]]
+    per_stage = {n: {"reached": 0, "success": 0} for n in names}
+    furthest = {n: {"episodes": 0, "terminal_success": 0} for n in (*names, "(none)")}
+    first_failure = dict.fromkeys((*names, "(terminal)"), 0)
+    for r in results:
+        deepest = "(none)"
+        for s in r["stages"]:
+            if s["reached"]:
+                per_stage[s["name"]]["reached"] += 1
+                deepest = s["name"]
+            if s["success"]:
+                per_stage[s["name"]]["success"] += 1
+        furthest[deepest]["episodes"] += 1
+        furthest[deepest]["terminal_success"] += int(bool(r["success"]))
+        if not r["success"]:
+            failed = next((s["name"] for s in r["stages"] if not s["success"]), "(terminal)")
+            first_failure[failed] += 1
+    return {"n": len(results),
+            "successes": int(sum(bool(r["success"]) for r in results)),
+            "stage_order": names, "per_stage": per_stage,
+            "furthest": furthest, "first_failure": first_failure}
+
+
 def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
     return [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
                         percept_noise=prereg.percept_noise,
@@ -332,6 +373,12 @@ def run_campaign(
         rate = float(np.mean(labels))
         if verbose:
             print(f"\ngen {gen}: current dev rate {rate:.1%} ({sum(labels)}/{len(labels)})")
+        # "Where do the residual failures land" as a sealed artifact, not a
+        # transient dict. stages=None writes nothing (round 78's opt-in).
+        attribution = stage_attribution(cur)
+        if attribution is not None:
+            store.put("stage_attribution", {"preregistration_sha": prereg_sha,
+                                            "generation": gen, "table": attribution})
         if all(labels):
             if verbose:
                 print("  no residual failures on dev; campaign converged")

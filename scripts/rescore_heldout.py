@@ -32,7 +32,14 @@ from pathlib import Path
 # Runnable as `python scripts/rescore_heldout.py ...` without PYTHONPATH gymnastics.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, blind_twin, sha_json
+from plugins.rsi.campaign import (
+    CampaignStore,
+    Preregistration,
+    _specs,
+    blind_twin,
+    sha_json,
+    stage_attribution,
+)
 from plugins.rsi.gate import paired_gate
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger
@@ -128,6 +135,21 @@ def run_rescore(store_dir: str | Path, out_dir: str | Path, block: int, *,
             print(f"vs blind twin: {vs_blind.line()}  -> judgement "
                   f"{'established' if judged else 'NOT established'}")
 
+    attribution = None
+    if prereg.stages is not None:
+        # The stage attribution follows the rescored block, same as run_campaign's
+        # dev measurement: a reproduction block without its failure distribution
+        # would be a thinner claim than the campaign it reproduces. paired_gate
+        # keeps returning a PairedResult and discarding rollouts, so this re-runs
+        # the governed arm -- bitwise-identical per docs/verified-environment.md.
+        # ponytail: n extra rollouts on the stages path; teach paired_gate to
+        # surface raw results if that cost ever matters.
+        from plugins.rsi.gate import _run
+        from plugins.rsi.parallel import default_executor
+        rolled = (executor or default_executor()).map(
+            _run, [(s, bundle) for s in held], workers=workers)
+        attribution = stage_attribution(rolled)
+
     payload = {
         "source_store": str(store_dir),
         "source_preregistration_sha": sha_json(prereg_payloads[0]),
@@ -138,6 +160,10 @@ def run_rescore(store_dir: str | Path, out_dir: str | Path, block: int, *,
         "vs_blind": asdict(vs_blind) if vs_blind is not None else None,
         "judgement": judged,
     }
+    if attribution is not None:
+        # Key added only on the stages path, so a stages=None rescore artifact
+        # stays byte-identical to rung 1's shape.
+        payload["stage_attribution"] = attribution
     digest = CampaignStore(out_root).put("heldout_rescore", payload)
     if verbose:
         print(f"heldout_rescore {digest[:12]} -> {out_root}")

@@ -41,7 +41,8 @@ def _fake_run(job):
     """Seed-deterministic stand-in for governed_rollout: even seeds fail
     ungoverned; the real bundle fixes every failure; the blind twin fixes
     nothing and additionally breaks seeds % 4 == 1, so the head-to-head
-    judgement comparison separates cleanly."""
+    judgement comparison separates cleanly. Stage data rides along ONLY when
+    the spec carries a chain, exactly like governed_rollout."""
     spec, bundle = job
     failing = spec.seed % 2 == 0
     if bundle is None or not bundle.rules:
@@ -50,9 +51,16 @@ def _fake_run(job):
         success = (not failing) and spec.seed % 4 != 1
     else:
         success = True
-    return {"success": success,
-            "fired_at": 0 if bundle is not None and bundle.rules else None,
-            "trace": {}}
+    out = {"success": success,
+           "fired_at": 0 if bundle is not None and bundle.rules else None,
+           "trace": {}}
+    if spec.stages is not None:
+        def stage(name, reached, held):
+            return {"name": name, "entered_step": 0 if reached else None, "exited_step": None,
+                    "success": held, "reached": reached, "privilege_used": int(reached)}
+        # Successes clear both stages; failures die in grasp, never reach place.
+        out["stages"] = [stage("grasp", True, success), stage("place", success, success)]
+    return out
 
 
 def _rule(rule_id: str, arm_after: int) -> Rule:
@@ -61,14 +69,15 @@ def _rule(rule_id: str, arm_after: int) -> Rule:
 
 
 def _sealed_store(root: Path, *, require_judgement: bool = True,
-                  corrupt_child_sha: bool = False, promote_first: bool = True):
+                  corrupt_child_sha: bool = False, promote_first: bool = True,
+                  stages=None):
     """A run_campaign-shaped store: real prereg, real rule canonicals, real
     sha chain; one promoted generation and one rejected one."""
     prereg = Preregistration(
         dev=tuple(range(41000, 41020)), heldout=tuple(range(42000, 42010)),
         percept_noise=0.02, critic_budget=0, action_budget=0,
         recovery_sensor_sd=0.02, max_generations=2, task="lift", policy="scripted",
-        require_judgement=require_judgement)
+        require_judgement=require_judgement, stages=stages)
     parent = Bundle(rules=(), critic_budget=0, action_budget=0)
     child = parent.append(_rule("g1", 41))
     store = CampaignStore(root)
@@ -114,6 +123,9 @@ def test_end_to_end_artifact_and_child_sha_chain(tmp_path, monkeypatch):
     assert out["vs_blind"]["fixed"] == 8 and out["vs_blind"]["broken"] == 0
     assert out["vs_blind"]["p_value"] == pytest.approx(2 / 2**8)
     assert out["judgement"] is True
+    # stages=None keeps the rung-1 artifact byte-shape: exactly these keys.
+    assert set(out) == {"source_store", "source_preregistration_sha", "bundle_sha",
+                        "block", "n", "paired", "vs_blind", "judgement"}
 
     # The artifact landed in the new store, content-addressed, kind heldout_rescore.
     index = [json.loads(line) for line in (tmp_path / "rescore" / "index.jsonl").open()]
@@ -134,6 +146,35 @@ def test_judgement_skipped_when_not_preregistered(tmp_path, monkeypatch):
     assert out["vs_blind"] is None
     assert out["judgement"] is None
     assert out["paired"]["fixed"] == 5
+
+
+def test_stage_attribution_follows_the_rescored_block(tmp_path, monkeypatch):
+    """A campaign preregistered with a stage chain gets its rescore attributed
+    too, and the table's buckets reproduce the gated governed numbers exactly."""
+    from harness.spec import Clause, StageSpec
+
+    monkeypatch.setattr(gate, "_run", _fake_run)
+    chain = (StageSpec("grasp", (Clause("observable.finger_gap", "gt", -1.0),), 62),
+             StageSpec("place", (Clause("observable.finger_gap", "gt", -1.0),), 38))
+    _sealed_store(tmp_path / "sealed", stages=chain)
+
+    out = rescore_heldout.run_rescore(tmp_path / "sealed", tmp_path / "rescore", 43000,
+                                      workers=1, verbose=False, executor=_FakeExecutor())
+
+    t = out["stage_attribution"]
+    # The governed bundle fixes every seed, so the whole block clears both stages.
+    assert t["n"] == 10 and t["successes"] == 10
+    assert t["per_stage"] == {"grasp": {"reached": 10, "success": 10},
+                              "place": {"reached": 10, "success": 10}}
+    assert t["first_failure"] == {"grasp": 0, "place": 0, "(terminal)": 0}
+    # The descriptive table cannot diverge from the gated boolean.
+    assert sum(b["terminal_success"] for b in t["furthest"].values()) == t["successes"]
+    assert t["successes"] == round(out["paired"]["governed_rate"] * out["paired"]["n"])
+    # And it is sealed inside the same content-addressed artifact.
+    index = [json.loads(line) for line in (tmp_path / "rescore" / "index.jsonl").open()]
+    stored = json.loads(
+        (tmp_path / "rescore" / "artifacts" / f"{index[0]['sha']}.json").read_text())
+    assert stored["stage_attribution"] == t
 
 
 def test_explicit_n_overrides_heldout_length(tmp_path, monkeypatch):
