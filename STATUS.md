@@ -12,10 +12,15 @@
 - [x] R1(round 77): 四 rung 全部落地(769d7ca/656d12c/a1dfe0c/4f223d3 + chore 79da352)。
       174 通过 3 跳过, ruff 全绿, demo 重跑 artifacts 逐位一致(唯一差异 = skills digest,
       rung 2 新字段, 预期)。细节见 progress.md round 77。
-- [ ] R2(用户裁定 2026-08-22 x2: 导航不做, robosuite 长程 manipulation): 三 rung ——
-      多阶段任务基建(阶段序列+子目标判据进哈希) / Stack 长程基线+难度标定+每阶段失败分布 /
-      长程 RSI campaign。anygrasp 包 provider 为后续 rung(PickPlace 多样物体处进场)。
-- [ ] R3: qwen38 接 reasoner transport, 重跑 round-25 对比。
+- [x] R2 主体(round 78-79): 阶段机(Clause/StageSpec 进哈希) + StackScriptedDriver +
+      标定(操作点 sd=0.012, n=100 双区块 58/52%) + **首个长程 campaign(runs/stack-g1)**:
+      gen1 finger_gap<0.001 晋级(held-out n=200 +6.5pp p=2.4e-4, 13 修 0 破,
+      对盲发 +35.5pp judgement established), gen2 噪声候选被正确拒绝, 消融全档零破坏。
+      **单区块数字**; 42200/42400 两块留复现。放置阶段零规则(round 19 天花板阶段级重现,
+      = MSR place 原语的进场位置)。anygrasp 包 provider 为后续 rung。
+- [ ] R2 收尾: held-out 第 2/3 区块复现 + 阶段归因产物接线。
+- [ ] R3: qwen38 接 reasoner transport(本机 sglang 已部署), 重跑 round-25 对比,
+      Stack 为第二试验场。
 - gate(需要时解锁): Isaac 具身插件 —— 触发条件: 导航技能电池或房间尺度长程场景。
       导航证据暂由真机(zos)承担。go2W_Sim 桥接成本侦察报告备用。
 
@@ -25,6 +30,7 @@
 **标定 40000-40999**(pass A 座高 40000-40199 / pass B sd 扫 40200-40599, 标定过的块永不再当
 门禁/held-out); **Stack campaign dev 蓄水池 41000-41999**; **held-out 42000-42199 /
 42200-42399 / 42400-42599**(头条至少三块); 选择 43000+ 需要时用; 44000+ 留后续 rung。
+**已烧(round 78-79):** 标定 40000-40799; stack-g1 dev 用 41000-41580(余 419); held-out #1 = 42000-42199。
 
 **frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
 既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params
