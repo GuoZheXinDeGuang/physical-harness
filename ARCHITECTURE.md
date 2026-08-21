@@ -56,10 +56,21 @@ parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 prere
   已知 caveat: `DEFAULT_PERCEPT_REF` 常量本身不进内容哈希(直接构造 EpisodeSpec 的老路径用它);
   kernel 挂载的运行会把解析出的 ref 盖进 preregistration, 那条路径是进哈希的。
 
+## 有意推迟的一项: features 注册表插件化
+
+REGISTRY 的注册发生在模块 import 时, 这**正是它 spawn 安全的原因**
+(worker 重新 import 就重新注册, 无需任何状态迁移)。
+把注册改为 mount 驱动会立刻回到 "模块全局活不过 spawn" 的老坑;
+把提取器移入插件而 governor 保留副本则是 round 44 的漂移坑。
+干净解法需要 L2 的依赖反转(registry 上提进 harness, 插件在 import 时向它注册,
+worker 因 spec ref 而 import 插件 -> 注册在 worker 里自然发生)。
+在那之前不动, 原因记录于此。
+
 ## L0 已知限制(有意, 待 L1 清除)
 
 - worker 里 provider 由裸 ref 字符串重建, Mount params 到不了 worker; workload 在 params 非空时拒绝启动(fail loud), L1 把 params 编进 spec。
-- governor/demos.py 的演示采集不携带 provider ref, 永远走 legacy 路径; 采集是训练数据管线不是 campaign 路径, L1 一并迁移。
+- (已关闭, round 62) demos 采集现在接受 env_provider ref 并随 spec 下传;
+  演示者本身保持脚本专家(演示是专家行为, 不是被挂载策略的行为)。
 - provider 在 make_env/make_driver 里每 episode 重建一次; 对无状态适配器免费, L1 引入 per-worker 缓存。
 
 ## 不变量(从 phase 1 原样上提)

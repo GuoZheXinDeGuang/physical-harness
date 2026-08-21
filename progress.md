@@ -2345,3 +2345,20 @@ Sawyer 上共享的抓取原语本身就弱(握持保持), 恢复继承了同一
 ### 下一轮种子
 
 回迁移阶梯: demos 走 kernel / features 注册表插件化, 然后 L2(删 governor 命名空间)预研。
+
+## Round 62 - 2026-08-21 - 收尾小 rung + L2 盘点
+
+- 确认 parity(RecoveryActor 高度参数化后, Panda): 四组 PASS -- round 61 的修复对
+  第一具身逐位中性, 钉实。
+- **最后一条 L0 限制关闭**: demos 采集接受 env_provider ref 随 spec 下传
+  (legacy 四元组不变, 测试断言默认路径逐位一致); 演示者保持脚本专家(有意, 记录在案)。
+- **features 插件化正式推迟并记录原因**(ARCHITECTURE): import 时注册正是 spawn 安全
+  的来源, mount 驱动会回到模块全局的老坑, 复制提取器是 round 44 的漂移坑;
+  干净解法在 L2 的 registry 上提。**"暂不做"也要把为什么写下来, 否则下一个人会踩一遍。**
+- docs/l2-inventory.md: governor/ 全模块去向盘点 + 顺序建议(6-8 rung,
+  EpisodeSpec 上提单独成 rung)。
+- 170 测试绿。
+
+### 下一轮种子
+
+L2 rung A: 统计四件套(gate/power/search/screen)移入 plugins/rsi/stats + parity。

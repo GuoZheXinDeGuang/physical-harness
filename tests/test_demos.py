@@ -26,3 +26,18 @@ def test_noise_changes_the_states_visited_but_not_the_labels_bounds():
         "injected noise did not change the visited states"
     for _, y in (clean, noisy):
         assert np.all(np.abs(y) <= 1.0 + 1e-9), "labels left the action range"
+
+
+def test_collect_one_threads_the_env_provider_ref():
+    """Round 62: the last L0 limitation closes -- demos can run on a mounted
+    embodiment. Legacy 4-tuple args stay valid (byte-identical default path)."""
+    import numpy as np
+
+    from governor.demos import collect_one
+
+    legacy = collect_one((20000, 0.15, "lift", 0.004))
+    with_ref = collect_one((20000, 0.15, "lift", 0.004,
+                            "plugins.embodiment_robosuite:provider"))
+    assert legacy is not None and with_ref is not None
+    assert np.array_equal(legacy[0], with_ref[0]) and np.array_equal(legacy[1], with_ref[1]), \
+        "the default provider must reproduce the legacy path bit for bit"

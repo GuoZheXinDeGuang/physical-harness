@@ -26,10 +26,18 @@ from governor.policy import ScriptedDriver
 CLOCK = 100.0
 
 
-def collect_one(args: tuple[int, float, str, float]) -> tuple[np.ndarray, np.ndarray] | None:
-    """One demonstration. Returns None if the demonstrator itself failed."""
-    seed, sigma, task, percept_noise = args
-    spec = EpisodeSpec(seed=seed, task=task, percept_noise=percept_noise)
+def collect_one(args: tuple) -> tuple[np.ndarray, np.ndarray] | None:
+    """One demonstration. Returns None if the demonstrator itself failed.
+
+    `args` is (seed, sigma, task, percept_noise) with an optional trailing
+    env_provider ref, kept a flat tuple because it crosses a Pool boundary.
+    The demonstrator itself stays the scripted expert on purpose: demos are
+    the expert's behaviour, not a mounted policy's.
+    """
+    seed, sigma, task, percept_noise, *rest = args
+    env_provider = rest[0] if rest else None
+    spec = EpisodeSpec(seed=seed, task=task, percept_noise=percept_noise,
+                       env_provider=env_provider)
     env = make_env(spec)
     obs = env.reset()
     start_z = float(np.asarray(obs[object_key(spec)])[2])
@@ -57,9 +65,10 @@ def collect_one(args: tuple[int, float, str, float]) -> tuple[np.ndarray, np.nda
 
 
 def collect(n: int, *, sigma: float, first_seed: int = 20000, task: str = "lift",
-            percept_noise: float = 0.004, workers: int = 10) -> tuple[np.ndarray, np.ndarray, int]:
+            percept_noise: float = 0.004, workers: int = 10,
+            env_provider: str | None = None) -> tuple[np.ndarray, np.ndarray, int]:
     """Collect `n` DART demonstrations, keeping only the ones that succeed."""
-    args = [(first_seed + i, sigma, task, percept_noise) for i in range(n)]
+    args = [(first_seed + i, sigma, task, percept_noise, env_provider) for i in range(n)]
     from governor.parallel import default_executor
     rows = default_executor().map(collect_one, args, workers=workers)
     good = [r for r in rows if r is not None]
