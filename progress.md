@@ -2902,3 +2902,45 @@ frontier 顺位不变: beam gen-1 回滚 > skill 路径可迁移 > ruff pin。
 
 M 阶梯 workflow 施工图回来后: M1(qwen38 大脑缝, =R3)最先——大脑先进内核。
 R2 收尾(held-out 复现 ×2 + 阶段归因产物)与 M1 可并行排。
+
+## Round 81 - 2026-08-22 - M1: 大脑有了导线; 天真挑法在校准后仍然领先(单区块)
+
+### 做成了什么
+
+1. **qwen38_transport(bda3aa5)**: OpenAI chat 形状经 urllib(零新依赖), /v1/models 懒探测
+   model id(launch 脚本没设 served-model-name, id 是模型路径), record 钩子每次交换必记
+   (含被拒的), 网络故障 raise TransportError 绝不返回字符串(网络抖动≠模型拒绝)。
+   naive_transport = round-25 天真挑法的零 GPU 复现锚。离线 stub 测试 4 条。
+2. **round25_rerun.py(05592de)**: 三臂对比 harness(search/naive_mock/qwen38),
+   不碰 run_campaign; strategies 空目录守卫(空了 parse_proposal 拒绝一切,
+   静默零结果会被误读成"模型不会提议"); qwen38 端点不可达优雅跳过。
+3. **对比实跑(runs/round25-rerun, dev 44000-44059 + held-out 44200-44399 烧毕)**:
+   - search: finger_gap<0.0074 armed t=43 → held-out n=200 40.0%→67.0% **+27.0pp** 54修0破
+   - naive_mock: running_range(finger_gap)<0.005 armed t=95 → 40.0%→71.5% **+31.5pp** 63修0破
+   - **earliness 修掉之后天真挑法仍领先 4.5pp**(不同归约+更晚武装)。单区块、±7pp 噪声内,
+     不是定论; 但"目标函数是否还有第二个未标定假设"进 frontier。
+   - qwen38 臂: 端点未起(GPU 被 rynnbrain 6.4GB 占用, sglang 需 21.6GB), 待腾位补跑。
+
+## Round 82 - 2026-08-22 - M2: 场景图缝活了; 只写不读的技能库被抓住; 证据以顾问身份进驾驶舱
+
+### 做成了什么
+
+1. **graph.scene 真 provider(e7d669e)**: SimSceneGraph(robosuite obs→节点/关系) +
+   WorldSceneGraph(zos World.snapshot→同 schema, bearing 数学移植自 world.relative),
+   import 时零 numpy(zos 轻 venv 可 import); base_profile ref 逐字不动(sha 稳定),
+   zos_world_bundle 换真机场景图 = 改 mount。
+2. **真 bug: InMemorySkillGraph 只写不读(e457028)**: root= 持久化的记录从不回读——
+   跨进程读取半永远为空。在 provider 缝修(约 10 行), 损坏文件 mount 时大声报错。
+   这正是"验证要对着运行时"——施工图假设了共享 root 可读, 实施 agent 实测戳穿。
+3. **zos 证据层(f09edfb + 1d40745)**: World.snapshot()(纯 dict, 带新鲜度字段——冻结位姿
+   不许被当活的); zos/evidence.py 经 sys.path 注入 + 轻 Kernel 挂 graph.skill 读
+   SkillRecord(kernel resolve 是被记账的缝, 不侧信道 glob), 每环缺失诚实降级空索引;
+   catalogue/expand/gate 面板附 "[measured: established (1 block)]" 顾问标注。
+   **安全下界铁律有自检钉死: 有无证据, resolve/check_pre 裁决逐字节相同。**
+4. **端到端实证**: evidence.boot_index() 对真实 runs/stack-g1/skills 把晋级规则索引到
+   manip.arm.pick, established=True。harness 209 / zos 59 测试全绿, 四个 commit 实时推送。
+
+### 注意
+
+- M2 剩余一小截: Session.evidence 已建但 planner prompt/cli ask 面板还没消费(下轮)。
+- zos 全包 ruff 存量不干净(loop/world 等 22 处 E501 类), 本轮只守改动文件干净, 全包清理另排。

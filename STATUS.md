@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 79 完成(首个长程 campaign: stack gen1 晋级 held-out +6.5pp judgement established)。循环已在 4090 重启(2026-08-22)
+**Round:** 82 完成(M1 大脑导线+对比 / M2 场景图+证据顾问层)。今日目标: M3 闭环 + 双仓库 README(round 83-84)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -19,8 +19,11 @@
       **单区块数字**; 42200/42400 两块留复现。放置阶段零规则(round 19 天花板阶段级重现,
       = MSR place 原语的进场位置)。anygrasp 包 provider 为后续 rung。
 - [ ] R2 收尾: held-out 第 2/3 区块复现 + 阶段归因产物接线。
-- [ ] R3: qwen38 接 reasoner transport(本机 sglang 已部署), 重跑 round-25 对比,
-      Stack 为第二试验场。
+- [~] R3/M1(round 81): transport+对比 harness 落地; search +27.0 vs naive +31.5(单区块,
+      earliness 修后天真挑法仍领先——"目标函数第二未标定假设"进 frontier)。
+      qwen38 臂待 GPU 腾位(rynnbrain 占 6.4GB, sglang 需 21.6GB)。
+- [x] M2(round 82): graph.scene 真 provider + InMemorySkillGraph 回读修复 +
+      zos 证据顾问层(安全下界自检钉死)。剩 Session.evidence 的 prompt/面板消费。
 - gate(需要时解锁): Isaac 具身插件 —— 触发条件: 导航技能电池或房间尺度长程场景。
       导航证据暂由真机(zos)承担。go2W_Sim 桥接成本侦察报告备用。
 
@@ -31,6 +34,7 @@
 门禁/held-out); **Stack campaign dev 蓄水池 41000-41999**; **held-out 42000-42199 /
 42200-42399 / 42400-42599**(头条至少三块); 选择 43000+ 需要时用; 44000+ 留后续 rung。
 **已烧(round 78-79):** 标定 40000-40799; stack-g1 dev 用 41000-41580(余 419); held-out #1 = 42000-42199。
+**已烧(round 81):** round25-rerun dev 44000-44059 + held-out 44200-44399。
 
 **frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
 既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params
