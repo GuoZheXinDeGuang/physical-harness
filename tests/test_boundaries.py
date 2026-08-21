@@ -15,8 +15,17 @@ import sys
 #: plus numpy is fine; what matters is harness/governor/plugins discipline.
 _PLUGIN_ALLOWED = ("harness", "governor", "numpy")
 
+#: Third-party dependencies each plugin DECLARES. The simulator belongs to the
+#: embodiment plugin and nowhere else -- an rsi or policies module importing
+#: robosuite would be an embodiment leak, and this table is what catches it.
+_PLUGIN_THIRD_PARTY = {
+    "embodiment_robosuite": ("robosuite", "mujoco"),
+}
 
-def _allowed(root: str) -> bool:
+
+def _allowed(root: str, plugin: str = "") -> bool:
+    if root in _PLUGIN_THIRD_PARTY.get(plugin, ()):
+        return True
     return root in _PLUGIN_ALLOWED or root in sys.stdlib_module_names
 
 
@@ -50,7 +59,7 @@ def test_plugins_import_only_the_allowed_surfaces():
     for path in pathlib.Path("plugins").rglob("*.py"):
         for lineno, name in _imports(path):
             root = name.split(".")[0]
-            assert _allowed(root) or root.startswith("plugins"), \
+            assert _allowed(root, _plugin_package(path)) or root.startswith("plugins"), \
                 f"{path}:{lineno} imports {name}, outside the allowed plugin surface"
 
 

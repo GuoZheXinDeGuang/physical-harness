@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-import governor.env as _env
+import plugins.embodiment_robosuite.env as _env
 
 # Importing the provider declares the embodiment's feature surface (spawn-safe
 # by construction: workers re-import, registration re-runs).
@@ -40,6 +40,12 @@ class RobosuiteEmbodiment:
 
     def tasks(self) -> tuple[str, ...]:
         return tuple(sorted(_env.TASKS))
+
+    def object_key(self, spec: Any) -> str:
+        return _env.object_key(spec)
+
+    def success(self, obs: Any, spec: Any, start_z: float) -> bool:
+        return _env.lifted(obs, spec, start_z)
 
 
 def provider() -> RobosuiteEmbodiment:

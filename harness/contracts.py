@@ -15,10 +15,18 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class EnvProvider(Protocol):
-    """Layer 3: an embodiment that can build environments for episode specs."""
+    """Layer 3: an embodiment that can build environments for episode specs.
+
+    The semantic hooks exist so consumers (the rsi workload above all) reach
+    "which observation key holds the target" and "did the shared sub-goal
+    succeed" through the contract instead of importing this embodiment's
+    plugin -- the coupling that would otherwise block governed's own move.
+    """
 
     def make_env(self, spec: Any) -> Any: ...
     def tasks(self) -> tuple[str, ...]: ...
+    def object_key(self, spec: Any) -> str: ...
+    def success(self, obs: Mapping, spec: Any, start_z: float) -> bool: ...
 
 
 @runtime_checkable

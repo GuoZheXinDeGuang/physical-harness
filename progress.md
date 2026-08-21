@@ -2565,3 +2565,35 @@ F821 一眼点名。潜伏 NameError 修掉; child() 顺带记为无人使用的
 
 收双 parity -> rung H: EnvProvider 契约扩展(object_key/success 语义入契约) +
 env.py 余部入 embodiment 插件; 之后只剩 governed(rung I)与清壳(rung J)。
+
+## Round 71 - 2026-08-21 - L2 rung H: 具身语义入契约, env 具身部分入插件
+
+### rung G 收口
+
+双策略 parity **8/8 PASS**(货币级变更按盘点双验)。
+
+### rung H
+
+- EnvProvider 契约扩展: **object_key(spec) 与 success(obs, spec, start_z) 入契约** --
+  rsi 将来经契约取"目标在哪个观测键 / 共享子目标成没成", 不 import 具身插件。
+  这是 governed 入 rsi(rung I)的前置解耦。
+- TASKS / task_config / object_key / lifted / _default_make_env / CONTROL_FREQ ->
+  plugins/embodiment_robosuite/env.py; 适配器改为兄弟直连; governor.env 真实 re-export。
+- FrozenPolicy / phase_at / PHASE_HEIGHT **有据滞留**: 运动词表被 policies 与 rsi 共享,
+  与 proposer 同类; 出口写进盘点。
+
+### 两个测试按设计报警
+
+1. 契约检查拒绝旧 fakes(缺新方法) -- fake 补齐。
+2. **边界测试拒绝插件里的 robosuite import** -- allowlist 是薄适配时代写的;
+   改为**按插件声明第三方依赖**({embodiment_robosuite: robosuite/mujoco}),
+   仿真器只许出现在具身插件, rsi/policies 里出现即具身泄漏。**边界测试从"拦"升级为"声明"。**
+
+### VERIFY
+
+164 passed + ruff 绿 + 脚本 parity 四组 PASS。
+governor/ 实体只剩: env.py(派发+运动词表) / governed.py / proposer.py + 壳。
+
+### 下一轮种子
+
+rung I: governed -> plugins/rsi(经契约取具身语义), 之后 rung J 清壳收官。

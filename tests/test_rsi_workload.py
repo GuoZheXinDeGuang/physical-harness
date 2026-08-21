@@ -52,6 +52,11 @@ class _FakeEnvProvider:
     def tasks(self):
         return ("lift",)
 
+    def object_key(self, spec):
+        return "cube_pos"
+
+    def success(self, obs, spec, start_z):
+        return False
 
 class _FakePolicyFactory:
     """Satisfies harness.contracts.PolicyFactory; must never actually be called."""

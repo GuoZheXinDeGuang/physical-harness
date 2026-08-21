@@ -8,7 +8,8 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 | episode_log.py / audit.py | **已移(round 65, rung C)**: episode_log -> harness/(依赖面干净); audit -> plugins/rsi(依赖 FeatureView+Trigger, 审计的是 RSI 语义) | - |
 | features.py / percept.py / invariant.py | **已移(round 69, rung F)**: 契约机制 -> harness, 提取器声明 -> plugins/embodiment_robosuite/features.py(import 时注册, worker 经 provider ref 触发) | - |
 | EpisodeSpec | **已上提(round 70, rung G)** -> harness/spec.py 逐字迁移, governor.env 真实 re-export(类同一对象), pickle/字段序不变 | - |
-| env.py 剩余(TASKS/task_config/object_key/lifted/_default_make_env/FrozenPolicy/phase_at/make_env) | plugins/embodiment_robosuite, **随 EnvProvider 契约扩展一起走**(object_key/lifted 经契约供给 rsi, 避免跨插件 import) | 高(rung H) |
+| env 具身部分(TASKS/task_config/object_key/lifted/_default_make_env/CONTROL_FREQ) | **已移(round 71, rung H)** -> plugins/embodiment_robosuite/env.py; EnvProvider 契约扩展 object_key/success, rsi 经契约取语义 | - |
+| FrozenPolicy / phase_at / PHASE_HEIGHT + make_env 派发点 | **有据滞留 governor**: 运动词表被 policies(drivers)与 rsi(recovery)共享, 与 proposer 同类; 出口 = 恢复程序携带绝对高度或 spec 携带高度表 | 中 |
 | policy.py | **已移(round 66, rung D)**: plugins/policies/drivers.py(驱动器+交还契约+RecoveryActor), 适配器改指兄弟模块 | - |
 | governed.py | plugins/rsi(受治理 rollout 是 RSI workload 的核心) | 高: 与 features/percept/policy 三向耦合, 最后动 |
 | gate.py / campaign.py | **已移(round 64, rung B)**, governor 留转发壳; 第一方调用点全部改指新家 | - |
