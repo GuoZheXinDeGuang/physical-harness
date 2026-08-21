@@ -2422,3 +2422,21 @@ _run 的 pickle 路径随模块名迁移在真 Pool 里验证过(parity 本身�
 L2 剩余: episode_log/audit 上提进 harness -> policy 入 plugins/policies ->
 features 反转(registry 上提) -> env/EpisodeSpec 上提(单独 rung) -> governed 收尾。
 下一 rung: episode_log + audit 上提(账本本来就是内核职能, 链原语已合一)。
+
+## Round 65 - 2026-08-21 - L2 rung C: 账本入内核, 审计归 workload
+
+盘点原计划把 episode_log 和 audit 一起上提进 harness; 看 import 面后拆开了:
+- **episode_log -> harness/episode_log.py**: 依赖面只有 stdlib+numpy+harness.events,
+  过内核 AST 边界; CHAIN_SEED 与数学不动(golden 测试仍钉着), 归档 episode log 依旧可审计。
+- **audit -> plugins/rsi/audit.py**: 它 import FeatureView 与 Trigger,
+  审计的是 RSI 的 episode 语义(shadow replay 重放触发器), 不是内核职能。
+  **"账本"与"对账本内容的领域审计"是两层, import 面把这条边界替我画了出来。**
+governor 留两个 PEP 562 壳; 第一方调用点(governed/tests)当场搬离壳(rung B 的教训)。
+
+VERIFY: 164 passed + 脚本 parity 四组 PASS。
+
+### 下一轮种子
+
+L2 剩: policy 入 plugins/policies -> features 反转(registry 上提) ->
+env/EpisodeSpec 上提(单独 rung) -> governed 收尾 -> 删壳。
+下一 rung: **policy.py 入 plugins/policies**(驱动器+交还契约+RecoveryActor)。

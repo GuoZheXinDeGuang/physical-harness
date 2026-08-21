@@ -33,7 +33,7 @@ from governor.policy import RecoveryActor, make_driver
 from governor.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )
-from governor.episode_log import chain_start, chain_step
+from harness.episode_log import chain_start, chain_step
 from governor.percept import FeatureView, PrivilegePolicy, project
 from plugins.rsi.stats.search import Trigger
 
