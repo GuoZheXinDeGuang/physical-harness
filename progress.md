@@ -2985,3 +2985,33 @@ R2 收尾(held-out 复现 ×2 + 阶段归因产物)与 M1 可并行排。
 **今日(2026-08-22)总账: rounds 81-84, M 阶梯一天三级(M1 大脑导线/M2 场景+证据顾问/
 M3 规划闭环), harness 13 commit + zos 6 commit 全部实时推送, 测试 174→223(harness)
 与 57→59(zos), 每一轮全量绿、每个封存数字零移动。**
+
+## Round 85 - 2026-08-22 - 三区块头条成立; 阶段归因量化了天花板的搬家
+
+### 做成了什么
+
+1. **rescore_heldout.py(9b17774)**: 封存 bundle 补块重评分——从 store 重建 Bundle 并断言
+   canonical == 封存 child_sha(防重建错物), 评分与 campaign held-out 同径(paired +
+   整链盲孪生), 新块与 dev/heldout 不相交守卫。顺手修 parity_check 的 StageSpec 反序列化
+   (共享根因)。
+2. **阶段归因产物(2975667)**: stages≠None 时每代 seal 一个 stage_attribution artifact
+   (最远到达分桶 + 残余失败首败阶段直方图), 描述表与门禁布尔的一致性有断言钉死;
+   rescore 同样聚合入 artifact。
+3. **真 bug + 修复(ac826ba)**: 空特征目录只在新鲜进程暴露——round 69 注册表反转下,
+   父进程重建 Bundle 调 declared_privilege 时 REGISTRY 为空; 全套 pytest 被兄弟测试模块的
+   import 污染掩护。修复=先经 registry 加载封存的 env provider ref(workload 同款次序);
+   新鲜进程回归测试钉死两端。242 通过 3 跳过。
+4. **三区块复现(42200/42400 烧毕)**:
+   - 42200: 54.0→63.5 **+9.5pp** 19修0破 p=3.8e-6; vs 盲发 +30.5pp p=3e-13 judgement ✓
+   - 42400: 48.5→59.5 **+11.0pp** 22修0破 p=4.8e-7; vs 盲发 +28.0pp p=6e-11 judgement ✓
+   - **三块合并: +6.5/+9.5/+11.0, 54 修 0 破(n=600), 判定三块全确立——头条转正。**
+5. **阶段归因首批读数**: 受治理残余里放置反超抓取(42200: grasp 28 vs place 45;
+   42400: 34 vs 47)——规则修掉抓取失败后, 天花板如 round 79 预告搬到放置阶段,
+   每 200 集 ~45-47 个放置失败 = MSR place 原语的定量进场配额。
+
+### 什么没成 / 注意
+
+- 第一次跑复现时管道卫生翻车: `2>/dev/null | grep | tail` 吞掉 traceback 且 exit 恒 0,
+  "done" 回显骗过了我一轮。**后台命令铁律: 显式 cd + set -o pipefail + 只认落盘 artifact。**
+- 跨测试 import 污染再次遮蔽真 bug(round 78 见过同形态)——凡"父进程直接用插件注册物"的
+  新入口, 必须配新鲜进程测试。

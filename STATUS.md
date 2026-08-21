@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 84 完成(M3 规划闭环 + 双仓库 README, 校对零修改)。今日 M1/M2/M3 三级齐落, 详见 progress rounds 81-84
+**Round:** 85 完成(三区块头条转正: +6.5/+9.5/+11.0, 54修0破 n=600; 阶段归因: 残余里放置反超抓取)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -18,7 +18,8 @@
       对盲发 +35.5pp judgement established), gen2 噪声候选被正确拒绝, 消融全档零破坏。
       **单区块数字**; 42200/42400 两块留复现。放置阶段零规则(round 19 天花板阶段级重现,
       = MSR place 原语的进场位置)。anygrasp 包 provider 为后续 rung。
-- [ ] R2 收尾: held-out 第 2/3 区块复现 + 阶段归因产物接线。
+- [x] R2 收尾(round 85): 三区块复现成立(+6.5/+9.5/+11.0, 判定全确立, 54修0破 n=600) +
+      stage_attribution 产物(残余失败放置反超抓取: ~45-47/200 = place 原语进场配额)。
 - [~] R3/M1(round 81): transport+对比 harness 落地; search +27.0 vs naive +31.5(单区块,
       earliness 修后天真挑法仍领先——"目标函数第二未标定假设"进 frontier)。
       qwen38 臂 → gate(用户裁定 2026-08-22: 先放一放; 腾 GPU 后 round25_rerun 补跑即可)。
@@ -39,6 +40,7 @@
 42200-42399 / 42400-42599**(头条至少三块); 选择 43000+ 需要时用; 44000+ 留后续 rung。
 **已烧(round 78-79):** 标定 40000-40799; stack-g1 dev 用 41000-41580(余 419); held-out #1 = 42000-42199。
 **已烧(round 81):** round25-rerun dev 44000-44059 + held-out 44200-44399。
+**已烧(round 85):** stack held-out #2/#3 = 42200-42399 / 42400-42599(三块配额用毕)。
 
 **frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
 既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params
