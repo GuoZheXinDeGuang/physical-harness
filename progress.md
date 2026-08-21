@@ -2192,3 +2192,19 @@ fake run_campaign 不接受 executor kwarg), 全是测试跟上接口, 无行为
    campaign 的 episode 事件与 kernel 的能力事件进同一条可审计链。
 2. features 注册表插件化: embodiment 声明自己的特征面(现在 REGISTRY 是 governor 全局)。
 3. demos 采集走 kernel(现在仍 legacy 路径, 已记录为 L0 限制)。
+
+## Round 58a - 2026-08-20 - 用户指出交付缺口: README 空白, pipeline 是否跑通说不清
+
+两个都是真问题, 当轮修:
+
+1. **scripts/demo_campaign.py**: 一条命令端到端(挂载 -> 基线 -> 提议 -> 双门禁 ->
+   held-out + 消融 -> SkillRecord 发布)。真跑验证: gen1 提升 finger_gap < 0.0018
+   (dev 42.9% -> 76.4%, 47 修 0 破), held-out 53% -> 73%(+20pp, p=1.9e-6),
+   判断成立(+26pp vs 盲发), 消融梯完整, 技能落盘。demo 用自己的种子块(30000+),
+   不进任何已发布主张。
+2. **README.md**: 是什么 / 一条命令跑通 / parity 复现 / 三层契约表 / phase 1 结论
+   (带作用域) / 仓库结构 / 测试 / 环境。含一次真实运行的输出摘录。
+
+教训: **"多轮在跑什么"必须从外面看得懂。** 我的轮次记录对自己是资产,
+对用户是黑箱; README + demo 入口才是别人判断 "pipeline 通没通" 的界面。
+顺带收口: rung 2 克隆 parity 四组 PASS(双策略双 rung 全部闭合)。
