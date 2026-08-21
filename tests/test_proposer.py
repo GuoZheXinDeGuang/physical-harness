@@ -8,10 +8,16 @@ schema-constrained generation has to survive.
 import numpy as np
 import pytest
 
+import plugins.embodiment_robosuite.features  # noqa: F401  registry population (post-inversion)
 from governor.proposer import (
     LlmProposer, ProposerError, SearchProposer, build_brief, catalog_for_prompt,
     parse_proposal, scripted_transport,
 )
+from plugins.rsi.repertoire import names as _strategy_names
+
+#: The vocabulary the rsi side supplies at every call site since round 76;
+#: tests play the supplier role explicitly.
+STRATEGIES = tuple(_strategy_names())
 
 VALID = {
     "feature": "observable.finger_gap", "op": "lt", "threshold": 0.005,
@@ -21,6 +27,7 @@ VALID = {
 
 def _parse(payload, budget=0):
     return parse_proposal(payload, generation=1, privilege_budget=budget,
+                          strategies=STRATEGIES,
                           recovery_sensor_sd=0.02, n_steps=100)
 
 
@@ -120,7 +127,8 @@ def test_llm_proposer_retries_past_a_refusal_then_succeeds():
         ' "dwell": 1, "arm_after": 10, "reducer": "value", "recovery": "regrasp"}',
         VALID,
     ]))
-    rule = p.propose(traces, labels, generation=1, privilege_budget=0, recovery_sensor_sd=0.02)
+    rule = p.propose(traces, labels, generation=1, privilege_budget=0,
+                     strategies=STRATEGIES, recovery_sensor_sd=0.02)
     assert rule is not None
     assert len(p.rejections) == 1 and "unknown feature" in p.rejections[0]
 
@@ -138,6 +146,6 @@ def test_both_providers_satisfy_the_same_contract():
     for provider in (SearchProposer(),
                      LlmProposer(transport=scripted_transport([VALID]))):
         rule = provider.propose(traces, labels, generation=1, privilege_budget=0,
-                                recovery_sensor_sd=0.02)
+                                strategies=STRATEGIES, recovery_sensor_sd=0.02)
         assert rule is not None and rule.declared_privilege() == 0
         assert provider.identity

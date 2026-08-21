@@ -19,7 +19,7 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 | (campaign 已并入上行; CampaignStore 与 harness artifacts 合一另立 rung, 动存档格式前先定兼容策略) | | |
 | servo / repertoire / recovery_search / beam / parallel + RecoveryActor | **已移(round 67, rung E)** -> plugins/rsi(干预机构归 workload) | - |
 | bc / demos | **已移(round 67, rung E)** -> plugins/policies(策略训练管线) | - |
-| proposer.py | **退回 governor(有据)**: 同时被 reasoner 落点与 rsi 校验共享, 直接分家会造成插件互 import; 离开 governor 的前置条件是 brief 自带策略词表的重构 | 中 |
+| proposer.py | **滞留 governor, 原因已更新(round 76)**: 词表解耦完成(brief/parse 携带 strategies 参数, repertoire import 已消), 但它构造 Rule、用 rsi 搜索内部 -- **输出类型耦合**; 真出口 = reasoner 契约返回 dict、Rule 校验归 rsi(等 layer-1 团队接口落地时一并做) | 低 |
 
 顺序建议(每步 parity): 统计四件套 -> episode_log/audit -> campaign -> policy ->
 features 反转(含 registry 上提) -> env/EpisodeSpec 上提 -> governed 收尾 -> 删空壳。

@@ -26,7 +26,6 @@ from typing import Protocol
 
 from harness.features import REGISTRY, Privilege
 from plugins.rsi.governed import RecoverySpec, Rule
-from plugins.rsi.repertoire import names as strategy_names
 from plugins.rsi.stats.search import REDUCERS, Trigger, search_triggers
 
 
@@ -36,7 +35,8 @@ class ProposerError(ValueError):
 
 class Proposer(Protocol):
     def propose(self, traces, labels, *, generation: int, privilege_budget: int,
-                recovery_sensor_sd: float) -> Rule | None: ...
+                recovery_sensor_sd: float,
+                strategies: tuple[str, ...] = ()) -> Rule | None: ...
     @property
     def identity(self) -> str: ...
 
@@ -50,7 +50,8 @@ class SearchProposer:
     top_k: int = 3
 
     def propose(self, traces, labels, *, generation: int, privilege_budget: int,
-                recovery_sensor_sd: float) -> Rule | None:
+                recovery_sensor_sd: float,
+                strategies: tuple[str, ...] = ()) -> Rule | None:
         ranked = search_triggers(traces, labels, privilege_budget=privilege_budget,
                                  top_k=self.top_k)
         if not ranked:
@@ -79,7 +80,8 @@ def catalog_for_prompt(privilege_budget: int, present: set[str] | None = None) -
     return out
 
 
-def build_brief(traces, labels, *, generation: int, privilege_budget: int) -> dict:
+def build_brief(traces, labels, *, generation: int, privilege_budget: int,
+                strategies: tuple[str, ...] = ()) -> dict:
     """Everything the proposer is told. Statistics only -- never raw episodes.
 
     Keeping this a small JSON object rather than a transcript is deliberate: it
@@ -116,7 +118,13 @@ def build_brief(traces, labels, *, generation: int, privilege_budget: int) -> di
         "separations": stats[:12],
         "operators": ["lt", "gt"],
         "reducers": list(REDUCERS),
-        "recovery_strategies": strategy_names(),
+        # Supplied by the caller (the rsi side owns the repertoire); an empty
+        # tuple means "no strategy vocabulary offered", and parse_proposal will
+        # reject any strategy the brief did not offer. Round 76: this parameter
+        # is what let the proposer leave governor -- validation reads the
+        # BRIEF, never the repertoire module, so the layer-1 landing pad and
+        # the rsi validator no longer share an import.
+        "recovery_strategies": list(strategies),
         "response_schema": {
             "feature": "str, from catalog", "op": "lt|gt", "threshold": "float",
             "dwell": "int >= 1", "arm_after": "int >= 0",
@@ -126,6 +134,7 @@ def build_brief(traces, labels, *, generation: int, privilege_budget: int) -> di
 
 
 def parse_proposal(payload: str | dict, *, generation: int, privilege_budget: int,
+                   strategies: tuple[str, ...] = (),
                    recovery_sensor_sd: float, n_steps: int) -> Rule:
     """Turn a proposer's response into a Rule, or refuse it.
 
@@ -171,8 +180,8 @@ def parse_proposal(payload: str | dict, *, generation: int, privilege_budget: in
     if not 0 <= arm_after < n_steps:
         raise ProposerError(f"arm_after must lie in [0, {n_steps}), got {arm_after}")
     strategy = payload.get("recovery", "regrasp")
-    if strategy not in strategy_names():
-        raise ProposerError(f"unknown recovery {strategy!r}; known: {strategy_names()}")
+    if strategy not in strategies:
+        raise ProposerError(f"unknown recovery {strategy!r}; known: {list(strategies)}")
 
     return Rule(f"g{generation}", Trigger(feature, op, threshold, dwell, arm_after, reducer),
                 RecoverySpec(name=strategy, sensor_sd=recovery_sensor_sd))
@@ -199,9 +208,10 @@ class LlmProposer:
             self.rejections = []
 
     def propose(self, traces, labels, *, generation: int, privilege_budget: int,
-                recovery_sensor_sd: float) -> Rule | None:
+                recovery_sensor_sd: float,
+                strategies: tuple[str, ...] = ()) -> Rule | None:
         brief = build_brief(traces, labels, generation=generation,
-                            privilege_budget=privilege_budget)
+                            privilege_budget=privilege_budget, strategies=strategies)
         n_steps = max(len(next(iter(t.values()))) for t in traces)
         for attempt in range(self.attempts):
             raw = self.transport({**brief, "attempt": attempt,
@@ -209,6 +219,7 @@ class LlmProposer:
             try:
                 return parse_proposal(raw, generation=generation,
                                       privilege_budget=privilege_budget,
+                                      strategies=strategies,
                                       recovery_sensor_sd=recovery_sensor_sd, n_steps=n_steps)
             except ProposerError as exc:
                 self.rejections.append(str(exc))

@@ -2700,3 +2700,27 @@ env.py(67 行垫片) / policy.py 壳(governed laundering) / proposer.py(brief �
 3. 决策: provider ref 必填 -> governor 归零。
 4. 三层团队接入时的契约细化。
 无这些输入时, 循环可做的增量工作已明显收敛; 下一轮若无新信号, 考虑收敛节奏或停轮待令。
+
+## Round 76 - 2026-08-21 - demo 迁移后重验逐位一致; proposer 词表解耦 + 一次诚实回滚
+
+### VERIFY: 文档入口的额外 parity
+
+README 的一条命令(scripts/demo_campaign.py)在 15 级手术后端到端重跑:
+**与迁移前逐位一致**(gen1 `finger_gap < 0.001787`, dev 42.9% -> 76.4% 47 修 0 破,
+held-out 53% -> 73%, +20pp, p=1.9e-6, SkillRecord 落盘)。
+
+### proposer: 解耦一层, 回滚一步
+
+- **词表解耦落地**: build_brief/parse_proposal/两个 propose 签名携带 strategies 参数,
+  调用方(rsi 侧/测试)显式供给; repertoire import 从 proposer 消失。
+- 尝试把 proposer 移入 plugins/reasoner -- **边界测试拒绝**: 它构造 Rule、
+  import rsi 搜索内部, 是 rsi 机械。**诚实回滚**到 governor, 滞留原因从
+  "repertoire 共享" 更新为 "输出类型耦合", 真出口写明: reasoner 契约返回 dict,
+  Rule 校验归 rsi -- 等 layer-1 团队接口落地时一并做, 不为归零而归零。
+
+### 收敛声明
+
+工程侧自含工作已做完。governor = 3 文件(67 行 env 垫片 / policy 壳 / proposer),
+每件滞留原因与出口俱在盘点。剩余全部等用户:
+gate(真模型 reasoner / 分布式 executor) + 决策(ref 必填) + 三层契约细化。
+**循环转入待令心跳(1 小时档), 有输入立即恢复全速。**
