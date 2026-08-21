@@ -294,3 +294,85 @@ def test_phase_height_and_schedule_values_are_frozen():
                             "close": 0.005, "lift": 0.25}
     assert NOMINAL_SCHEDULE == (("above", 25), ("descend", 25),
                                 ("close", 12), ("lift", 38))
+
+
+# --- R2 rung B: the stack baseline policy ------------------------------------
+
+STACK_POLICY_REF = "plugins.policies:stack_scripted_provider"
+
+
+def test_stack_phase_height_and_schedule_values_are_frozen():
+    """Same trap as round 77: a value typo here would pass every other test
+    and surface only as a rollout parity break. Pin the literals."""
+    from harness.spec import STACK_PHASE_HEIGHT, STACK_SCHEDULE
+
+    assert STACK_PHASE_HEIGHT == {"over_b": 0.12, "place": 0.05,
+                                  "release": 0.05, "retreat": 0.22}
+    assert STACK_SCHEDULE == (("above", 25), ("descend", 25), ("close", 12),
+                              ("lift", 30), ("over_b", 25), ("place", 25),
+                              ("release", 10), ("retreat", 25))
+
+
+def test_stack_scripted_driver_smoke():
+    """Two t=0 targets (xy noised independently, z exact), 8-phase progression,
+    grip closed exactly on {close, lift, over_b, place}, exhaustion after the
+    schedule's total duration -- and all six PolicyDriver members present."""
+    from harness.spec import STACK_SCHEDULE
+    from plugins.policies.drivers import StackScriptedDriver, phase_at
+
+    d = StackScriptedDriver(EpisodeSpec(seed=3, task="stack"))
+    for member in ("observe_once", "act", "retarget", "on_handback",
+                   "exhausted", "identity"):
+        assert hasattr(d, member)
+    assert d.identity == "stack_scripted@v1"
+
+    obs = {"cubeA_pos": np.array([0.0, 0.0, 0.82]),
+           "cubeB_pos": np.array([0.1, 0.1, 0.83]),
+           "robot0_eef_pos": np.array([0.0, 0.0, 1.0])}
+    d.observe_once(obs)
+    assert d.target_a[2] == 0.82 and d.target_b[2] == 0.83     # z exact
+    noise_a, noise_b = d.target_a[:2] - [0.0, 0.0], d.target_b[:2] - [0.1, 0.1]
+    assert np.any(noise_a != 0.0) and np.any(noise_b != 0.0)   # xy noised
+    assert not np.allclose(noise_a, noise_b)                   # independent draws
+
+    seen, grips = [], {}
+    total = sum(dur for _, dur in STACK_SCHEDULE)
+    for _ in range(total):
+        phase = phase_at(STACK_SCHEDULE, d.k)
+        grips[phase] = d.act(obs)[-1]
+        if phase not in seen:
+            seen.append(phase)
+    assert seen == [name for name, _ in STACK_SCHEDULE]
+    assert {p for p, g in grips.items() if g == 1.0} == {"close", "lift",
+                                                         "over_b", "place"}
+    assert d.exhausted
+
+
+def test_stack_provider_satisfies_policy_factory():
+    assert isinstance(load_provider(STACK_POLICY_REF), PolicyFactory)
+
+
+def test_stack_dispatch_leaves_the_lift_path_untouched():
+    """The ref resolves the new driver; a plain spec still resolves the exact
+    legacy class -- _default_make_driver has zero stack knowledge."""
+    from plugins.policies.drivers import StackScriptedDriver
+
+    ref_spec = EpisodeSpec(seed=0, task="stack", policy_provider=STACK_POLICY_REF)
+    assert type(make_driver(ref_spec)) is StackScriptedDriver
+    assert type(make_driver(EpisodeSpec(seed=0))) is ScriptedDriver
+
+
+def test_stack_env_smoke():
+    """De-risks the obs['cubeB_pos'] direct-read assumption at CI time: build
+    Stack once, reset, read both cubes, step one StackScriptedDriver action."""
+    spec = EpisodeSpec(seed=0, task="stack", env_provider=ENV_REF,
+                       policy_provider=STACK_POLICY_REF)
+    env = make_env(spec)
+    try:
+        obs = env.reset()
+        assert "cubeA_pos" in obs and "cubeB_pos" in obs
+        driver = make_driver(spec)
+        driver.observe_once(obs)
+        env.step(driver.act(obs))
+    finally:
+        env.close()

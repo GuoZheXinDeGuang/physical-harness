@@ -58,3 +58,19 @@ def sawyer_scripted_provider() -> GovernorPolicies:
     """The scripted policy re-tuned for the Sawyer embodiment."""
     return GovernorPolicies({"schedule": SAWYER_SCHEDULE, "kp": SAWYER_KP,
                              "grasp_height_offset": SAWYER_GRASP_HEIGHT_OFFSET})
+
+
+class StackPolicies:
+    """`harness.contracts.PolicyFactory` for the R2 stack baseline.
+
+    A 3-line factory, not a GovernorPolicies variant: the driver class itself
+    carries STACK_SCHEDULE, so no spec override machinery is needed.
+    """
+
+    def make_driver(self, spec: Any) -> Any:
+        return _policy.StackScriptedDriver(spec)
+
+
+def stack_scripted_provider() -> StackPolicies:
+    """The eight-phase scripted stack policy (grasp cubeA, seat it on cubeB)."""
+    return StackPolicies()

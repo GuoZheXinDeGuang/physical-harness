@@ -19,6 +19,8 @@ from dataclasses import dataclass, replace
 from harness.spec_tabletop import (  # noqa: F401  re-export: tabletop motor vocabulary lives in its domain module
     NOMINAL_SCHEDULE,
     PHASE_HEIGHT,
+    STACK_PHASE_HEIGHT,
+    STACK_SCHEDULE,
 )
 from harness.stages import (  # noqa: F401  re-export: stage vocabulary lives in its domain module
     Clause,

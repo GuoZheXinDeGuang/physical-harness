@@ -27,12 +27,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 import numpy as np
 
 from harness.registry import load_provider
-from harness.spec import PHASE_HEIGHT, EpisodeSpec
+from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT, STACK_SCHEDULE, EpisodeSpec
 
 
 def _object_key(spec):
@@ -202,6 +202,76 @@ class ClonedDriver:
     @property
     def identity(self) -> str:
         return f"cloned@{self.net.sha()[:12]}"
+
+
+class StackScriptedDriver:
+    """Eight-phase open-loop stack policy: grasp cubeA, seat it on cubeB.
+
+    Same difficulty knob as ScriptedDriver -- act on a wrong percept,
+    recoverable but uncorrected -- extended to TWO targets, both read ONCE at
+    t=0 (cubeB is static, so a t=0 read is as good as any later one; cubeA
+    after grasp is known by proprioception). Reachable only via the
+    `plugins.policies:stack_scripted_provider` ref; the lift path never sees
+    this class.
+    """
+
+    #: The grasp half reuses the lift vocabulary verbatim; the place half
+    #: rides the stack extension (harness/spec_tabletop.py).
+    _HEIGHT: ClassVar[dict[str, float]] = {**PHASE_HEIGHT, **STACK_PHASE_HEIGHT}
+    _GRASP_PHASES = ("above", "descend", "close", "lift")
+    _GRIP_CLOSED = ("close", "lift", "over_b", "place")
+
+    def __init__(self, spec: EpisodeSpec) -> None:
+        self.spec = spec
+        self.k = 0                      # policy-owned steps; recovery does not advance it
+        self.target_a: np.ndarray | None = None
+        self.target_b: np.ndarray | None = None
+
+    def observe_once(self, obs) -> np.ndarray:
+        """One noisy percept of BOTH cubes: xy noised, z exact, two consecutive
+        draws from the one seed-derived stream so the cube errors are independent."""
+        rng = np.random.RandomState(self.spec.seed * 7919 + 11)
+        sd = self.spec.percept_noise
+        self.target_a = np.asarray(obs[_object_key(self.spec)]).copy() + np.array(
+            [rng.normal(0, sd), rng.normal(0, sd), 0.0]
+        )
+        self.target_b = np.asarray(obs["cubeB_pos"]).copy() + np.array(
+            [rng.normal(0, sd), rng.normal(0, sd), 0.0]
+        )
+        return self.target_a
+
+    def act(self, obs) -> np.ndarray:
+        phase = phase_at(STACK_SCHEDULE, self.k) or STACK_SCHEDULE[-1][0]
+        target = self.target_a if phase in self._GRASP_PHASES else self.target_b
+        height = self._HEIGHT[phase]
+        if phase in ("descend", "close"):
+            height += self.spec.grasp_height_offset
+        goal = np.array([target[0], target[1], target[2] + height])
+        delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * self.spec.kp, -1, 1)
+        grip = 1.0 if phase in self._GRIP_CLOSED else -1.0
+        self.k += 1
+        return np.array([*delta, 0.0, 0.0, 0.0, grip])
+
+    def retarget(self, target: np.ndarray) -> None:
+        # Grasp-stage regrasp only; place-stage retarget of target_b is rung-3 work.
+        self.target_a = target
+
+    def on_handback(self) -> None:
+        """Supersede the interrupted phase, as ScriptedDriver.on_handback does."""
+        acc = 0
+        for _name, dur in STACK_SCHEDULE:
+            acc += dur
+            if self.k < acc:
+                self.k = acc
+                return
+
+    @property
+    def exhausted(self) -> bool:
+        return self.k >= sum(d for _, d in STACK_SCHEDULE)
+
+    @property
+    def identity(self) -> str:
+        return "stack_scripted@v1"
 
 
 def _default_make_driver(spec: EpisodeSpec) -> PolicyDriver:
