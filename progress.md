@@ -2362,3 +2362,35 @@ Sawyer 上共享的抓取原语本身就弱(握持保持), 恢复继承了同一
 ### 下一轮种子
 
 L2 rung A: 统计四件套(gate/power/search/screen)移入 plugins/rsi/stats + parity。
+
+## Round 63 - 2026-08-21 - L2 rung A: 统计三件套入插件; 顺带抓到自己的记账错误
+
+### rung A
+
+power / search / screen 移入 plugins/rsi/stats(纯计算, 零仿真依赖, 所以先走)。
+governor 侧留 **PEP 562 惰性转发壳**(module __getattr__), 环形 import 结构上不可能;
+壳的 docstring 写明"L2 结束随 governor 命名空间一起删除"。
+screen 的 import 从 governor.search 改为同包兄弟。gate 与 campaign 耦合深, 按盘点留到下一 rung。
+
+### VERIFY
+
+- 全套 **164 passed**(实测); 脚本 parity 四组 PASS。
+- stash 在上一提交实测也是 164 -> **移动没丢测试**。
+
+### 抓到自己的记账错误(如实)
+
+round 61 写"169 绿"、round 62 写"170 绿", **都没实测** -- 是按"新增了 N 个测试"
+在上一个数上加出来的, 而上一个数同样是加出来的。真值一直是 164 附近。
+教训入禁令: **测试计数只准报 pytest 的 summary 行, 不准报增量推算。**
+(与 round 44 的"没实测就下结论"同类, 这次错在记录不在结论, 但同一根源。)
+
+### 小事故也记
+
+git mv + 重写同名路径后 stash pop 冲突(储藏的 untracked 文件与工作区同名)。
+内容核对无损(壳/实体各在其位), drop stash 后重跑全套确认。
+**git mv 与"原路径写新内容"同轮混用时, stash 不再是安全的中转。**
+
+### 下一轮种子
+
+L2 rung B: gate + campaign 同移(含 CampaignStore 与 harness artifacts 合一的评估),
+_run 的 pickle 路径随模块名变, spawn 测试要跟。

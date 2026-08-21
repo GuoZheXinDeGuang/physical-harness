@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 2: Agentic Robotics OS 的 backbone harness, 见 GOAL.md v2 + ARCHITECTURE.md。(phase 1 Governor 成为治理层, 其记录不动)
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 62 完成(L0 限制清零; L2 盘点入库)
+**Round:** 63 完成(L2 rung A: 统计三件套入插件, parity PASS)
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）
@@ -262,6 +262,7 @@ round 21/22 否的是原语形状不是命题，且只在脚本策略的失败�
 - **`finger_gap < 0.005` 是「夹空」不是「握住」**：方块把手指撑开到 ~0.043 才是握住。
   round 22 把还在合拢的读成握住，round 35 把夹空的读成握住 —— 同一个坑的两面。
 - dev 种子 2200-2399 已用于诊断+选择，不能再当门禁切片。
+- **测试计数只准报 pytest summary 行, 不准增量推算**(round 63 抓到 61/62 两轮虚记)。
 - **两个区块估不出离散度。** round 39 从 n=2 得出「克隆复现更紧」，第三个区块就推翻了。
   要谈稳定性至少三个区块。
 - **搜索得分是干预价值的坏代理**（三条证据：gripper_effort 24 修 13 破、
