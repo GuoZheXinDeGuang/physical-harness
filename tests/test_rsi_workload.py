@@ -17,14 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from plugins.rsi import campaign
-from plugins.rsi.campaign import CampaignStore, Preregistration
 from harness.config import sha_json
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
 from plugins.graphs import InMemorySkillGraph
-from plugins.rsi import workload
+from plugins.rsi import campaign, workload
+from plugins.rsi.campaign import CampaignStore, Preregistration
 from scripts import parity_check
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -100,15 +99,21 @@ _HELDOUT = {"n": 20, "base_rate": 0.4, "governed_rate": 0.8, "fixed": 8,
            "broken": 0, "fires": 8, "p_value": 0.001, "declared_privilege": 0}
 _ABLATION = [[0.0, _HELDOUT], [0.02, _HELDOUT]]
 
+#: Sentinel distinguishing "omit heldout_vs_blind entirely" (require_judgement
+#: off: campaign.py never writes the key) from an explicit value including None.
+_OMIT = object()
 
-def _fake_run_campaign_factory(captured: dict, *, second_generation_promoted: bool | None):
+
+def _fake_run_campaign_factory(captured: dict, *, second_generation_promoted: bool | None,
+                               heldout_vs_blind=_HELDOUT):
     """Build a `run_campaign` fake that writes campaign-store-shaped artifacts.
 
     Generation 1 is always promoted. `second_generation_promoted=None` omits a
     second generation entirely; `False` writes a REJECTED second generation
     (proving a rejected generation contributes no skill); `True` writes a
     second PROMOTED generation with a distinct trigger (proving two promotions
-    produce two skills).
+    produce two skills). `heldout_vs_blind=_OMIT` drops the key from the
+    result, mirroring a require_judgement=False campaign.
     """
     def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None):
         captured["prereg"] = prereg
@@ -140,8 +145,10 @@ def _fake_run_campaign_factory(captured: dict, *, second_generation_promoted: bo
         result = {
             "preregistration_sha": prereg_sha, "power_plans": [], "generations": n_generations,
             "promoted": len(rules), "final_sha": rules[-1], "rules": rules,
-            "heldout": _HELDOUT, "heldout_vs_blind": _HELDOUT, "ablation": _ABLATION,
+            "heldout": _HELDOUT, "ablation": _ABLATION,
         }
+        if heldout_vs_blind is not _OMIT:
+            result["heldout_vs_blind"] = heldout_vs_blind
         store.put("campaign_result", result)
         return result
 
@@ -208,6 +215,49 @@ def test_promoted_rule_publishes_exactly_one_skill_with_matching_preconditions(t
     assert "not attributable to this rule alone" in skill["bundle_evidence"]["note"]
     assert skill["prereg_sha"] == captured["prereg"].sha()
     assert "mount_plan_sha" not in skill, "no session log on this kernel -- must be omitted"
+
+
+def test_skill_established_true(tmp_path, monkeypatch):
+    """heldout_vs_blind clears p<alpha & fixed>broken -> verdict True."""
+    kernel = _kernel_with_fakes()
+    monkeypatch.setattr(campaign, "run_campaign",
+                        _fake_run_campaign_factory({}, second_generation_promoted=None))
+
+    workload.run(_prereg(), tmp_path / "store", kernel, workers=2, verbose=False)
+
+    skill = kernel.resolve("graph.skill", consumer="test").skills()[0]
+    assert skill["heldout_judgement_established"] is True
+
+
+def test_skill_established_false(tmp_path, monkeypatch):
+    """Judgement ran but shrank to non-significant -> verdict False, not None."""
+    kernel = _kernel_with_fakes()
+    shrunk = dict(_HELDOUT, p_value=0.2, fixed=3, broken=3)
+    monkeypatch.setattr(campaign, "run_campaign",
+                        _fake_run_campaign_factory({}, second_generation_promoted=None,
+                                                   heldout_vs_blind=shrunk))
+
+    workload.run(_prereg(), tmp_path / "store", kernel, workers=2, verbose=False)
+
+    skill = kernel.resolve("graph.skill", consumer="test").skills()[0]
+    assert skill["heldout_judgement_established"] is False
+
+
+def test_skill_judgement_none_when_not_run(tmp_path, monkeypatch):
+    """require_judgement off (no heldout_vs_blind key): the field is still
+    PRESENT, with an explicit None -- untested is not the same as failed, and
+    the always-present contract is what makes it first-class (contrast
+    mount_plan_sha, which is omitted when unknown)."""
+    kernel = _kernel_with_fakes()
+    monkeypatch.setattr(campaign, "run_campaign",
+                        _fake_run_campaign_factory({}, second_generation_promoted=None,
+                                                   heldout_vs_blind=_OMIT))
+
+    workload.run(_prereg(), tmp_path / "store", kernel, workers=2, verbose=False)
+
+    skill = kernel.resolve("graph.skill", consumer="test").skills()[0]
+    assert "heldout_judgement_established" in skill
+    assert skill["heldout_judgement_established"] is None
 
 
 def test_returned_digests_match_graph_skills(tmp_path, monkeypatch):

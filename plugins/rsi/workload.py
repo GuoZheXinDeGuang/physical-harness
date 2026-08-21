@@ -145,6 +145,21 @@ def run(
     heldout = result.get("heldout") or {}
     promoted = _promoted_generation_records(store, min_seq=start_seq)
     final_bundle_sha = promoted[-1].get("child_sha") if promoted else None
+    # Held-out judgement verdict, promoted to a first-class field so consumers
+    # (e.g. a skill tree) can filter on it without reaching into bundle_evidence.
+    # Bundle-level, like the evidence it summarises: one held-out-vs-blind gate
+    # scored over the whole chain, shared by every rule in it.
+    #   None  -> require_judgement off (no heldout_vs_blind in result): not tested
+    #   True  -> judgement ran and cleared p<alpha & fixed>broken on THIS block
+    #   False -> judgement ran but shrank to non-significant
+    # Single held-out block only; a settled verdict needs >=3 blocks (round 52),
+    # so True means "this run established it", not "definitively established".
+    judgement = result.get("heldout_vs_blind")
+    heldout_judgement_established = (
+        None if judgement is None
+        else judgement["p_value"] < prereg.alpha
+        and judgement["fixed"] > judgement["broken"]
+    )
     digests: list[str] = []
     for rec in promoted:
         rule = rec["rule"]
@@ -164,6 +179,7 @@ def run(
             "recovery": rule["recovery"],
             "effects": {"dev_gate_vs_parent": rec.get("dev_gate")},
             "judgement_dev": rec.get("blind_gate"),
+            "heldout_judgement_established": heldout_judgement_established,
             "bundle_sha": rec.get("child_sha"),
             "bundle_evidence": {
                 "note": ("bundle-level: shared by every rule in the promoted "
