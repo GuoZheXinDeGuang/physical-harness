@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 
 from harness.spec import EpisodeSpec
-from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, propose_rule
+from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, blind_twin, propose_rule
 from plugins.rsi.gate import ablation_curve, paired_gate
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import search_triggers
@@ -138,11 +138,25 @@ def run_beam_campaign(
                 dev = _size_slice(b, reservoir, prereg, gen)
             verdict = paired_gate(dev, child, baseline=parent if parent.rules else None,
                                   workers=workers)
+            # Same judgement gate run_campaign applies (round 45): the candidate
+            # must out-net a blind twin of itself head-to-head on the SAME dev
+            # slice, or an unconditional recovery could grow a whole branch and
+            # reach the selection block without the critic ever judging anything.
+            blind_verdict = None
+            judged = True
+            if prereg.require_judgement:
+                blind_child = parent.append(blind_twin(child.rules[-1]))
+                blind_verdict = paired_gate(dev, child, baseline=blind_child, workers=workers)
+                judged = (blind_verdict.p_value < prereg.alpha
+                          and blind_verdict.fixed > blind_verdict.broken)
             ok = (verdict.fixed >= prereg.min_fixed and verdict.p_value < prereg.alpha
-                  and verdict.fixed > verdict.broken)
+                  and verdict.fixed > verdict.broken and judged)
             b.history.append({"generation": gen, "n": verdict.n, "gate": asdict(verdict),
+                              "blind_gate": asdict(blind_verdict) if blind_verdict is not None else None,
                               "promoted": ok, "rule": child.rules[-1].canonical()})
             if verbose:
+                if blind_verdict is not None:
+                    print(f"  {b.branch_id} gen{gen} vs its blind twin: {blind_verdict.line()}")
                 print(f"  {b.branch_id} gen{gen} (n={verdict.n}): {verdict.line()} "
                       f"-> {'promoted' if ok else 'branch stops'}")
             if ok:

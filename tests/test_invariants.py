@@ -193,3 +193,25 @@ def test_a_blind_bundle_mirrors_every_rule_it_twins():
     for a, b in zip(bundle.rules, blind.rules):
         assert a.trigger.arm_after == b.trigger.arm_after, "the twin moved the arm step"
         assert a.recovery == b.recovery, "the twin changed the recovery"
+
+
+def test_blind_twin_matches_the_inline_construction():
+    """`blind_twin` is now the ONE constructor both campaign and beam gate
+    against, so it must reproduce the round-45 inline shape field for field --
+    any drift here moves every sealed blind_gate/heldout_vs_blind number."""
+    from plugins.rsi.campaign import _ALWAYS, blind_twin
+    from plugins.rsi.governed import RecoverySpec, Rule
+    from plugins.rsi.stats.search import Trigger
+
+    rule = Rule("g3", Trigger("observable.finger_gap", "lt", 0.0018, 3, 12, "min"),
+                RecoverySpec(sensor_sd=0.015))
+    twin = blind_twin(rule)
+    hand = Rule("g3-blind",
+                Trigger(rule.trigger.feature, "gt", -_ALWAYS, 1,
+                        rule.trigger.arm_after, "value"),
+                rule.recovery)
+    assert twin.canonical() == hand.canonical(), "blind_twin drifted from the inline form"
+    assert twin.rule_id == "g3-blind"
+    assert twin.recovery is rule.recovery, "the twin must carry the recovery unchanged"
+    trace = {"observable.finger_gap": np.zeros(30)}
+    assert twin.trigger.fire_step(trace) == 12, "the twin is no longer unconditional"

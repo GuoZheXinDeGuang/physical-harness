@@ -41,6 +41,17 @@ from plugins.rsi.stats.search import DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trig
 _ALWAYS = 1e12
 
 
+def blind_twin(rule: Rule) -> Rule:
+    """The rule with its judgement removed: same recovery, same arm step, a
+    trigger no state can fail. One constructor shared by the campaign and beam
+    judgement gates, so both paths compare against the field-for-field
+    identical twin (round 45's control, round 77 extends it to beam)."""
+    return Rule(f"{rule.rule_id}-blind",
+                Trigger(rule.trigger.feature, "gt", -_ALWAYS, 1,
+                        rule.trigger.arm_after, "value"),
+                rule.recovery)
+
+
 def sha_json(payload) -> str:
     return hashlib.sha256(
         json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str).encode()
@@ -333,11 +344,7 @@ def run_campaign(
         # a recovery that runs unconditionally can do that on a weak policy
         # without the critic judging anything. The win has to come from choosing
         # WHEN, so every candidate now runs against a blind twin of itself.
-        blind_rule = Rule(f"{rule.rule_id}-blind",
-                          Trigger(rule.trigger.feature, "gt", -_ALWAYS, 1,
-                                  rule.trigger.arm_after, "value"),
-                          rule.recovery)
-        blind_child = bundle.append(blind_rule)
+        blind_child = bundle.append(blind_twin(rule))
         # Head to head on the SAME seeds, not two separate comparisons against the
         # parent: netting 35 against a blind twin's 34 is one episode of noise, and
         # that is exactly what slipped through when this gate first shipped.
@@ -399,12 +406,9 @@ def run_campaign(
         # seeds so "the win is judgement, not extra control steps" is a held-out
         # claim rather than an in-sample one.
         if bundle.rules and prereg.require_judgement:
-            blind = Bundle(
-                rules=tuple(Rule(f"{r.rule_id}-blind",
-                                 Trigger(r.trigger.feature, "gt", -_ALWAYS, 1,
-                                         r.trigger.arm_after, "value"), r.recovery)
-                            for r in bundle.rules),
-                critic_budget=bundle.critic_budget, action_budget=bundle.action_budget)
+            blind = Bundle(rules=tuple(blind_twin(r) for r in bundle.rules),
+                           critic_budget=bundle.critic_budget,
+                           action_budget=bundle.action_budget)
             held_blind = paired_gate(held, bundle, baseline=blind, workers=workers,
                                      executor=executor)
             result["heldout_vs_blind"] = asdict(held_blind)
