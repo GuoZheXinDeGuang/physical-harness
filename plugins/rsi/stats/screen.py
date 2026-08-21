@@ -15,13 +15,12 @@ repair would have done.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
-from plugins.rsi.stats.search import (DEFAULT_EARLINESS, DEFAULT_FP_PENALTY,
-                                      Trigger, search_triggers)
+from plugins.rsi.stats.search import DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger, search_triggers
 
 
 @dataclass(frozen=True, slots=True)

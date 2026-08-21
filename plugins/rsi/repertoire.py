@@ -16,9 +16,6 @@ never changes what a bundle is allowed to know.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
-
-import numpy as np
 
 #: (phase, duration, dx, dy) -- the offset displaces the goal in the table plane.
 Step = tuple[str, int, float, float]

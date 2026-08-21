@@ -27,18 +27,16 @@ from __future__ import annotations
 import hashlib
 import json
 import zlib
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Mapping, Sequence
-
-import numpy as np
 
 CHAIN_SEED = "governor/episode-chain/v1"
 
 # L1 rung 3: the chain math is harness.events'; only the seed is ours. The
 # construction is bit-identical to the local functions this replaced (there is
 # a golden-value test), so every archived episode log still verifies.
-from harness.events import chain_step  # noqa: E402  re-exported for callers
+from harness.events import chain_step  # noqa: F401  deliberate re-export for callers
 from harness.events import chain_start as _chain_start
 
 

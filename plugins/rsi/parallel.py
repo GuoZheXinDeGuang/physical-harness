@@ -2,7 +2,7 @@
 which makes the rollout budget a non-issue for gating; see docs/verified-environment.md."""
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from governor.env import EpisodeSpec
 from governor.governed import governed_rollout

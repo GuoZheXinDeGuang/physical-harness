@@ -10,7 +10,7 @@ witness, entirely at the config layer:
     moves when a patch overrides a mount's params.
 (c) ``matrix_plans()`` covers the full 3x2 grid, shares one ``MountPlan``
     across every cell, and each cell's overrides are accepted by
-    ``governor.campaign.Preregistration`` with a distinct resulting sha.
+    ``plugins.rsi.campaign.Preregistration`` with a distinct resulting sha.
 (d) a skill published through the mounted ``graph.skill`` capability round
     trips and is content-addressed.
 

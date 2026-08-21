@@ -15,17 +15,16 @@ of any published claim in docs/.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from plugins.rsi.campaign import Preregistration
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
+from plugins.rsi.campaign import Preregistration
 from plugins.rsi.workload import run as rsi_run
 from profiles import base_profile
 

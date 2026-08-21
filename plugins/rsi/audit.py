@@ -19,12 +19,11 @@ recovery runs, the trajectory diverges and the recording no longer describes it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
-from harness.episode_log import EpisodeLog, chain_start, chain_step
 from governor.percept import FeatureView
+from harness.episode_log import EpisodeLog, chain_start, chain_step
 from plugins.rsi.stats.search import Trigger
 
 

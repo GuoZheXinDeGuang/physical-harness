@@ -8,8 +8,9 @@ scene graph is a documented stub for the graphs team to replace.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from harness.config import sha_json
 

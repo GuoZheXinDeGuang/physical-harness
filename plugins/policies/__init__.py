@@ -1,8 +1,8 @@
 """Governor policies: the reference PolicyFactory for capability `policy.driver`.
 
 Thin adapter, on purpose. The scripted/cloned dispatch stays exactly where it
-was -- `governor.policy._default_make_driver` -- so mounting this provider
-through the kernel and calling `governor.policy.make_driver` with no ref must
+was -- `plugins.policies.drivers._default_make_driver` -- so mounting this provider
+through the kernel and calling `plugins.policies.drivers.make_driver` with no ref must
 resolve the identical driver class as before this seam existed. See
 governor/policy.py's `make_driver` docstring for the dispatch this plugin is
 mounted behind.
@@ -33,7 +33,7 @@ SAWYER_GRASP_HEIGHT_OFFSET = -0.010
 
 
 class GovernorPolicies:
-    """Layer 3 `harness.contracts.PolicyFactory`, backed by governor.policy verbatim.
+    """Layer 3 `harness.contracts.PolicyFactory`, backed by plugins.policies.drivers verbatim.
 
     `overrides=None` is the byte-identical legacy path. A variant factory bakes
     spec overrides in (schedule, gains, grasp height); the overrides are code in

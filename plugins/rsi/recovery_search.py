@@ -21,8 +21,8 @@ walked by coordinate descent from a working program rather than enumerated.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 

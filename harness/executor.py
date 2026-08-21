@@ -6,8 +6,9 @@ rewrite of any workload.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from multiprocessing import Pool
-from typing import Any, Sequence
+from typing import Any
 
 
 class LocalPoolExecutor:

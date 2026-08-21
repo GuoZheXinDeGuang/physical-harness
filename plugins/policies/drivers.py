@@ -29,7 +29,7 @@ from typing import Protocol
 
 import numpy as np
 
-from governor.env import PHASE_HEIGHT, EpisodeSpec, FrozenPolicy, phase_at
+from governor.env import EpisodeSpec, FrozenPolicy, phase_at
 from harness.registry import load_provider
 
 

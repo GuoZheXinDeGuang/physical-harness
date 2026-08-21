@@ -7,7 +7,7 @@ so swapping any of them is a mount-plan edit, not a code edit here.
 
 Thin on purpose. All of the campaign logic -- generations, paired gating,
 held-out scoring, the transfer-ablation curve -- stays exactly where it was in
-``governor.campaign.run_campaign``; this module's only job is to (1) stamp the
+``plugins.rsi.campaign.run_campaign``; this module's only job is to (1) stamp the
 kernel-resolved provider refs onto the preregistration before the campaign
 runs, so the mount identity that produced this run's episodes is itself
 preregistered and enters the content hash, and (2) turn every rule the
@@ -26,9 +26,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from harness.kernel import Kernel
 from plugins.rsi import campaign
 from plugins.rsi.campaign import CampaignStore, Preregistration
-from harness.kernel import Kernel
 
 #: The one SkillRecord "kind" this workload publishes. A fixed vocabulary word
 #: keeps the graph queryable across campaigns instead of free text per run.

@@ -18,7 +18,7 @@ class RecoveryActor:
 
     A program is a sequence of SEGMENTS. A fixed segment replays a phase for a
     set number of steps; a servo segment runs a closed-loop primitive from
-    :mod:`governor.servo` and decides its own length from proprioception. Mixing
+    :mod:`plugins.rsi.servo` and decides its own length from proprioception. Mixing
     them is the point: the approach can stay open-loop while the part that
     actually has to make contact stops guessing at an estimated height.
     """

@@ -2492,3 +2492,23 @@ governor/ 现存: features / percept / invariant / env / governed(五件硬骨�
 
 五件硬骨头开工前先做一次 Review 轮(rung B-E 连搬四轮, 该对抗复查+清点壳的健康度),
 然后 features/percept/invariant 上提(registry 反转, 盘点里的"中"难点)。
+
+## Round 68 - Review 轮(rung B-E 之后) - 壳干净, ruff 第一次跑, autofix 咬了一口
+
+### 复查结果
+
+- **壳健康度: 代码级零残留** -- 所有"仍引用壳"的命中全是 docstring/注释里的旧路径,
+  prose 已扫至新家。插件的 governor 债务只剩五件硬骨头(env/governed/features/percept)
+  + proposer(有据滞留), 与盘点一致。
+- **phase 2 首次 ruff**: 63 处, 59 自动修, 3 处 RUF046 落在 parity 关键数值路径上
+  (int(round) 冗余但无害), 加 noqa 注释不动数值; demo 脚本补执行位。
+- **autofix 当场咬了一口**: 把 harness/episode_log 里"看似未用"的 chain_step
+  re-export 当死 import 删掉, 6 个测试收集错误 + parity 首跑崩溃。
+  恢复为显式 noqa: F401 re-export。**教训: autofix 后必须立刻全量收集/跑套,
+  "安全修复"对 re-export 不安全。**
+- 修复后: ruff 全绿, 164 passed, parity 四组 PASS。
+
+### 下一轮种子
+
+硬骨头开工: features + percept + invariant 上提进 harness(registry 反转,
+提取器随 embodiment 插件注册, spawn 语义靠"worker 因 spec ref import 插件"保住)。

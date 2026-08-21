@@ -14,12 +14,10 @@ robustness, so sigma is what moves a clone's competence -- not hidden width.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 
-from plugins.policies.bc import encode
 from governor.env import EpisodeSpec, lifted, make_env, object_key
+from plugins.policies.bc import encode
 from plugins.policies.drivers import ScriptedDriver
 
 #: The clone's own clock length, matching `ClonedDriver.HORIZON`.
@@ -78,4 +76,4 @@ def collect(n: int, *, sigma: float, first_seed: int = 20000, task: str = "lift"
             np.concatenate([y for _, y in good]), len(good))
 
 
-__all__ = ["collect", "collect_one", "CLOCK"]
+__all__ = ["CLOCK", "collect", "collect_one"]

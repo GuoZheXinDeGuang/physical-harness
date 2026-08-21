@@ -8,7 +8,8 @@ survive multiprocessing spawn (module-global hooks do not, measured in phase
 from __future__ import annotations
 
 import importlib
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def load_provider(ref: str, params: Mapping[str, Any] | None = None) -> Any:

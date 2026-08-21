@@ -26,17 +26,16 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from dataclasses import asdict, dataclass, field, replace
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
 from governor.env import EpisodeSpec
-from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
 from governor.governed import Bundle, RecoverySpec, Rule
-from plugins.rsi.stats.search import (DEFAULT_EARLINESS, DEFAULT_FP_PENALTY,
-                                      Trigger, search_triggers)
+from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
+from plugins.rsi.stats.search import DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger, search_triggers
 
 #: Threshold a `gt` trigger can never fail, so the twin fires the moment it arms.
 _ALWAYS = 1e12
@@ -127,7 +126,7 @@ class Preregistration:
     #: L0 capability-seam refs ("module:factory" strings, harness/registry.py):
     #: which embodiment.env / policy.driver provider built this run's episodes.
     #: None keeps every existing archived campaign's replay path byte-identical
-    #: (see governor.env.make_env / governor.policy.make_driver's dispatch --
+    #: (see governor.env.make_env / plugins.policies.drivers.make_driver's dispatch --
     #: no ref falls back to the original code exactly). Threaded into every
     #: EpisodeSpec by `_specs` below. Preregistered rather than passed
     #: out-of-band because ARCHITECTURE.md's rule is that anything able to move
@@ -273,7 +272,7 @@ def run_campaign(
                                     len(reservoir), fix_share=prereg.judgement_fix_share,
                                     alpha=prereg.alpha, power=prereg.power_target,
                                     discordance_yield=1.0)
-            j_seeds = int(round(jplan.discordant_needed /
+            j_seeds = int(round(jplan.discordant_needed /  # noqa: RUF046  parity-pinned numeric path
                                 max(prev_j_yield if prev_j_yield is not None
                                     else prereg.prior_judgement_yield, 1e-6)))
             if prereg.require_judgement and j_seeds > plan.seeds_used:

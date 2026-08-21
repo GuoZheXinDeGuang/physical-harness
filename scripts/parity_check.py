@@ -4,7 +4,7 @@
 GOAL.md acceptance #3: rerunning an archived, pre-kernel-seam campaign through
 the L0 kernel path (`plugins.rsi.workload.run`, which stamps the resolved
 `embodiment.env` / `policy.driver` refs onto the preregistration before
-calling `governor.campaign.run_campaign`) must reproduce the archive's
+calling `plugins.rsi.campaign.run_campaign`) must reproduce the archive's
 per-generation rule canonicals, dev-gate numbers, promotion decisions and
 held-out numbers bit for bit. That is only meaningful if the two providers are
 byte-identical adapters over the original code -- which is what
@@ -66,7 +66,7 @@ class FieldGroupResult:
 
 
 def read_store_artifacts(store_dir: str | Path) -> dict[str, list[dict]]:
-    """Every artifact in a `governor.campaign.CampaignStore` directory, by kind, in index order.
+    """Every artifact in a `plugins.rsi.campaign.CampaignStore` directory, by kind, in index order.
 
     A plain reader over the same index.jsonl + content-addressed
     artifacts/*.json shape `CampaignStore` writes, rather than a `CampaignStore`
@@ -198,7 +198,7 @@ def run_parity_check(
     """Rebuild the archived preregistration, rerun it through the kernel path, compare.
 
     Not covered by this project's own test suite -- it drives a real campaign
-    (`plugins.rsi.workload.run` -> `governor.campaign.run_campaign` -> robosuite
+    (`plugins.rsi.workload.run` -> `plugins.rsi.campaign.run_campaign` -> robosuite
     rollouts across every dev/held-out seed), which is exactly the heavy
     simulation unit tests must not run. `read_store_artifacts`,
     `rebuild_preregistration`, `compare_generations` and `compare_heldout`

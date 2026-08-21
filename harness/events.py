@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 _SEED = "harness-session-v1"
 
@@ -68,7 +67,7 @@ class SessionLog:
         return row["seq"]
 
     @classmethod
-    def load(cls, root: Path) -> "SessionLog":
+    def load(cls, root: Path) -> SessionLog:
         """Reopen a written ledger so it can be verified OFFLINE.
 
         Round 59's review found the gap this closes: rows.jsonl was written but

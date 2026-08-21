@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
-from harness.capability import (ContractViolation, Definition, DuplicateProvider,
-                                MissingProvider, PrivilegeViolation,
-                                UnknownCapability)
+from harness.capability import (
+    ContractViolation,
+    Definition,
+    DuplicateProvider,
+    MissingProvider,
+    PrivilegeViolation,
+    UnknownCapability,
+)
 from harness.config import MountPlan
 from harness.events import SessionLog
 from harness.registry import load_provider

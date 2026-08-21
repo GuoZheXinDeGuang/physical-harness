@@ -20,15 +20,13 @@ reason beam search is easy to do dishonestly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Sequence
 
-import numpy as np
-
-from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, propose_rule, sha_json
 from governor.env import EpisodeSpec
-from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
 from governor.governed import Bundle, RecoverySpec, Rule
+from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, propose_rule
+from plugins.rsi.gate import ablation_curve, paired_gate
 from plugins.rsi.stats.search import search_triggers
 
 

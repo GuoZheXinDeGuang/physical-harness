@@ -24,7 +24,7 @@ class SearchReasoner:
       `governor.proposer.SearchProposer.propose` already takes).
     - ``labels``: the matching pass/fail label per trace.
     - ``generation``: the generation index stamped into the resulting rule_id.
-    - ``prereg``: the campaign's `governor.campaign.Preregistration`, supplying
+    - ``prereg``: the campaign's `plugins.rsi.campaign.Preregistration`, supplying
       `critic_budget` (the privilege budget the search may spend) and
       `recovery_sensor_sd` (the recovery's percept noise).
 

@@ -107,12 +107,12 @@ def plan_generation(
     residual_rate = residual_failures / max(n_observed, 1)
     need_d = discordant_needed(fix_share, alpha, power)
     yield_per_seed = max(residual_rate * discordance_yield, 1e-6)
-    seeds = max(minimum, int(round(need_d / yield_per_seed)))
+    seeds = max(minimum, int(round(need_d / yield_per_seed)))  # noqa: RUF046  parity-pinned numeric path
     # Out-of-sample screening shows the SEARCH only half the episodes. Sizing a
     # screened generation like an unscreened one silently halves the sample the
     # proposer actually learns from, which is a different experiment from the
     # one the plan claims to be running.
-    seeds = int(round(seeds / max(search_fraction, 1e-6)))
+    seeds = int(round(seeds / max(search_fraction, 1e-6)))  # noqa: RUF046  parity-pinned numeric path
     used = min(seeds, reservoir)
     return PowerPlan(generation, residual_failures, residual_rate, need_d, seeds, used,
                      capped=seeds > reservoir, discordance_yield=discordance_yield,

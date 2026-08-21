@@ -46,7 +46,7 @@ PRIVILEGED_SENSOR_SD = 0.0
 class RecoverySpec:
     """A bounded, scripted repair. Phases and durations only -- no free code."""
 
-    #: Name of a strategy in governor.repertoire. Different SHAPES of repair, which
+    #: Name of a strategy in plugins.rsi.repertoire. Different SHAPES of repair, which
     #: is the axis that matters -- round 6 searched durations and the gain did not
     #: survive a clean gate.
     name: str = "regrasp"

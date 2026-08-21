@@ -19,9 +19,9 @@ gain without its curve is reporting an artifact.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from math import comb
-from typing import Sequence
 
 import numpy as np
 

@@ -20,7 +20,6 @@ seconds, and its weakness is the point rather than a limitation to apologise for
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,7 +66,7 @@ class MLPPolicy:
         np.savez(path, w1=self.w1, b1=self.b1, w2=self.w2, b2=self.b2, mu=self.mu, sd=self.sd)
 
     @classmethod
-    def load(cls, path: Path) -> "MLPPolicy":
+    def load(cls, path: Path) -> MLPPolicy:
         d = np.load(path)
         return cls(d["w1"], d["b1"], d["w2"], d["b2"], d["mu"], d["sd"])
 

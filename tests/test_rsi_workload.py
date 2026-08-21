@@ -1,6 +1,6 @@
 """Unit tests for the RSI workload plugin and scripts/parity_check.py's pure parts.
 
-No simulation anywhere in this file. `governor.campaign.run_campaign` is
+No simulation anywhere in this file. `plugins.rsi.campaign.run_campaign` is
 monkeypatched throughout the workload section below, so no episode, env, or
 policy driver is ever built. The parity-check section only exercises
 `read_store_artifacts` / `rebuild_preregistration` / `compare_generations` /

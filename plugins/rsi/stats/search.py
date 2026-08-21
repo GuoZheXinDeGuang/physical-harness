@@ -22,8 +22,9 @@ no time to recover, so it is worth little even at perfect accuracy.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Literal
 
 import numpy as np
 
