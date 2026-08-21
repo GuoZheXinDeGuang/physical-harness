@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-import governor.policy as _policy
+import plugins.policies.drivers as _policy
 
 #: Sawyer adaptation of the scripted policy, measured in round 60: the arm
 #: converges slower than Panda's under the same OSC gains (double the

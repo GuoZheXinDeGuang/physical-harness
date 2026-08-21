@@ -9,7 +9,7 @@ import pytest
 
 from governor.env import EpisodeSpec
 from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
-from governor.policy import ClonedDriver, ScriptedDriver
+from plugins.policies.drivers import ClonedDriver, ScriptedDriver
 from plugins.rsi.stats.search import REDUCERS, Trigger, reduce_series, search_triggers
 
 
@@ -160,7 +160,7 @@ def test_servo_primitives_read_only_proprioception():
 def test_recovery_actor_runs_a_mixed_program():
     """Fixed and servo segments must compose in one program."""
     import numpy as np
-    from governor.policy import RecoveryActor
+    from plugins.policies.drivers import RecoveryActor
     from governor.repertoire import strategy
 
     actor = RecoveryActor(strategy("servo_regrasp").steps, np.array([0.0, 0.0, 0.83]))

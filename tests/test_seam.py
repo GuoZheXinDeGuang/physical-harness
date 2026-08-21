@@ -21,7 +21,7 @@ import pickle
 import numpy as np
 
 from governor.env import NOMINAL_SCHEDULE, EpisodeSpec, make_env
-from governor.policy import ScriptedDriver, make_driver
+from plugins.policies.drivers import ScriptedDriver, make_driver
 from harness.contracts import EnvProvider, PolicyFactory, Reasoner
 from harness.registry import load_provider
 
@@ -189,7 +189,7 @@ def test_recovery_actor_honours_the_grasp_height_offset():
     """
     import numpy as np
 
-    from governor.policy import RecoveryActor
+    from plugins.policies.drivers import RecoveryActor
 
     target = np.array([0.0, 0.0, 0.82])
     obs = {"robot0_eef_pos": np.array([0.0, 0.0, 0.9])}

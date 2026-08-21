@@ -20,7 +20,7 @@ import numpy as np
 
 from governor.bc import encode
 from governor.env import EpisodeSpec, lifted, make_env, object_key
-from governor.policy import ScriptedDriver
+from plugins.policies.drivers import ScriptedDriver
 
 #: The clone's own clock length, matching `ClonedDriver.HORIZON`.
 CLOCK = 100.0

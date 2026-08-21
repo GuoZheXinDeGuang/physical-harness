@@ -29,7 +29,7 @@ from typing import Sequence
 import numpy as np
 
 from governor.env import EpisodeSpec, lifted, make_env, object_key
-from governor.policy import RecoveryActor, make_driver
+from plugins.policies.drivers import RecoveryActor, make_driver
 from governor.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )

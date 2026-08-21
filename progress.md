@@ -2440,3 +2440,24 @@ VERIFY: 164 passed + 脚本 parity 四组 PASS。
 L2 剩: policy 入 plugins/policies -> features 反转(registry 上提) ->
 env/EpisodeSpec 上提(单独 rung) -> governed 收尾 -> 删壳。
 下一 rung: **policy.py 入 plugins/policies**(驱动器+交还契约+RecoveryActor)。
+
+## Round 66 - 2026-08-21 - L2 rung D: policy 入 plugins/policies
+
+policy.py -> plugins/policies/drivers.py(ScriptedDriver / ClonedDriver / RecoveryActor /
+交还契约 / make_driver 派发点)。适配器从 "governor.policy 转发" 变成同包兄弟直连;
+governor 留壳; governed/demos/tests 当场搬离壳。
+剩余对 governor 的依赖: drivers 仍 import governor.env(FrozenPolicy/PHASE_HEIGHT)与
+governor.bc -- 都排在后续 rung(env/EpisodeSpec 上提, bc 归 policies)。
+
+VERIFY: 164 passed + 脚本 parity 四组 PASS。
+
+### governor/ 剩余清单
+
+features / percept / invariant(-> harness, 含 registry 反转) / env(-> embodiment 插件,
+EpisodeSpec 上提单独 rung) / governed(-> plugins/rsi, 最后) / bc / demos / proposer /
+servo / repertoire / recovery_search / beam / parallel(按归属分流) + 6 个壳。
+
+### 下一轮种子
+
+rung E: bc + demos + servo + repertoire + recovery_search + beam + proposer + parallel
+一次分流(低耦合杂项批量走), 然后只剩 features/percept/invariant/env/governed 五件硬骨头。
