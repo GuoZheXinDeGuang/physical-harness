@@ -38,14 +38,14 @@ def test_episode_spec_omits_new_fields_unchanged():
     assert dc.asdict(s) == {
         "seed": 7, "task": "lift", "robot": "Panda", "horizon": 900,
         "percept_noise": 0.020, "arm_noise": 0.02, "kp": 8.0, "policy": "scripted",
-        "schedule": NOMINAL_SCHEDULE, "env_provider": None, "policy_provider": None,
+        "schedule": NOMINAL_SCHEDULE, "env_provider": None, "policy_provider": None, "percept_provider": None,
     }
 
 
 def test_new_fields_are_appended_at_the_end():
     """This codebase's defaulted-field-ordering rule, checked structurally."""
     names = [f.name for f in dc.fields(EpisodeSpec)]
-    assert names[-2:] == ["env_provider", "policy_provider"]
+    assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
     assert all(f.default is None for f in dc.fields(EpisodeSpec)
               if f.name in ("env_provider", "policy_provider"))
 
@@ -146,6 +146,6 @@ def test_preregistration_provider_fields_are_appended_at_the_end():
     from governor.campaign import Preregistration
 
     names = [f.name for f in dc.fields(Preregistration)]
-    assert names[-2:] == ["env_provider", "policy_provider"]
-    for f in dc.fields(Preregistration)[-2:]:
+    assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
+    for f in dc.fields(Preregistration)[-3:]:
         assert f.default is None

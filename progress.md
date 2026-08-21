@@ -2128,3 +2128,37 @@ percept.model 真正走能力接缝: _percept_object 现在写死在 governor.go
 它是消融梯的载体、也是真机上要换掉的第一个东西(板载感知 provider)。
 迁移方式: percept 逻辑移入 plugins/embodiment_robosuite, spec 携带 percept ref,
 governed_rollout 经派发点取用; 迁完跑双策略 parity。
+
+## Round 56 - 2026-08-20 - L1 rung 1: percept 实现移入插件, parity 保持
+
+### 做了什么
+
+`_percept_object` 的实现(xy 扰动 / z 不动 / (seed,draw) 确定性 RNG)**逐字移入**
+plugins/embodiment_robosuite/percept.py::OnboardPercept; governor.governed 只留
+派发点(spec.percept_provider 或 DEFAULT_PERCEPT_REF -> load_provider)。
+EpisodeSpec / Preregistration 末尾加 percept_provider, _specs / beam / workload /
+base_profile 全部穿线; workload 的 params fail-loud 守卫覆盖它。
+新增 tests/test_percept_seam.py: 契约满足、默认与显式 ref 逐位一致、特权 sd 返回真值、
+(seed,draw) 确定性 + z 不扰动(round 21 的前提钉进测试)。
+
+选它先迁的理由: 它是消融梯的载体, 也是真机上第一个要换 provider 的东西 --
+换一个真实感知 provider, 恢复栈跑在真感知上, 其他接缝全不动。
+策略自身的 t=0 感知(FrozenPolicy.observe_once)是冻结策略本体, 不迁。
+
+### VERIFY
+
+脚本策略 parity(kernel 路径, percept 走插件实现): **四组全 PASS**。
+held-out 41.5% -> 72.5% 逐位复现。单元 160 绿。
+
+### 修正过程(如实)
+
+穿线后 5 个测试红, 全是 fixture/期望没跟上(fake kernel 缺 percept mount、字段守卫 [-2:]
+-> [-3:]、asdict 期望、能力集合断言); 其中一处 replace 因缩进不匹配静默没生效,
+被同一测试第二次红抓住 -- **replace 后必须 assert old in s**, 这个教训在 round 56 又付了一次学费。
+
+### 下一轮种子(L1 rung 2 候选, 按价值排)
+
+1. exec.rollouts 真正接管 rollout 执行: run_campaign/paired_gate 里散落的
+   multiprocessing.Pool 换成 kernel 解析的 executor(分布式的前置)。
+2. 事件链统一: governor.episode_log 与 harness.events 同构但两套, 合一。
+3. features 注册表插件化(embodiment 声明自己的特征面)。

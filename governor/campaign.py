@@ -136,6 +136,7 @@ class Preregistration:
     #: episode qualifies even when that provider is a byte-identical adapter.
     env_provider: str | None = None
     policy_provider: str | None = None
+    percept_provider: str | None = None
 
     def __post_init__(self) -> None:
         overlap = set(self.dev) & set(self.heldout)
@@ -181,7 +182,8 @@ def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
     return [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
                         percept_noise=prereg.percept_noise,
                         env_provider=prereg.env_provider,
-                        policy_provider=prereg.policy_provider) for s in seeds]
+                        policy_provider=prereg.policy_provider,
+                        percept_provider=prereg.percept_provider) for s in seeds]
 
 
 def propose_rule(

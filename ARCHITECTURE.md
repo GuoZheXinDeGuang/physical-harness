@@ -11,7 +11,7 @@
 | 2 Skill Graph | graph.skill(SkillGraph) | plugins/graphs.InMemorySkillGraph(内容寻址) |
 | 3 具身/环境 | embodiment.env(EnvProvider), embodiment.ground_truth(privileged) | plugins/embodiment_robosuite |
 | 3 策略/技能 | policy.driver(PolicyFactory) | plugins/policies(scripted / bc 适配) |
-| 感知 | percept.model(PerceptModel) | (L1 迁入; 现在留在 governor.governed) |
+| 感知 | percept.model(PerceptModel) | plugins/embodiment_robosuite/percept.OnboardPercept(L1 rung 1 已迁入) |
 | 执行织物 | exec.rollouts(RolloutExecutor) | harness/executor.LocalPoolExecutor(将来 Ray/远程同一契约) |
 
 RSI workload(plugins/rsi)是 OS 主循环里 Verify -> Adapt 那条边的严格化:
@@ -35,6 +35,14 @@ spec 携带 env_provider / policy_provider ref 时经 registry 加载 provider, 
 Preregistration 增加同名可选字段并由 _specs 下传; 由此 prereg sha 会变, 这是预期且诚实的(挂载进哈希)。
 parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 preregistration, 经 kernel 路径重跑, 比对每代规则 canonical + bundle sha、dev/blind 门禁与 held-out 的全部配对字段。
 已验证: 脚本与克隆两个策略均四组 PASS(round 54/55)。
+
+## L1 进度
+
+- rung 1(round 56): 恢复侧感知 `_percept_object` 的实现移入 embodiment 插件,
+  governor 只留派发点与命名默认 `DEFAULT_PERCEPT_REF`。
+  策略自身的 t=0 感知(`FrozenPolicy.observe_once`)是冻结策略本体的一部分, 不属于可挂载服务, 不迁。
+  已知 caveat: `DEFAULT_PERCEPT_REF` 常量本身不进内容哈希(直接构造 EpisodeSpec 的老路径用它);
+  kernel 挂载的运行会把解析出的 ref 盖进 preregistration, 那条路径是进哈希的。
 
 ## L0 已知限制(有意, 待 L1 清除)
 

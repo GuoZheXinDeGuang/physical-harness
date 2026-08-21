@@ -45,8 +45,8 @@ def test_base_profile_mounts_cleanly_and_every_capability_resolves():
 
     mounted = {m.capability for m in plan.mounts}
     assert mounted == {
-        "embodiment.env", "policy.driver", "reasoner.proposer",
-        "graph.skill", "graph.scene", "exec.rollouts",
+        "embodiment.env", "policy.driver", "percept.model",
+        "reasoner.proposer", "graph.skill", "graph.scene", "exec.rollouts",
     }
     for capability in mounted:
         provider = k.resolve(capability, consumer=CONSUMER)

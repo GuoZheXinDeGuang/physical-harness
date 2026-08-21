@@ -60,10 +60,16 @@ class _FakePolicyFactory:
         raise AssertionError("make_driver must not run: run_campaign is monkeypatched")
 
 
+class _FakePercept:
+    def object_estimate(self, obs, spec, sensor_sd, draw):
+        return None
+
+
 def _kernel_with_fakes() -> Kernel:
     k = Kernel(CAPABILITIES)
     k.provide("embodiment.env", _FakeEnvProvider(), ref="tests.fakes:env")
     k.provide("policy.driver", _FakePolicyFactory(), ref="tests.fakes:policy")
+    k.provide("percept.model", _FakePercept(), ref="tests.fakes:percept")
     k.provide("graph.skill", InMemorySkillGraph(), ref="plugins.graphs:skill_graph_provider")
     return k
 
@@ -155,7 +161,8 @@ def test_kernel_resolutions_are_accounted_under_consumer_rsi(tmp_path, monkeypat
     workload.run(_prereg(), tmp_path / "store", kernel, workers=2, verbose=False)
 
     resolved = {r.capability: r.consumer for r in kernel.resolutions()}
-    assert resolved == {"embodiment.env": "rsi", "policy.driver": "rsi", "graph.skill": "rsi"}
+    assert resolved == {"embodiment.env": "rsi", "policy.driver": "rsi",
+                        "percept.model": "rsi", "graph.skill": "rsi"}
     assert not any(r.privileged for r in kernel.resolutions())
 
 
@@ -252,6 +259,7 @@ def test_mount_plan_sha_present_when_kernel_mounted_a_plan(tmp_path, monkeypatch
     plan = resolve_plan(Profile("base", (
         Mount("embodiment.env", "plugins.embodiment_robosuite:provider"),
         Mount("policy.driver", "plugins.policies:provider"),
+        Mount("percept.model", "plugins.embodiment_robosuite.percept:provider"),
         Mount("graph.skill", "plugins.graphs:skill_graph_provider"),
     )))
     kernel.mount(plan)

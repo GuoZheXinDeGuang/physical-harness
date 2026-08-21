@@ -116,12 +116,13 @@ def run(
     """
     kernel.resolve("embodiment.env", consumer=CONSUMER)
     kernel.resolve("policy.driver", consumer=CONSUMER)
+    kernel.resolve("percept.model", consumer=CONSUMER)
     skill_graph = kernel.resolve("graph.skill", consumer=CONSUMER)
 
     # Workers rebuild providers from the bare ref string, which cannot carry
     # Mount params. Refusing here beats silently running a different provider
     # configuration in every worker than the one the kernel constructed.
-    for cap in ("embodiment.env", "policy.driver"):
+    for cap in ("embodiment.env", "policy.driver", "percept.model"):
         params = kernel.provider_params(cap)
         if params:
             raise ValueError(
@@ -132,6 +133,7 @@ def run(
         prereg,
         env_provider=kernel.provider_ref("embodiment.env"),
         policy_provider=kernel.provider_ref("policy.driver"),
+        percept_provider=kernel.provider_ref("percept.model"),
     )
     store = CampaignStore(Path(store_root))
     start_seq = store.size()

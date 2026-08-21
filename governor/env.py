@@ -81,6 +81,7 @@ class EpisodeSpec:
     #: dataclasses require new fields last, defaulted (see ARCHITECTURE.md).
     env_provider: str | None = None
     policy_provider: str | None = None
+    percept_provider: str | None = None
 
     def child(self, **kw) -> EpisodeSpec:
         return replace(self, **kw)

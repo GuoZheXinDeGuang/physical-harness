@@ -154,13 +154,21 @@ class Bundle:
             raise ValueError("child does not record its parent's hash")
 
 
+#: Where the onboard percept implementation LIVES now (L1 rung 1): the
+#: embodiment plugin. governor keeps only the seam and this named default so
+#: direct EpisodeSpec users (tests, demos) keep working unchanged. CAVEAT,
+#: recorded in ARCHITECTURE.md: this constant selects behaviour without
+#: entering any content hash; kernel-mounted runs stamp the resolved ref onto
+#: the preregistration instead, which does enter the hash.
+DEFAULT_PERCEPT_REF = "plugins.embodiment_robosuite.percept:provider"
+
+
 def _percept_object(obs, spec: EpisodeSpec, sensor_sd: float, draw: int) -> np.ndarray:
-    """Onboard estimate of the target object's pose. Deterministic in (seed, draw)."""
-    true = np.asarray(obs[object_key(spec)]).copy()
-    if sensor_sd <= PRIVILEGED_SENSOR_SD:
-        return true
-    rng = np.random.RandomState((spec.seed * 104729 + 3 + draw * 7907) % (2**31 - 1))
-    return true + np.array([rng.normal(0, sensor_sd), rng.normal(0, sensor_sd), 0.0])
+    """Dispatch to the mounted percept provider (spec ref, or the default)."""
+    from harness.registry import load_provider
+
+    ref = spec.percept_provider or DEFAULT_PERCEPT_REF
+    return load_provider(ref).object_estimate(obs, spec, sensor_sd, draw)
 
 
 def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:

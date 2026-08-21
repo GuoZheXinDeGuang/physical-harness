@@ -51,6 +51,7 @@ def base_profile() -> Profile:
     return Profile("base", (
         Mount("embodiment.env", "plugins.embodiment_robosuite:provider"),
         Mount("policy.driver", "plugins.policies:provider"),
+        Mount("percept.model", "plugins.embodiment_robosuite.percept:provider"),
         Mount("reasoner.proposer", "plugins.reasoner:provider", {"top_k": 3}),
         Mount("graph.skill", "plugins.graphs:skill_graph_provider"),
         Mount("graph.scene", "plugins.graphs:scene_graph_provider"),
