@@ -140,15 +140,61 @@ def test_make_driver_dispatch_equivalence():
 
 
 def test_preregistration_provider_fields_are_appended_at_the_end():
-    """Same guard EpisodeSpec has: the refs must stay last, defaulted."""
+    """Same guard EpisodeSpec has: the refs must stay last, defaulted.
+
+    The defaults are deliberately asymmetric: env/policy None falls back to
+    fixed legacy code (byte-identical replay), but percept's None would resolve
+    to a swappable constant outside the hash, so its default IS the constant --
+    the effective ref enters the content hash even on the default path.
+    """
     import dataclasses as dc
 
     from plugins.rsi.campaign import Preregistration
+    from plugins.rsi.governed import DEFAULT_PERCEPT_REF
 
-    names = [f.name for f in dc.fields(Preregistration)]
+    fields = {f.name: f for f in dc.fields(Preregistration)}
+    names = list(fields)
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
-    for f in dc.fields(Preregistration)[-3:]:
-        assert f.default is None
+    assert fields["env_provider"].default is None
+    assert fields["policy_provider"].default is None
+    assert fields["percept_provider"].default == DEFAULT_PERCEPT_REF
+
+
+def _prereg(**kw):
+    from plugins.rsi.campaign import Preregistration
+
+    return Preregistration(dev=(0, 1), heldout=(2, 3), percept_noise=0.02,
+                           critic_budget=0, action_budget=0,
+                           recovery_sensor_sd=0.02, max_generations=1, **kw)
+
+
+def test_preregistration_percept_provider_default_is_the_constant():
+    from plugins.rsi.governed import DEFAULT_PERCEPT_REF
+
+    assert _prereg().percept_provider == DEFAULT_PERCEPT_REF
+
+
+def test_percept_ref_moves_the_prereg_hash():
+    """The core invariant of L1 rung 3: the effective percept ref is content."""
+    assert _prereg().sha() != _prereg(percept_provider="other.mod:provider").sha()
+
+
+def test_explicit_none_percept_is_coerced_into_the_hash():
+    """An explicit None must not reopen the hash=None/behaviour=constant split."""
+    from plugins.rsi.governed import DEFAULT_PERCEPT_REF
+
+    p = _prereg(percept_provider=None)
+    assert p.percept_provider == DEFAULT_PERCEPT_REF
+    assert p.sha() == _prereg().sha()
+
+
+def test_specs_threads_the_percept_ref():
+    """The default path delivers the real ref to every EpisodeSpec, so
+    _percept_object never takes its None fallback for campaign episodes."""
+    from plugins.rsi.campaign import _specs
+    from plugins.rsi.governed import DEFAULT_PERCEPT_REF
+
+    assert _specs([0], _prereg())[0].percept_provider == DEFAULT_PERCEPT_REF
 
 
 def test_grasp_height_offset_moves_only_descend_and_close():

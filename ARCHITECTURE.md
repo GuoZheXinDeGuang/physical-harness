@@ -53,8 +53,11 @@ parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 prere
 - rung 1(round 56): 恢复侧感知 `_percept_object` 的实现移入 embodiment 插件,
   governor 只留派发点与命名默认 `DEFAULT_PERCEPT_REF`。
   策略自身的 t=0 感知(`FrozenPolicy.observe_once`)是冻结策略本体的一部分, 不属于可挂载服务, 不迁。
-  已知 caveat: `DEFAULT_PERCEPT_REF` 常量本身不进内容哈希(直接构造 EpisodeSpec 的老路径用它);
-  kernel 挂载的运行会把解析出的 ref 盖进 preregistration, 那条路径是进哈希的。
+  caveat 已闭合(L1 rung 3): `Preregistration.percept_provider` 默认即 `DEFAULT_PERCEPT_REF`
+  (显式 None 也在 `__post_init__` 归一成常量), 经 `_specs` 下传 -- 直接构造 prereg 跑
+  run_campaign 的路径如今也进哈希。用默认值构造的 prereg 其 sha 因此变化, 预期且诚实
+  (与上文加 seam 字段时 sha 变、round 29 挪常数进哈希同款); demo/kernel 路径 sha 不变
+  (workload.run 一直显式盖真 ref, 值与常量相同)。
 
 ## 有意推迟的一项: features 注册表插件化
 

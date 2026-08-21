@@ -192,10 +192,10 @@ class Bundle:
 
 #: Where the onboard percept implementation LIVES now (L1 rung 1): the
 #: embodiment plugin. governor keeps only the seam and this named default so
-#: direct EpisodeSpec users (tests, demos) keep working unchanged. CAVEAT,
-#: recorded in ARCHITECTURE.md: this constant selects behaviour without
-#: entering any content hash; kernel-mounted runs stamp the resolved ref onto
-#: the preregistration instead, which does enter the hash.
+#: direct EpisodeSpec users (tests, demos) keep working unchanged. The rung 1
+#: caveat (constant selects behaviour without entering any hash) is closed at
+#: L1 rung 3: Preregistration.percept_provider defaults to THIS constant, so
+#: the effective ref enters the content hash even on the default path.
 DEFAULT_PERCEPT_REF = "plugins.embodiment_robosuite.percept:provider"
 
 

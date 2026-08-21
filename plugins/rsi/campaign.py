@@ -34,7 +34,7 @@ import numpy as np
 
 from harness.spec import EpisodeSpec
 from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
-from plugins.rsi.governed import Bundle, RecoverySpec, Rule
+from plugins.rsi.governed import DEFAULT_PERCEPT_REF, Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger, search_triggers
 
 #: Threshold a `gt` trigger can never fail, so the twin fires the moment it arms.
@@ -132,14 +132,25 @@ class Preregistration:
     #: out-of-band because ARCHITECTURE.md's rule is that anything able to move
     #: a conclusion enters the content hash, and which provider built an
     #: episode qualifies even when that provider is a byte-identical adapter.
+    #: percept alone defaults to the EFFECTIVE constant rather than None: unlike
+    #: env/policy (whose None falls back to fixed legacy code, kept for
+    #: byte-identical replay), a None percept resolves to a swappable constant
+    #: that would select behaviour without entering the hash -- the L1 rung 1
+    #: caveat. Defaulting to the constant puts "which percept provider built
+    #: this episode" in the content hash even on the default path (round 29's
+    #: precedent: constants that can move a conclusion enter the hash).
     env_provider: str | None = None
     policy_provider: str | None = None
-    percept_provider: str | None = None
+    percept_provider: str | None = DEFAULT_PERCEPT_REF
 
     def __post_init__(self) -> None:
         overlap = set(self.dev) & set(self.heldout)
         if overlap:
             raise ValueError(f"dev and held-out seeds overlap: {sorted(overlap)[:5]}")
+        # An explicit None would hash as None while behaving as the constant --
+        # the exact desync the default above closes. Normalise it away.
+        if self.percept_provider is None:
+            object.__setattr__(self, "percept_provider", DEFAULT_PERCEPT_REF)
 
     def sha(self) -> str:
         return sha_json(asdict(self))
