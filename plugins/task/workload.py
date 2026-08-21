@@ -46,6 +46,9 @@ SKILL_SPECS: dict[str, dict[str, Any]] = {
     # node's object arg (the first arg threading, arrived with the second
     # skill provider exactly as round 83 predicted).
     "pick": {"task_by_object": {"can": "pickcan", "milk": "pickmilk"},
+             "percept_noise": 0.012,  # the phase-3 operating point; omitting it
+             # silently falls to EpisodeSpec's 0.020 default -- the probe ran at
+             # 0.012 and the first real closed loop failed on the drift (round 86)
              "terminal_label": True,
              "stages": "plugins.embodiment_robosuite.env:pick_stages"},
 }

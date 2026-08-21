@@ -329,6 +329,9 @@ def test_clear_table_two_node_closed_loop(monkeypatch):
 
     assert [s.task for s in fake.specs] == ["pickcan", "pickmilk"]
     assert all(s.stages == pick_stages() for s in fake.specs)
+    # round 86: the probe ran at 0.012 and the first real closed loop silently
+    # dispatched at the 0.020 EpisodeSpec default -- pin the operating point.
+    assert all(s.percept_noise == 0.012 for s in fake.specs)
     assert list(out["nodes"]) == ["pick-can", "pick-milk"]
     assert all(n["success"] for n in out["nodes"].values())
 
