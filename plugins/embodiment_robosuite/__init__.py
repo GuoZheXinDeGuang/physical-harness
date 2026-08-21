@@ -14,6 +14,10 @@ from typing import Any
 
 import governor.env as _env
 
+# Importing the provider declares the embodiment's feature surface (spawn-safe
+# by construction: workers re-import, registration re-runs).
+import plugins.embodiment_robosuite.features  # noqa: F401
+
 
 class RobosuiteEmbodiment:
     """Layer 3 `harness.contracts.EnvProvider`, backed by governor.env verbatim.

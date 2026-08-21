@@ -22,8 +22,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from governor.percept import FeatureView
 from harness.episode_log import EpisodeLog, chain_start, chain_step
+from harness.percept import FeatureView
 from plugins.rsi.stats.search import Trigger
 
 

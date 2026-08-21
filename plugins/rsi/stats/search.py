@@ -28,7 +28,7 @@ from typing import Literal
 
 import numpy as np
 
-from governor.features import REGISTRY, Privilege, privilege_cost
+from harness.features import REGISTRY, Privilege, privilege_cost
 
 Op = Literal["lt", "gt"]
 

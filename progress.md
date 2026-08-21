@@ -2512,3 +2512,31 @@ governor/ 现存: features / percept / invariant / env / governed(五件硬骨�
 
 硬骨头开工: features + percept + invariant 上提进 harness(registry 反转,
 提取器随 embodiment 插件注册, spawn 语义靠"worker 因 spec ref import 插件"保住)。
+
+## Round 69 - 2026-08-21 - L2 rung F: registry 反转落地(最难的一级)
+
+### 结构
+
+- 契约机制(Privilege / Feature / register / REGISTRY / 查询函数) -> **harness/features.py**;
+  percept(FeatureView/PrivilegePolicy/project) 与 invariant -> **harness/**。内核 AST 边界保持绿。
+- robosuite 提取器声明 -> **plugins/embodiment_robosuite/features.py**, import 时注册;
+  worker 因 spec ref 加载 provider 而 import 插件 -> 注册在 worker 自然发生(spawn 语义保住)。
+  governor.features 壳同时负责 legacy 无 ref 路径的人口。
+
+### 三个当场抓到的坑
+
+1. 行切片把本地 REGISTRY+register 也带进插件文件 -> 注册进影子字典, registry 恒空。
+2. spawn containment 测试的前置条件失效: 反转后 worker 的 registry 起始为空,
+   probe 改为镜像真实路径(import 插件)并把新语义写进 docstring。
+3. **顺序 bug(parity 首跑抓住)**: governed_rollout 在 make_env 之前算 critic_names,
+   worker 里 registry 尚空 -> 空视图空轨迹 -> search 崩 StopIteration。
+   名字计算挪到 env 构建之后, 注释写明因果。**parity 不只验数值, 还验了初始化顺序。**
+
+### VERIFY
+
+164 passed + ruff 全绿 + 脚本 parity 四组 PASS。
+governor/ 现存实体: env.py / governed.py / proposer.py(有据滞留) + 壳。
+
+### 下一轮种子
+
+rung G: env/EpisodeSpec 上提(盘点标注的"唯一动通用货币的一步", 单独 rung, 双策略 parity)。

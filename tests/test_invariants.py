@@ -8,11 +8,11 @@ the naive formulation fails, so the mechanism cannot be quietly reverted.
 import numpy as np
 import pytest
 
-from governor.features import REGISTRY
-from governor.invariant import (
+from harness.features import REGISTRY
+from harness.invariant import (
     InvariantViolation, assert_privilege_budget, assert_view_reconstructable, record_view,
 )
-from governor.percept import FeatureView, PrivilegePolicy, project
+from harness.percept import FeatureView, PrivilegePolicy, project
 
 OBS = {
     "robot0_gripper_qpos": np.array([0.02, -0.02]),
@@ -118,10 +118,19 @@ def test_bulk_read_over_attests_toward_safety():
 # --- worker-process containment ---------------------------------------------
 
 def _worker_probe(budget):
-    """Runs in a fresh process: module-level register() re-runs on import."""
+    """Runs in a fresh process.
+
+    Post-inversion (round 69) the kernel registry starts EMPTY in a worker;
+    population happens when the embodiment plugin is imported -- which is what
+    every real worker does the moment it loads a provider ref. The probe
+    mirrors that path, and containment is what keeps the resurrected
+    privileged extractors harmless: the VIEW, not the registry, is the
+    boundary.
+    """
     import numpy as np
-    from governor.features import REGISTRY
-    from governor.percept import PrivilegePolicy, project
+    import plugins.embodiment_robosuite.features  # noqa: F401  the real worker path
+    from harness.features import REGISTRY
+    from harness.percept import PrivilegePolicy, project
     obs = {
         "robot0_gripper_qpos": np.array([0.02, -0.02]),
         "robot0_eef_pos": np.array([0.0, 0.0, 1.0]),

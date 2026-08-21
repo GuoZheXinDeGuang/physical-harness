@@ -31,11 +31,11 @@ import numpy as np
 from governor.env import EpisodeSpec, lifted, make_env, object_key
 from plugins.policies.drivers import make_driver
 from plugins.rsi.recovery import RecoveryActor
-from governor.invariant import (
+from harness.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )
 from harness.episode_log import chain_start, chain_step
-from governor.percept import FeatureView, PrivilegePolicy, project
+from harness.percept import FeatureView, PrivilegePolicy, project
 from plugins.rsi.stats.search import Trigger
 
 #: A perfect percept is ground truth, so it costs privilege; a noisy one does not.
@@ -187,9 +187,13 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     ``bundle=None`` runs the policy alone; both arms of a paired gate go through
     this identical code path.
     """
+    # Names AFTER the env: since round 69's registry inversion, feature
+    # registration happens when the embodiment plugin is imported, which in a
+    # fresh worker is triggered by make_env loading the provider ref. Reading
+    # the catalog before that sees an empty registry and records empty views.
+    env = make_env(spec)
     critic_names = PrivilegePolicy(critic_budget=bundle.critic_budget if bundle else 0).critic_names()
     action_names = PrivilegePolicy(critic_budget=bundle.action_budget if bundle else 0).critic_names()
-    env = make_env(spec)
     obs = env.reset()
     driver = make_driver(spec)
     driver.observe_once(obs)
