@@ -160,10 +160,16 @@ class RecoveryActor:
     actually has to make contact stops guessing at an estimated height.
     """
 
-    def __init__(self, program, target: np.ndarray) -> None:
+    def __init__(self, program, target: np.ndarray, height_offset: float = 0.0) -> None:
         from governor.servo import make as make_servo
 
         self.target = target
+        #: Round 61: recovery goals take the same per-embodiment vertical
+        #: correction the policy does. Without it the Sawyer campaign's
+        #: candidate judged perfectly (+20.7pp against its blind twin) and
+        #: repaired nothing (0 fixed): the regrasp closed 1cm above the cube
+        #: every single time. Detection transferred; repair was Panda-tuned.
+        self.height_offset = height_offset
         self.segments: list = []
         for step in program:
             kind = step[0]
@@ -195,8 +201,11 @@ class RecoveryActor:
         seg = self._current()
         if isinstance(seg, list):
             name, dx, dy = seg.pop(0)
+            height = PHASE_HEIGHT[name]
+            if name in ("descend", "close"):
+                height += self.height_offset
             goal = np.array([self.target[0] + dx, self.target[1] + dy,
-                             self.target[2] + PHASE_HEIGHT[name]])
+                             self.target[2] + height])
             delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * 8.0, -1, 1)
             grip = 1.0 if name in ("close", "lift") else -1.0
             return np.array([*delta, 0.0, 0.0, 0.0, grip])

@@ -179,3 +179,30 @@ def test_sawyer_providers_satisfy_their_contracts():
 
     assert isinstance(load_provider("plugins.embodiment_robosuite:sawyer_provider"), EnvProvider)
     assert isinstance(load_provider("plugins.policies:sawyer_scripted_provider"), PolicyFactory)
+
+
+def test_recovery_actor_honours_the_grasp_height_offset():
+    """Round 61: repair must be embodiment-corrected the same way the policy is.
+
+    offset=0.0 reproduces the Panda behaviour bit for bit; a Sawyer offset
+    moves descend/close goals and leaves above/lift alone.
+    """
+    import numpy as np
+
+    from governor.policy import RecoveryActor
+
+    target = np.array([0.0, 0.0, 0.82])
+    obs = {"robot0_eef_pos": np.array([0.0, 0.0, 0.9])}
+    prog = (("above", 1, 0.0, 0.0), ("descend", 1, 0.0, 0.0),
+            ("close", 1, 0.0, 0.0), ("lift", 1, 0.0, 0.0))
+    plain = RecoveryActor(prog, target)
+    zero = RecoveryActor(prog, target, height_offset=0.0)
+    shifted = RecoveryActor(prog, target, height_offset=-0.010)
+    acts = {name: (plain.act(obs), zero.act(obs), shifted.act(obs))
+            for name in ("above", "descend", "close", "lift")}
+    for name, (a, b, c) in acts.items():
+        assert np.array_equal(a, b), f"offset=0 changed {name}"
+        if name in ("descend", "close"):
+            assert not np.array_equal(a, c), f"offset ignored in {name}"
+        else:
+            assert np.array_equal(a, c), f"offset leaked into {name}"

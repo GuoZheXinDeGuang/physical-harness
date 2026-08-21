@@ -59,6 +59,19 @@ PYTHONPATH=. .venv/bin/python scripts/parity_check.py runs/campaign-pj-scripted
 
 细节见 [ARCHITECTURE.md](ARCHITECTURE.md), 目标与验收见 [GOAL.md](GOAL.md)。
 
+## 第二具身(Sawyer): 一个 bundle 换机器人
+
+```python
+plan = resolve_plan(base_profile(), bundles=(sawyer_bundle(),))
+```
+
+一个 bundle 同时换掉 embodiment 与 policy 两个 mount, 别处零代码改动。
+在它上面真跑 campaign 得到的第一条跨具身结论(round 60/61):
+**检测跨具身迁移, 修复不迁移** -- 零特权触发器在 Sawyer 上判断成立
+(对盲发孪生 +20.7pp, p<1e-5), 但恢复程序 0/103 次改变结局:
+高度修正后终态显示它确实重新抓到了, 只是和基础策略一样握不牢。
+修复的天花板就是策略能力的天花板, 这把 "Sawyer 抓取能力" 变成 layer-3 的一个干净工位。
+
 ## Phase 1 的科学结论(本骨架承载的证据)
 
 53 轮自主实验循环建立(全部真仿真、预注册、配对门禁、多区块复现):

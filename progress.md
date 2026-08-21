@@ -2310,3 +2310,38 @@ Sawyer 探索性 campaign(runs/campaign-sawyer, dev 40000-40139 / heldout 42000-
 
 收 Sawyer campaign 结果 -> RECORD; README 加第二具身一节; 然后回迁移阶梯
 (demos 走 kernel / features 插件化)。
+
+## Round 61 - 2026-08-21 - 检测跨具身迁移, 修复不迁移
+
+### Sawyer campaign(骨架全链, 真跑)
+
+候选 `running_min(finger_gap) < 0.010 @t=125`:
+- 对盲发孪生 **+20.7pp, p<1e-5, 判断成立**(盲发把 29 个成功全部打断 -> 0.0%,
+  候选会避开成功集)。**检测在第二具身上迁移了, 而且判断门禁在新具身上照常工作。**
+- 对父代 **0 修 0 破, 正确被拒**: 103 次触发, 一次也没改变结局。
+
+### 追修复为什么是 0
+
+1. 假设一: 恢复程序的 descend/close 高度是 Panda 的(缺 -10mm)。
+   修掉(RecoveryActor 接 spec.grasp_height_offset, 默认 0 逐位不变, 单元测试钉住
+   只动 descend/close) -> 重跑: **依然 0 修 0 破**。高度不是(唯一的)阻塞。
+2. 探针终态(触发且失败的 18 集): cube_z 中位 0.836(桌面附近, 可及),
+   finger_gap 0.0072(重新合拢) -- **恢复确实重新下去抓了, 抓住了, 握不牢**。
+
+### 结论(与 phase 1 第 09 节完全同构, 但这次是跨具身证得)
+
+**用同一套抓取原语拼出的恢复, 抓不过它所修复的策略。**
+Panda 上原语在工作点足够, 所以 RSI 有 +32pp 可赚;
+Sawyer 上共享的抓取原语本身就弱(握持保持), 恢复继承了同一个弱点 -> 修复空间为 0。
+"Sawyer 抓取能力"由此成为 layer-3 的一个干净工位: 谁把它做好,
+恢复与 RSI 立即免费受益 -- 这正是骨架应该创造的分工。
+
+### RECORD 之外
+
+- README 加第二具身一节(含这条结论)。
+- RecoveryActor 高度修正保留(正确性修复, Panda 逐位不变); 脚本 parity 后台跑作为确认。
+- 169 测试绿。
+
+### 下一轮种子
+
+回迁移阶梯: demos 走 kernel / features 注册表插件化, 然后 L2(删 governor 命名空间)预研。

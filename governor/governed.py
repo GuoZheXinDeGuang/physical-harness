@@ -268,7 +268,8 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
         percept = _percept_object(obs, spec, triggered.recovery.sensor_sd, used[triggered.rule_id])
         driver.retarget(percept)
-        recovery = RecoveryActor(triggered.recovery.steps(), percept)
+        recovery = RecoveryActor(triggered.recovery.steps(), percept,
+                                 height_offset=spec.grasp_height_offset)
         for rid in consec:
             consec[rid] = 0
 
