@@ -22,3 +22,15 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 顺序建议(每步 parity): 统计四件套 -> episode_log/audit -> campaign -> policy ->
 features 反转(含 registry 上提) -> env/EpisodeSpec 上提 -> governed 收尾 -> 删空壳。
 预计 6-8 个 rung。**EpisodeSpec 上提是唯一动"通用货币"的一步, 单独成 rung 并双策略 parity。**
+
+
+## L2 收官(round 73)
+
+17 个转发壳全部删除(逐壳清点: 代码级引用为零, 命中全是 prose, 已扫至新家)。
+governor/ 收缩为最小滞留集, 每件滞留有据且共享同一出口(共享词表重构):
+
+- env.py: make_env/make_driver 派发点 + FrozenPolicy/phase_at/PHASE_HEIGHT(policies 与 rsi 共享的运动词表)
+- policy.py 壳: plugins.rsi.governed 的 make_driver laundering 点
+- proposer.py: reasoner 落点与 rsi 校验共享
+
+收官验证: 164 passed + ruff 全绿 + 脚本 parity 四组 PASS(rung I 双策略 8/8 在前)。

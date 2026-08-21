@@ -6,7 +6,7 @@ DECLARATION, executed at import time. Import-time registration is what keeps
 the registry spawn-safe: a worker that loads this embodiment's provider ref
 imports this package, and the registration re-runs in that process with no
 state to migrate. The kernel path reaches here through the provider import;
-the legacy path reaches here through governor.features' transitional shell.
+the legacy no-ref path reaches here through this package's __init__ import.
 """
 
 from __future__ import annotations

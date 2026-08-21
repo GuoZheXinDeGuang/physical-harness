@@ -144,7 +144,7 @@ def _worker_probe(budget):
 
 
 def test_containment_holds_in_a_fresh_worker_process():
-    """A worker re-imports governor.features, so module-level register() re-runs and
+    """A worker re-imports the embodiment feature module, so register() re-runs and
     the privileged extractors exist there no matter what the parent did. Containment
     is what makes that harmless: the VIEW, not the registry, is the boundary."""
     from multiprocessing import Pool

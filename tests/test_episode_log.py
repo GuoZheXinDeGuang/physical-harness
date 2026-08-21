@@ -2,6 +2,7 @@
 import json
 import shutil
 import zlib
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,9 @@ from harness.episode_log import EpisodeLog, chain_start, chain_step, write_episo
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.rsi.stats.search import Trigger
 
-ROOT = Path("runs/_test_log")
+# tmp-scoped: a fixed path under runs/ let an interrupted run poison later
+# suites with a half-written store (caught round 73)
+ROOT = Path(tempfile.mkdtemp(prefix="episode-log-test-"))
 TRIG = Trigger("observable.gripper_effort", "gt", 0.050879, 2, 59)
 
 

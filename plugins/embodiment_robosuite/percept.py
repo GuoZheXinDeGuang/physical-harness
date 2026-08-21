@@ -1,6 +1,6 @@
 """Onboard object-pose estimate: the ablation ladder's carrier, now a provider.
 
-Moved verbatim from governor.governed._percept_object at L1 rung 1. This is the
+Moved verbatim from the phase 1 governed module at L1 rung 1. This is the
 first thing a real robot swaps: mount a different percept.model provider and
 the recovery stack runs on real perception while every other seam stays put.
 The math must stay byte-identical to the phase 1 implementation -- parity

@@ -2620,3 +2620,31 @@ rung I: governed -> plugins/rsi(经契约取具身语义), 之后 rung J 清壳�
 
 收双 parity -> rung J(收官): 清点壳与滞留件, 删除无引用壳,
 governor/ 收缩为 {env 运动词表+派发, proposer, policy 壳} 的最小滞留集, 更新 README/ARCHITECTURE。
+
+## Round 73 - 2026-08-21 - L2 rung J 收官: 壳清零, governor 收缩为最小滞留集
+
+### rung I 收口
+
+双策略 parity **8/8 PASS**(governed 是所有数字流经的核心, 按货币级双验)。
+
+### rung J
+
+- **17 个转发壳全部删除**。逐壳清点: 代码级引用为零(命中全是 docstring 旧路径, 已扫新家)。
+  连 features 的人口壳也可删 -- legacy 无 ref 路径经 `import plugins.embodiment_robosuite.env`
+  触发包 __init__ 的 features 注册, 壳早已不在路径上。
+- governor/ = {env.py(派发+运动词表), policy.py 壳(governed 的 laundering 点), proposer.py}。
+  三件滞留同一出口: 共享词表重构(恢复程序携带绝对高度 / brief 携带策略词表)。
+- 顺手抓一个测试卫生问题: test_episode_log 用固定路径 runs/_test_log,
+  一次被打断的运行留下半写 store 毒化后续全套(本轮真实撞上, 5 个 ERROR)。
+  改为 tempfile.mkdtemp。**固定路径 fixture 是延时炸弹。**
+
+### 收官验证
+
+164 passed + ruff 全绿 + 脚本 parity 四组 PASS。
+**GOAL v2 迁移阶梯 L0 -> L1 -> L2 全部走完**, 每一级都有真仿真 parity 逐位背书。
+
+### 下一步(frontier, 非迁移)
+
+1. 共享词表重构(消掉最后三件滞留, governor 归零)。
+2. gate(等用户): 真实模型 reasoner / 分布式 executor。
+3. 报告 phase 2 章节(把迁移与新知识写进 docs/report.html)。

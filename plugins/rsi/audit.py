@@ -4,7 +4,7 @@ Two jobs, both of which only a persisted log can do.
 
 `audit_episode` re-derives every decision view from the stored columns and
 recomputes the episode's chained commitment. Online, the invariant in
-`governor.invariant` checks each dispatch as it happens; this is the after-the-
+`harness.invariant` checks each dispatch as it happens; this is the after-the-
 fact half -- it proves the record on disk is the record that was acted on, so a
 result can be re-examined months later without trusting the process that made it.
 

@@ -12,16 +12,15 @@ mounted here:
   ARCHITECTURE.md's OS-layer table). A base profile handing it out for free
   would let every consumer draw on the privilege budget; a campaign mounts it
   explicitly, only where it needs oracle state.
-- ``percept.model`` has not migrated out of ``governor.governed`` yet (see
-  ARCHITECTURE.md, row "感知": "L1 迁入; 现在留在 governor.governed"). It
+- ``percept.model`` lives in ``plugins.embodiment_robosuite.percept`` (L1 rung 1). It
   arrives at L1, not here.
 
 The task/policy matrix
 -----------------------
 GOAL.md acceptance #2 also asks for a pure-config proof over a 3-task x
 2-policy matrix ("用 3 任务 x 2 策略的纯配置矩阵证明"). Task and policy are
-NOT capability mounts, though: they are ``governor.campaign.Preregistration``
-fields, threaded down into episode specs by ``governor.campaign._specs``, not
+NOT capability mounts, though: they are ``plugins.rsi.campaign.Preregistration``
+fields, threaded down into episode specs by ``plugins.rsi.campaign._specs``, not
 anything ``harness.config.Mount`` binds a provider to.
 
 A ``campaign_patch(task, policy) -> Patch`` would therefore have nothing to

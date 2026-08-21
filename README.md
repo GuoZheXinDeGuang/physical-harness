@@ -88,7 +88,7 @@ plan = resolve_plan(base_profile(), bundles=(sawyer_bundle(),))
 harness/      内核: 能力接缝、配置分层、事件链、执行织物 (零插件依赖)
 plugins/      provider 包: embodiment_robosuite / policies / reasoner / rsi / graphs
 profiles/     声明式挂载配置 (3 任务 x 2 策略矩阵)
-governor/     phase 1 遗留库, 正按迁移阶梯逐级搬入插件 (L2 时删除)
+governor/     最小滞留集(3 文件): env 派发+运动词表 / policy 壳 / proposer -- 共享词表重构后删除
 scripts/      demo_campaign.py / parity_check.py
 tests/        165+ 项 (内核不变量、边界、seam、workload、统计)
 docs/         phase 1 报告与逐轮记录

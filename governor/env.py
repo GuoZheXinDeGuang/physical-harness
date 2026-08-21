@@ -24,14 +24,23 @@ governing.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from harness.registry import load_provider
-from harness.spec import NOMINAL_SCHEDULE, EpisodeSpec  # noqa: F401  re-export: currency moved to the kernel
+from harness.spec import (  # noqa: F401  re-export: currency moved to the kernel
+    NOMINAL_SCHEDULE,
+    EpisodeSpec,
+)
 from plugins.embodiment_robosuite.env import (  # noqa: F401  re-export: embodiment moved to its plugin (L2 rung H)
-    CONTROL_FREQ, TASKS, _default_make_env, lifted, object_key, task_config)
+    CONTROL_FREQ,
+    TASKS,
+    _default_make_env,
+    lifted,
+    object_key,
+    task_config,
+)
 
 PHASE_HEIGHT = {"above": 0.10, "descend": 0.005, "close": 0.005, "lift": 0.25}
 
@@ -91,7 +100,7 @@ def phase_at(schedule: tuple[tuple[str, int], ...], t: int) -> str | None:
 def rollout(spec: EpisodeSpec) -> dict:
     """Run one un-governed episode.
 
-    Delegates to :func:`governor.governed.governed_rollout` with no bundle so
+    Delegates to :func:`plugins.rsi.governed.governed_rollout` with no bundle so
     there is exactly ONE rollout implementation. Two of them would drift, and a
     gate whose two arms ran different code would measure the drift instead of
     the governance.

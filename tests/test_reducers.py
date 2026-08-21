@@ -149,7 +149,7 @@ def test_servo_strategy_is_declared_as_feedback():
 def test_servo_primitives_read_only_proprioception():
     """The whole point: contact and finger motion are things a real robot feels."""
     import inspect
-    from governor import servo
+    from plugins.rsi import servo
     src = inspect.getsource(servo)
     for privileged in ("cube_pos", "cubeA_pos", "Can_pos", "object_z", "grasp_error"):
         assert privileged not in src, (

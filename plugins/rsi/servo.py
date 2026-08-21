@@ -9,7 +9,7 @@ until the fingers stop moving -- so the privilege budget stays at zero.
 
 A CORRECTION, kept here because the mistake is instructive. ``ServoDescend`` was
 written on the premise that the repair aims at a wrong estimated height. It does
-not: :func:`governor.governed._percept_object` perturbs x and y and leaves z
+not: the onboard percept (plugins.embodiment_robosuite.percept) perturbs x and y and leaves z
 exactly true (``np.array([N(0,sd), N(0,sd), 0.0])``), so the naive repair already
 descends to the correct height and contact-seeking removes an error that is not
 there. Measured percept z-error over 60 episodes: 0.00000.

@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Protocol, Sequence
+from typing import Protocol
 
 from harness.features import REGISTRY, Privilege
 from plugins.rsi.governed import RecoverySpec, Rule
@@ -86,6 +87,7 @@ def build_brief(traces, labels, *, generation: int, privilege_budget: int) -> di
     providers are comparable, and it cannot smuggle in a privileged reading.
     """
     import numpy as np
+
     from plugins.rsi.stats.search import divergence_profile, reduce_series
 
     # Only what the traces actually carry: a trace holds exactly the features the
