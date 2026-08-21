@@ -14,7 +14,7 @@ mount-supplied value (L2 rung H).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 NOMINAL_SCHEDULE: tuple[tuple[str, int], ...] = (
     ("above", 25), ("descend", 25), ("close", 12), ("lift", 38),
