@@ -253,3 +253,33 @@ def test_help_smoke():
         cwd=REPO_ROOT, capture_output=True, text=True, timeout=120, check=False)
     assert proc.returncode == 0
     assert "--block" in proc.stdout and "--out" in proc.stdout
+
+
+def test_declared_privilege_needs_the_provider_import_in_a_fresh_process():
+    """Round 85 regression: the full suite masks an empty feature catalog
+    (sibling test modules import the embodiment plugin), so the parent-process
+    KeyError only appears in a fresh interpreter. Pin both halves there."""
+    import subprocess
+    import sys
+
+    snippet = (
+        "from plugins.rsi.governed import RecoverySpec, Rule\n"
+        "from plugins.rsi.stats.search import Trigger\n"
+        "r = Rule('t', Trigger('observable.finger_gap', 'lt', 0.001, 1, 58, 'value'),\n"
+        "         RecoverySpec(sensor_sd=0.02))\n"
+        "try:\n"
+        "    r.declared_privilege()\n"
+        "except KeyError:\n"
+        "    pass\n"
+        "else:\n"
+        "    raise SystemExit('expected KeyError on an empty catalog')\n"
+        "from harness.registry import load_provider\n"
+        "load_provider('plugins.embodiment_robosuite:provider', {})\n"
+        "assert r.declared_privilege() == 0\n"
+        "print('fresh-process privilege OK')\n"
+    )
+    cp = subprocess.run([sys.executable, "-c", snippet], capture_output=True,
+                        text=True, timeout=120, check=False,  # asserted below
+                        env={"PYTHONPATH": ".", "PATH": "/usr/bin:/bin"})
+    assert cp.returncode == 0, cp.stderr
+    assert "fresh-process privilege OK" in cp.stdout

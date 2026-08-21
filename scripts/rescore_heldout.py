@@ -99,6 +99,16 @@ def run_rescore(store_dir: str | Path, out_dir: str | Path, block: int, *,
     if not prereg_payloads:
         raise ValueError(f"{store_dir} has no preregistration artifact")
     prereg = rebuild_preregistration(prereg_payloads[0])
+    # Round 69 registry inversion: features register when the embodiment plugin
+    # is imported, which in a worker happens via the spec's provider ref. In
+    # THIS parent process nothing has imported it yet, so declared_privilege()
+    # on the rebuilt bundle would hit an empty catalog. Load the archived
+    # provider ref first -- the same order workload.run establishes via
+    # kernel.resolve. The full pytest suite masks this (sibling test modules
+    # import the plugin); only a fresh process exercises it.
+    from harness.registry import load_provider
+
+    load_provider(prereg.env_provider or "plugins.embodiment_robosuite:provider", {})
     bundle = rebuild_final_bundle(prereg, archived.get("generation", []))
 
     n = n if n is not None else len(prereg.heldout)
