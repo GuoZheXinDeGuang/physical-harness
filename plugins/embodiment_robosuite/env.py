@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from harness.spec import STACK_SCHEDULE, Clause, EpisodeSpec, StageSpec
+from harness.spec import NOMINAL_SCHEDULE, STACK_SCHEDULE, Clause, EpisodeSpec, StageSpec
 
 CONTROL_FREQ = 20
 #: Per-task scene wiring: the robosuite env id, the observation key holding the
@@ -24,6 +24,8 @@ TASKS: dict[str, dict] = {
     "stack":    {"env": "Stack",     "object_key": "cubeA_pos", "kwargs": {}},
     "pickcan":  {"env": "PickPlace", "object_key": "Can_pos",
                  "kwargs": {"single_object_mode": 2, "object_type": "can"}},
+    "pickmilk": {"env": "PickPlace", "object_key": "Milk_pos",
+                 "kwargs": {"single_object_mode": 2, "object_type": "milk"}},
 }
 
 #: Height above its starting pose the target must reach for the shared sub-goal.
@@ -91,6 +93,24 @@ def stack_stages() -> tuple[StageSpec, ...]:
             Clause("privileged.stack_z_residual", "lt", 0.02),
             Clause("observable.finger_gap", "gt", 0.05),
         ), place_budget),
+    )
+
+
+def pick_stages() -> tuple[StageSpec, ...]:
+    """The one-stage pick measurement chain: grasp whatever the task targets.
+
+    A single grasp stage whose only clause is the object-independent half of
+    lifted(): fingers held apart by something. The raised-past-a-margin half
+    needs start_z, which a static Clause cannot carry, and an absolute
+    object_z threshold would be the round-10 table-height fragility -- so the
+    lift half stays with the terminal label (lifted()), which the governed
+    rollout scores anyway. Budget is the full NOMINAL_SCHEDULE span: the
+    scripted four-phase policy IS the grasp, there is no place half.
+    """
+    return (
+        StageSpec("grasp", (
+            Clause("observable.finger_gap", "gt", 0.01),
+        ), sum(d for _, d in NOMINAL_SCHEDULE)),
     )
 
 

@@ -49,7 +49,7 @@ register(Feature("observable.gripper_effort", Privilege.OBSERVABLE,
 # a lookup table.
 
 #: Object-pose keys in resolution order, one per supported task.
-_OBJECT_KEYS = ("cube_pos", "cubeA_pos", "Can_pos")
+_OBJECT_KEYS = ("cube_pos", "cubeA_pos", "Can_pos", "Milk_pos")
 
 
 def _object_pos(o: Mapping[str, np.ndarray]) -> np.ndarray:

@@ -82,7 +82,7 @@ def test_episode_spec_with_stages_pickles():
 def test_robosuite_embodiment_satisfies_env_provider():
     p = load_provider(ENV_REF)
     assert isinstance(p, EnvProvider)
-    assert p.tasks() == ("lift", "pickcan", "stack")
+    assert p.tasks() == ("lift", "pickcan", "pickmilk", "stack")
 
 
 def test_governor_policies_satisfies_policy_factory():

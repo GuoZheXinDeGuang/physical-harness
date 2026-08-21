@@ -282,6 +282,76 @@ def test_plan_complete_enters_the_session_chain(monkeypatch):
     assert log.verify(), "the combined ledger no longer verifies"
 
 
+# =====================================================================
+# round 86: clear_table — the first true multi-node graph, rollout faked
+# =====================================================================
+
+CT_BRIEF = {"task": "clear_table", "catalogue": CATALOGUE, "oracles": ORACLES}
+
+
+def test_pick_catalogue_and_oracle_validate():
+    plan = StackPlanner().plan({**CT_BRIEF, "scene": {}})
+    ok, msg = validate_plan(plan, CATALOGUE, ORACLES)
+    assert ok and msg == ""
+    assert [n["id"] for n in plan["nodes"]] == ["pick-can", "pick-milk"]
+    assert plan["nodes"][1]["after"] == ["pick-can"]
+    assert json.dumps(plan, sort_keys=True) == \
+        json.dumps(StackPlanner().plan({**CT_BRIEF, "scene": {}}), sort_keys=True)
+    # the catalogue only TYPES the object arg; a str with no scene binding
+    # fails loudly at dispatch, before any provider ref is even loaded
+    node = {"id": "x", "skill": "pick", "args": {"object": "bottle"}, "after": []}
+    with pytest.raises(ValueError, match="bottle"):
+        workload._dispatch(node, seed=1, env_ref="bogus", policy_ref="bogus")
+
+
+def test_pick_stages_shape():
+    from harness.spec import NOMINAL_SCHEDULE
+    from plugins.embodiment_robosuite.env import pick_stages
+
+    (grasp,) = pick_stages()
+    assert grasp.name == "grasp"
+    assert grasp.budget == sum(d for _, d in NOMINAL_SCHEDULE)
+    (clause,) = grasp.success
+    assert (clause.feature, clause.op, clause.threshold) == \
+        ("observable.finger_gap", "gt", 0.01)
+
+
+def test_clear_table_two_node_closed_loop(monkeypatch):
+    kernel = _task_kernel(StackPlanner())
+    fake = _RolloutFake([True, True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run(dict(CT_BRIEF), kernel, seed=42, max_actuations=4)
+
+    assert out["success"] is True
+    assert out["replans"] == 0 and out["actuations"] == 2
+    from plugins.embodiment_robosuite.env import pick_stages
+
+    assert [s.task for s in fake.specs] == ["pickcan", "pickmilk"]
+    assert all(s.stages == pick_stages() for s in fake.specs)
+    assert list(out["nodes"]) == ["pick-can", "pick-milk"]
+    assert all(n["success"] for n in out["nodes"].values())
+
+
+def test_clear_table_replan_skips_done_node(monkeypatch):
+    planner = _CountingPlanner()
+    kernel = _task_kernel(planner)
+    fake = _RolloutFake([True, False, True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run(dict(CT_BRIEF), kernel, seed=1, max_actuations=4)
+
+    assert out["success"] is True and out["replans"] == 1
+    assert [s.task for s in fake.specs] == ["pickcan", "pickmilk", "pickmilk"], \
+        "finished pick-can is skipped on replan, never re-dispatched"
+    assert out["actuations"] == 3
+    fault = planner.briefs[1]["fault"]
+    assert fault["kind"] == "node_failure" and fault["node"] == "pick-milk"
+    assert fault["nodes_done"] == ["pick-can"]
+    assert fault["nodes_left"] == ["pick-milk"]
+    assert fault["done"] == ["grasp"], "stage-level attribution is preserved"
+
+
 def test_mounted_params_on_actuating_capabilities_are_refused():
     kernel = Kernel(CAPABILITIES)
     kernel.provide("task.planner", StackPlanner(), ref="tests.fakes:planner")

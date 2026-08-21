@@ -42,6 +42,12 @@ CONSUMER = "task"
 SKILL_SPECS: dict[str, dict[str, Any]] = {
     "stack": {"task": "stack", "percept_noise": 0.012, "terminal_label": True,
               "stages": "plugins.embodiment_robosuite.env:stack_stages"},
+    # One skill, several scenes: "pick" resolves its embodiment task from the
+    # node's object arg (the first arg threading, arrived with the second
+    # skill provider exactly as round 83 predicted).
+    "pick": {"task_by_object": {"can": "pickcan", "milk": "pickmilk"},
+             "terminal_label": True,
+             "stages": "plugins.embodiment_robosuite.env:pick_stages"},
 }
 
 
@@ -58,15 +64,25 @@ def _governed_rollout(spec: EpisodeSpec) -> dict:
 def _dispatch(node: Mapping, *, seed: int, env_ref: str, policy_ref: str) -> dict:
     """Build the node's EpisodeSpec and run it, stage scorer aboard.
 
-    ``node["args"]`` were validated against the catalogue but are not threaded
-    further at the 1-node loop: the Stack policy is cubeA-on-cubeB by
-    construction. Argument threading arrives with a second skill provider.
+    A binding either names its embodiment task directly ("stack": the policy
+    is cubeA-on-cubeB by construction) or carries ``task_by_object`` mapping
+    the node's object arg to a task ("pick"): the catalogue only types the
+    arg, so an object with no scene binding fails loudly HERE, before any
+    actuation.
     """
     binding = SKILL_SPECS.get(node["skill"])
     if binding is None:
         raise ValueError(f"skill {node['skill']!r} validated against the "
                          "catalogue but has no execution binding in SKILL_SPECS")
     kwargs = dict(binding)
+    task_by_object = kwargs.pop("task_by_object", None)
+    if task_by_object is not None:
+        obj = node["args"].get("object")
+        if obj not in task_by_object:
+            raise ValueError(
+                f"skill {node['skill']!r} has no task binding for object "
+                f"{obj!r}; known objects: {sorted(task_by_object)}")
+        kwargs["task"] = task_by_object[obj]
     stages = load_provider(kwargs.pop("stages"))
     spec = EpisodeSpec(seed=seed, stages=stages, env_provider=env_ref,
                        policy_provider=policy_ref, **kwargs)
@@ -81,7 +97,9 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     authored on the skill side); the workload stamps scene and remaining budget
     onto it each attempt, and folds every refusal back in -- an invalid plan as
     the validator's own words, a failed node as a Fault-shaped dict preserving
-    failed/done/left so the planner can keep finished work. Returns
+    failed/done/left (stage level) and nodes_done/nodes_left (node level) so
+    the planner can keep finished work -- and the loop itself keeps it: a node
+    already succeeded is skipped, never re-run or re-billed. Returns
     ``{success, goal, replans, actuations, nodes, faults}`` and closes with one
     ``task.plan_complete`` ledger note, win or lose.
     """
@@ -125,8 +143,13 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         if not ok:
             fault = {"kind": "invalid_plan", "msg": msg}
         else:
-            nodes_out = {}
+            # nodes_out accumulates ACROSS replans: a node that already
+            # succeeded is finished work, skipped without re-running or
+            # re-billing -- a model-independent floor, like max_actuations.
             for node in plan["nodes"]:
+                prior = nodes_out.get(node["id"])
+                if prior is not None and prior["success"]:
+                    continue
                 # The model-independent floor, enforced BEFORE dispatch: no
                 # planner, however eloquent, can mint extra actuations.
                 if actuations >= max_actuations:
@@ -154,6 +177,13 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                              "msg": (f"node {node['id']!r} failed: stages {left}, "
                                      f"predicates {bad_preds}; done {done}")}
                     break
+            if fault is not None:
+                # Node-id-level attribution alongside the stage-level
+                # done/left above: the planner keeps finished NODES too.
+                nodes_done = [nid for nid, n in nodes_out.items() if n["success"]]
+                fault["nodes_done"] = nodes_done
+                fault["nodes_left"] = [n["id"] for n in plan["nodes"]
+                                       if n["id"] not in nodes_done]
         if fault is None:
             success = True
             break

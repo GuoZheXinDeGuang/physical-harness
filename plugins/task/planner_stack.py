@@ -3,11 +3,10 @@
 SearchProposer's precedent (round 25): zero external API is the reference
 path, not a fallback. ``StackPlanner`` is a hand-written decomposition table
 keyed on ``brief["task"]``; a VLM planner is a later provider behind the same
-``plan(brief) -> Mapping`` seam. The first closed loop emits a ONE-node graph
-whose single node runs the existing Stack policy, so the whole seam (plan ->
-validate -> governed rollout -> per-stage scoring -> replan -> ledger) is
-proven with zero new numeric surface; multi-node decomposition waits for a
-second skill provider to exist.
+``plan(brief) -> Mapping`` seam. "stack" is the round-83 ONE-node seam proof;
+"clear_table" (round 86) is the first true multi-node graph -- two sequenced
+pick nodes over the second skill provider, exercising plan -> validate ->
+per-node dispatch -> verify -> replan-with-done-work-preserved.
 
 The tiny Stack vocabulary is hand-declared here (CATALOGUE / ORACLES) because
 ``graph.skill.skills()`` publishes measurement records, not callable
@@ -25,12 +24,13 @@ from typing import Any
 #: never by the planner: the planner only selects and parameterizes.
 CATALOGUE: dict[str, dict[str, type]] = {
     "stack": {"object": str, "target": str},
+    "pick": {"object": str},
 }
 
-#: Verify predicates a plan may name. "stack_success" is the embodiment's
-#: terminal success boolean, reached at dispatch time through the
+#: Verify predicates a plan may name. Each is the embodiment's terminal
+#: success boolean for that skill, reached at dispatch time through the
 #: embodiment.env contract (plugins never import each other).
-ORACLES: tuple[str, ...] = ("stack_success",)
+ORACLES: tuple[str, ...] = ("stack_success", "pick_success")
 
 
 class StackPlanner:
@@ -38,18 +38,36 @@ class StackPlanner:
 
     def plan(self, brief: Mapping) -> Mapping:
         task = brief.get("task")
-        if task != "stack":
-            raise ValueError(f"StackPlanner only plans 'stack', got {task!r}")
         # Round-trip through sorted JSON: the emitted mapping is exactly its
         # canonical byte form, so the same brief dumps byte-identically and
         # only pure JSON types ever leave this seam.
-        return json.loads(json.dumps({
-            "goal": "stack cubeA on cubeB",
-            "nodes": [{"id": "stack-0", "skill": "stack",
-                       "args": {"object": "cubeA", "target": "cubeB"},
-                       "after": []}],
-            "verify": [{"after": "stack-0", "predicate": "stack_success"}],
-        }, sort_keys=True))
+        if task == "stack":
+            return json.loads(json.dumps({
+                "goal": "stack cubeA on cubeB",
+                "nodes": [{"id": "stack-0", "skill": "stack",
+                           "args": {"object": "cubeA", "target": "cubeB"},
+                           "after": []}],
+                "verify": [{"after": "stack-0", "predicate": "stack_success"}],
+            }, sort_keys=True))
+        if task == "clear_table":
+            # The first true multi-node graph: two pick skills in sequence,
+            # each with its own verify edge, so a mid-graph failure replans
+            # with finished work preserved (the workload skips done nodes).
+            return json.loads(json.dumps({
+                "goal": "clear the table: pick the can, then the milk",
+                "nodes": [
+                    {"id": "pick-can", "skill": "pick",
+                     "args": {"object": "can"}, "after": []},
+                    {"id": "pick-milk", "skill": "pick",
+                     "args": {"object": "milk"}, "after": ["pick-can"]},
+                ],
+                "verify": [
+                    {"after": "pick-can", "predicate": "pick_success"},
+                    {"after": "pick-milk", "predicate": "pick_success"},
+                ],
+            }, sort_keys=True))
+        raise ValueError(
+            f"StackPlanner only plans 'stack' or 'clear_table', got {task!r}")
 
     @property
     def identity(self) -> str:
@@ -64,11 +82,14 @@ if __name__ == "__main__":
     from plugins.task.validate import validate_plan
 
     planner = StackPlanner()
+    for task in ("stack", "clear_table"):
+        b = {"task": task, "scene": {}, "catalogue": CATALOGUE}
+        p = planner.plan(b)
+        ok, msg = validate_plan(p, CATALOGUE, ORACLES)
+        assert ok, (task, msg)
+        assert json.dumps(p, sort_keys=True) == json.dumps(planner.plan(b), sort_keys=True)
     brief = {"task": "stack", "scene": {}, "catalogue": CATALOGUE}
     plan = planner.plan(brief)
-    ok, msg = validate_plan(plan, CATALOGUE, ORACLES)
-    assert ok, msg
-    assert json.dumps(plan, sort_keys=True) == json.dumps(planner.plan(brief), sort_keys=True)
 
     def refused(bad: dict, offender: str) -> None:
         ok, msg = validate_plan(bad, CATALOGUE, ORACLES)
