@@ -4,7 +4,7 @@ behaviour-preserving in both directions (default ref and explicit ref)."""
 import numpy as np
 
 from governor.env import EpisodeSpec
-from governor.governed import DEFAULT_PERCEPT_REF, _percept_object
+from plugins.rsi.governed import DEFAULT_PERCEPT_REF, _percept_object
 from harness.contracts import PerceptModel
 from harness.registry import load_provider
 

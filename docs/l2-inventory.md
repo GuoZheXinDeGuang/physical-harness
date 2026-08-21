@@ -11,7 +11,7 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 | env 具身部分(TASKS/task_config/object_key/lifted/_default_make_env/CONTROL_FREQ) | **已移(round 71, rung H)** -> plugins/embodiment_robosuite/env.py; EnvProvider 契约扩展 object_key/success, rsi 经契约取语义 | - |
 | FrozenPolicy / phase_at / PHASE_HEIGHT + make_env 派发点 | **有据滞留 governor**: 运动词表被 policies(drivers)与 rsi(recovery)共享, 与 proposer 同类; 出口 = 恢复程序携带绝对高度或 spec 携带高度表 | 中 |
 | policy.py | **已移(round 66, rung D)**: plugins/policies/drivers.py(驱动器+交还契约+RecoveryActor), 适配器改指兄弟模块 | - |
-| governed.py | plugins/rsi(受治理 rollout 是 RSI workload 的核心) | 高: 与 features/percept/policy 三向耦合, 最后动 |
+| governed.py | **已移(round 72, rung I)** -> plugins/rsi/governed.py: 具身语义走契约优先(_embodiment: ref->provider, legacy 回落), PRIVILEGED_SENSOR_SD 上提 harness.percept; make_driver 经 governor 壳(与运动词表同类滞留) | - |
 | gate.py / campaign.py | **已移(round 64, rung B)**, governor 留转发壳; 第一方调用点全部改指新家 | - |
 | power.py / search.py / screen.py | **已移(round 63, rung A)**, governor 留 PEP 562 转发壳 | - |
 | (campaign 已并入上行; CampaignStore 与 harness artifacts 合一另立 rung, 动存档格式前先定兼容策略) | | |

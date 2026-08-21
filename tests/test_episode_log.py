@@ -10,7 +10,7 @@ import pytest
 from plugins.rsi.audit import audit_log, rebuild_views, shadow_replay
 from governor.env import EpisodeSpec
 from harness.episode_log import EpisodeLog, chain_start, chain_step, write_episode
-from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.rsi.stats.search import Trigger
 
 ROOT = Path("runs/_test_log")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from governor.env import EpisodeSpec
-from governor.governed import governed_rollout
+from plugins.rsi.governed import governed_rollout
 
 DEFAULT_WORKERS = 10
 

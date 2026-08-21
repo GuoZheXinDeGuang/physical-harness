@@ -24,9 +24,9 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 
 from governor.env import EpisodeSpec
-from governor.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, propose_rule
 from plugins.rsi.gate import ablation_curve, paired_gate
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import search_triggers
 
 
@@ -51,7 +51,7 @@ class Branch:
 
 
 def _run(job):
-    from governor.governed import governed_rollout
+    from plugins.rsi.governed import governed_rollout
     spec, bundle = job
     return governed_rollout(spec, bundle)
 

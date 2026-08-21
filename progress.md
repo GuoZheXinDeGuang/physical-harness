@@ -2597,3 +2597,26 @@ governor/ 实体只剩: env.py(派发+运动词表) / governed.py / proposer.py 
 ### 下一轮种子
 
 rung I: governed -> plugins/rsi(经契约取具身语义), 之后 rung J 清壳收官。
+
+## Round 72 - 2026-08-21 - L2 rung I: governed 入 rsi, 具身语义走契约
+
+### 做了什么
+
+- governed.py -> plugins/rsi/governed.py。**具身访问改为契约优先**:
+  `_embodiment(spec)` 每 rollout 解析一次 -- 有 ref 走 provider 的
+  make_env/object_key/success, 无 ref 走 _LegacyEmbodiment facade(governor.env 回落)。
+  rung H 铺的契约在这里兑现: **rsi 不 import 具身插件**。
+- PRIVILEGED_SENSOR_SD(特权语义常数)上提 harness.percept;
+  embodiment 的 percept 插件改从内核取 -- 又消掉一个将来的跨插件点。
+- make_driver 经 governor.policy 壳过渡(有据滞留第三项, 与 proposer/运动词表同类,
+  出口同一个: 共享词表重构)。
+- 13 个文件 repoint, 164 passed + ruff 绿。
+
+### VERIFY
+
+双策略 parity 后台跑(governed 是 rollout 核心, 按货币级双验), 下唤醒收。
+
+### 下一轮种子
+
+收双 parity -> rung J(收官): 清点壳与滞留件, 删除无引用壳,
+governor/ 收缩为 {env 运动词表+派发, proposer, policy 壳} 的最小滞留集, 更新 README/ARCHITECTURE。

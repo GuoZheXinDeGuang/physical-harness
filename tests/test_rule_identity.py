@@ -1,7 +1,7 @@
 """The reducer changes what a rule does. If it is not in the canonical form,
 the parent-freeze assertion cannot see a parent being swapped underneath it."""
 import pytest
-from governor.governed import Bundle, RecoverySpec, Rule
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger
 
 
@@ -37,7 +37,7 @@ def test_every_field_that_defines_behaviour_reaches_the_canonical_form():
     """
     import dataclasses as dc
 
-    from governor.governed import Bundle
+    from plugins.rsi.governed import Bundle
 
     rule = _rule("min")
     canonical = rule.canonical()

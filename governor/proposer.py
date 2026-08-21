@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Callable, Protocol, Sequence
 
 from harness.features import REGISTRY, Privilege
-from governor.governed import RecoverySpec, Rule
+from plugins.rsi.governed import RecoverySpec, Rule
 from plugins.rsi.repertoire import names as strategy_names
 from plugins.rsi.stats.search import REDUCERS, Trigger, search_triggers
 

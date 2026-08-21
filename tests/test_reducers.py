@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from governor.env import EpisodeSpec
-from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.policies.drivers import ClonedDriver, ScriptedDriver
 from plugins.rsi.stats.search import REDUCERS, Trigger, reduce_series, search_triggers
 

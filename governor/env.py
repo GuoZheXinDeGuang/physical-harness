@@ -96,6 +96,6 @@ def rollout(spec: EpisodeSpec) -> dict:
     gate whose two arms ran different code would measure the drift instead of
     the governance.
     """
-    from governor.governed import governed_rollout
+    from plugins.rsi.governed import governed_rollout
 
     return governed_rollout(spec, None)

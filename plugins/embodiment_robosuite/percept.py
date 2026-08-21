@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from governor.env import object_key
-from governor.governed import PRIVILEGED_SENSOR_SD
+from harness.percept import PRIVILEGED_SENSOR_SD
 
 
 class OnboardPercept:

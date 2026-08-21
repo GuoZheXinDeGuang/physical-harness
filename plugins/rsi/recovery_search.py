@@ -27,7 +27,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from governor.env import EpisodeSpec
-from governor.governed import Bundle, RecoverySpec, Rule
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 
 #: Candidate durations per phase slot. The phase ORDER is fixed -- retreat, restage,
 #: approach, close, lift -- because it encodes the physical structure of a regrasp;
@@ -53,7 +53,7 @@ DEFAULT_DURATIONS = {"retreat": 18, "restage": 15, "approach": 25, "close": 14, 
 
 
 def _run(job):
-    from governor.governed import governed_rollout
+    from plugins.rsi.governed import governed_rollout
     spec, bundle = job
     return governed_rollout(spec, bundle)
 

@@ -175,7 +175,7 @@ def test_a_blind_twin_fires_the_moment_it_arms():
 def test_a_blind_bundle_mirrors_every_rule_it_twins():
     """The held-out judgement check twins the WHOLE chain, not just its head."""
     from plugins.rsi.campaign import _ALWAYS
-    from governor.governed import Bundle, RecoverySpec, Rule
+    from plugins.rsi.governed import Bundle, RecoverySpec, Rule
     from plugins.rsi.stats.search import Trigger
 
     rules = tuple(Rule(f"g{i}", Trigger("observable.finger_gap", "gt", 0.05, 1, 10 * i, "value"),

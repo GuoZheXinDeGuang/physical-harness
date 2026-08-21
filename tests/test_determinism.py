@@ -66,7 +66,7 @@ def test_governed_episode_never_steps_a_terminated_env():
     Regression for a generation-3 campaign crash: robosuite raises
     'executing action in terminated episode' once the horizon is passed.
     """
-    from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
+    from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
     from plugins.rsi.stats.search import Trigger
 
     always = lambda i: Rule(f"g{i}", Trigger("observable.eef_z", "gt", -1e9, 1, 1),

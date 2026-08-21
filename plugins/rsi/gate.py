@@ -26,7 +26,7 @@ from math import comb
 import numpy as np
 
 from governor.env import EpisodeSpec
-from governor.governed import Bundle, governed_rollout
+from plugins.rsi.governed import Bundle, governed_rollout
 
 
 @dataclass(frozen=True, slots=True)

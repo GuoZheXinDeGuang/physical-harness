@@ -33,6 +33,11 @@ from dataclasses import dataclass
 
 from harness.features import REGISTRY, Privilege, privilege_cost
 
+#: A recovery percept at or below this sensor sd is reading ground truth, and
+#: the rule that owns it declares privilege 1. Privilege semantics live in the
+#: kernel; embodiments and workloads import it from here.
+PRIVILEGED_SENSOR_SD = 0.0
+
 
 class FeatureView(Mapping):
     """A frozen, read-attesting projection of one control step.

@@ -33,8 +33,8 @@ from pathlib import Path
 import numpy as np
 
 from governor.env import EpisodeSpec
-from governor.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger, search_triggers
 
 #: Threshold a `gt` trigger can never fail, so the twin fires the moment it arms.
