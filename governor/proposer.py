@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import time
+import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -240,5 +243,113 @@ def scripted_transport(responses: Sequence[str | dict]) -> Callable[[dict], str]
 
     def transport(brief: dict):
         return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return transport
+
+
+# --- real endpoints (round 81, M1) ------------------------------------------
+
+class TransportError(RuntimeError):
+    """The endpoint could not be reached or did not answer.
+
+    Deliberately not a ProposerError: a network blip must not be misread as a
+    model refusal that silently burns a proposal attempt. Transport faults
+    raise; only model *content* is ever returned as a string.
+    """
+
+
+def _http_json(request: urllib.request.Request, timeout: float) -> dict:
+    """POST/GET with one backoff retry, then TransportError (round 81)."""
+    for attempt in (0, 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except OSError as exc:  # URLError/HTTPError/refused/timeout all descend
+            if attempt:
+                raise TransportError(f"{request.full_url}: {exc}") from exc
+            time.sleep(0.5)
+    raise AssertionError("unreachable")
+
+
+def qwen38_transport(*, base_url: str | None = None, model: str | None = None,
+                     temperature: float = 0.0, seed: int = 0, max_tokens: int = 256,
+                     timeout: float = 30.0, api_key: str | None = None,
+                     record: Callable[[dict], None] | None = None) -> Callable[[dict], str]:
+    """A transport for the local qwen38 sglang endpoint, OpenAI chat shape.
+
+    Round 81 (M1): fills the LlmProposer seam with a real model, stdlib urllib
+    only. The model id is resolved lazily from GET /models when neither the
+    argument nor QWEN38_MODEL is set -- launch_qwen38.sh passes no
+    --served-model-name, so sglang publishes the model *path* as the id and a
+    hardcoded friendly name would 400. `record`, when given, is called with
+    every exchange, including ones parse_proposal will go on to reject --
+    round 25 keeps rejections as evidence, not noise.
+    """
+    base = (base_url or os.environ.get("QWEN38_BASE_URL",
+                                       "http://localhost:30000/v1")).rstrip("/")
+    key = api_key or os.environ.get("QWEN38_API_KEY")
+    resolved = model or os.environ.get("QWEN38_MODEL")
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    def transport(brief: dict) -> str:
+        nonlocal resolved
+        if resolved is None:
+            listing = _http_json(
+                urllib.request.Request(f"{base}/models", headers=headers), timeout)
+            resolved = listing["data"][0]["id"]
+        messages = [
+            {"role": "system",
+             "content": "Respond with ONLY a JSON object, no prose, matching this "
+                        "schema: " + json.dumps(brief["response_schema"])},
+            {"role": "user", "content": json.dumps(brief)},
+        ]
+        body = json.dumps({"model": resolved, "messages": messages,
+                           "temperature": temperature, "seed": seed,
+                           "max_tokens": max_tokens,
+                           "response_format": {"type": "json_object"}}).encode()
+        # ponytail: naive one-shot HTTP; MTP(NEXTN)+GPU kernels make temp=0
+        # non-bit-deterministic -- determinism is re-established at
+        # parse_proposal, not here.
+        reply = _http_json(urllib.request.Request(
+            f"{base}/chat/completions", data=body, headers=headers), timeout)
+        content = reply["choices"][0]["message"]["content"]
+        if record is not None:
+            record({"kind": "llm_exchange", "endpoint": base, "model": resolved,
+                    "params": {"temperature": temperature, "seed": seed,
+                               "max_tokens": max_tokens},
+                    "messages": messages, "raw_response": content,
+                    "attempt": brief.get("attempt")})
+        return content
+
+    return transport
+
+
+def naive_transport(*, record: Callable[[dict], None] | None = None) -> Callable[[dict], str]:
+    """Round 25's naive picker as a transport: actually read the brief.
+
+    Take the strongest separation, arm two steps before its peak, recover with
+    the first offered strategy. scripted_transport cannot serve this role -- it
+    replays canned text that would be wrong on a fresh seed block. This is the
+    zero-GPU reproducibility anchor the qwen38 comparison is scored against
+    (round 81).
+    """
+    def transport(brief: dict) -> str:
+        top = brief["separations"][0]
+        raw = json.dumps({
+            "feature": top["feature"], "op": "lt",
+            # ponytail: round-25 finger-gap collapse convention; the brief
+            # carries no raw series to round a threshold from.
+            "threshold": 0.005,
+            "dwell": 1, "arm_after": max(top["peak_step"] - 2, 0),
+            "reducer": top["reducer"],
+            "recovery": brief["recovery_strategies"][0],
+        })
+        if record is not None:
+            record({"kind": "llm_exchange", "endpoint": "naive",
+                    "model": "naive@round25", "messages": [],
+                    "raw_response": raw, "attempt": brief.get("attempt")})
+        return raw
 
     return transport
