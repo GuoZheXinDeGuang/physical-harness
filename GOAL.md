@@ -58,3 +58,29 @@ skill tree 手写 precondition 换成 harness 实测的 SkillRecord), go2W_Sim �
 - RSI 的边界照旧: 它优化判断(何时调用/怎么恢复/能力边界), 不发明能力。
   抬天花板的是 MSR 的新模块, 进门要过盲对照。
 - heavy sim 串行; 单机 multiprocessing 是 exec.rollouts 的第一个 provider, 不是它的定义。
+
+## 定位修正(2026-08-22 深夜, 用户裁定): physical-harness 是 agentic OS 本体
+
+zos 不是 OS, 是**驾驶舱**(HRI shell)。它的内脏逐步成为 harness 插件, 用 phase 2
+吃掉 governor 的同一套阶梯(适配器 → 变薄 → 删除, 每步带证据收口)。首回合实测支持
+这个判断: sim 工具进 zos 第一回合就翻车(run 签名不匹配 executor 的 kwargs 展开),
+根因是两个系统各有一套工具/调度/校验约定, 集成靠手写胶水——胶水永远会漏。
+模块化的正确形态是共享同一个内核的契约, 而不是两个运行时互相 shell out。
+
+**能力映射草图(待 workflow 深读细化):**
+
+| zos 内脏 | harness 缝 | 备注 |
+|---|---|---|
+| World(pose/places/objects @50Hz) | graph.scene 首个真 provider | 现在是返回 {} 的 stub |
+| brain(qwen3-vl transport) | reasoner.proposer transport | qwen38 本机 sglang 已部署 |
+| skill tree 手写 precondition/risk | graph.skill 实测 SkillRecord | heldout_judgement_established 一等字段已备 |
+| authority/gate(执行器互斥) | 特权预算的执行器侧同构 | resolve 记账思想的第三个粒度 |
+| tools(nav/manip/see) | policy.driver / 技能 provider | 每个进门过配对门禁 |
+| verify oracles | 门禁机器的在线半 | 离线配对证据 + 在线 oracle 谓词 |
+
+**M 阶梯(agentic OS 化, 与 R 阶梯并行):**
+- M0(已完成, round 80): zos 经 sim.* 工具消费 harness——胶水形态, 证明需求, 也证明胶水不行。
+- M1(=R3): reasoner 接真模型(qwen38), round-25 对比重跑。大脑先进内核。
+- M2: graph.scene 真 provider(zos World 桥) + zos 工具 precondition 改读 graph.skill。
+- M3: agentic 主循环成为 harness workload——task.planner 缝(VLM 分解产出 StageSpec 链,
+  round 78 的阶段机就是这个接口), zos 退化为薄驾驶舱。
