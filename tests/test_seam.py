@@ -21,9 +21,9 @@ import pickle
 import numpy as np
 
 from governor.env import NOMINAL_SCHEDULE, EpisodeSpec, make_env
-from plugins.policies.drivers import ScriptedDriver, make_driver
 from harness.contracts import EnvProvider, PolicyFactory, Reasoner
 from harness.registry import load_provider
+from plugins.policies.drivers import ScriptedDriver, make_driver
 
 ENV_REF = "plugins.embodiment_robosuite:provider"
 POLICY_REF = "plugins.policies:provider"

@@ -1,6 +1,7 @@
 """The reducer changes what a rule does. If it is not in the canonical form,
 the parent-freeze assertion cannot see a parent being swapped underneath it."""
 import pytest
+
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger
 

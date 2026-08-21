@@ -10,9 +10,12 @@ import pytest
 
 from harness.features import REGISTRY
 from harness.invariant import (
-    InvariantViolation, assert_privilege_budget, assert_view_reconstructable, record_view,
+    InvariantViolation,
+    assert_privilege_budget,
+    assert_view_reconstructable,
+    record_view,
 )
-from harness.percept import FeatureView, PrivilegePolicy, project
+from harness.percept import PrivilegePolicy, project
 
 OBS = {
     "robot0_gripper_qpos": np.array([0.02, -0.02]),
@@ -59,7 +62,7 @@ def test_cached_digest_would_not_catch_injection():
     v._values["privileged.object_z"] = 0.83
     assert cached != v.digest(), "live digest must move when contents move"
     # the naive check compares the cached value to itself and passes:
-    assert cached == cached
+    assert cached == cached  # noqa: PLR0124  the self-comparison IS the point
 
 
 # --- attestation: Mapping, not dict -----------------------------------------
@@ -128,8 +131,8 @@ def _worker_probe(budget):
     boundary.
     """
     import numpy as np
+
     import plugins.embodiment_robosuite.features  # noqa: F401  the real worker path
-    from harness.features import REGISTRY
     from harness.percept import PrivilegePolicy, project
     obs = {
         "robot0_gripper_qpos": np.array([0.02, -0.02]),

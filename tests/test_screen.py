@@ -1,8 +1,7 @@
 """Out-of-sample screening of trigger candidates."""
 import numpy as np
-import pytest
 
-from plugins.rsi.stats.screen import screen, _score_offline
+from plugins.rsi.stats.screen import _score_offline, screen
 from plugins.rsi.stats.search import Trigger
 
 
@@ -71,8 +70,8 @@ def test_objective_weights_are_preregistered():
     """A constant that can move the headline belongs in the content hash."""
     from plugins.rsi.campaign import Preregistration
 
-    base = dict(dev=tuple(range(10)), heldout=tuple(range(100, 110)),
-                percept_noise=0.004, task="lift", policy="scripted",
-                critic_budget=0, action_budget=0, recovery_sensor_sd=0.010,
-                max_generations=1)
+    base = {"dev": tuple(range(10)), "heldout": tuple(range(100, 110)),
+            "percept_noise": 0.004, "task": "lift", "policy": "scripted",
+            "critic_budget": 0, "action_budget": 0, "recovery_sensor_sd": 0.010,
+            "max_generations": 1}
     assert Preregistration(**base).sha() != Preregistration(**base, earliness=0.25).sha()

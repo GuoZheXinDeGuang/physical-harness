@@ -6,9 +6,19 @@ import pathlib
 
 import pytest
 
-from harness import (Bundle, ContractViolation, Definition, Kernel, MissingProvider,
-                     Mount, Patch, PrivilegeViolation, Profile, SessionLog,
-                     UnknownCapability, resolve_plan)
+from harness import (
+    Bundle,
+    ContractViolation,
+    Kernel,
+    MissingProvider,
+    Mount,
+    Patch,
+    PrivilegeViolation,
+    Profile,
+    SessionLog,
+    UnknownCapability,
+    resolve_plan,
+)
 from harness.definitions import CAPABILITIES
 
 

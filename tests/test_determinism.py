@@ -9,8 +9,8 @@ import hashlib
 import numpy as np
 import pytest
 
-from harness.spec import EpisodeSpec
 from governor.env import rollout
+from harness.spec import EpisodeSpec
 
 
 def _digest(result) -> str:
@@ -47,6 +47,7 @@ def test_search_handles_variable_length_governed_traces():
     real campaign: np.stack over ragged traces.
     """
     import numpy as np
+
     from plugins.rsi.stats.search import align, divergence_profile, earliest_divergence
 
     short = {"observable.finger_gap": np.full(100, 0.04)}

@@ -10,8 +10,13 @@ import pytest
 
 import plugins.embodiment_robosuite.features  # noqa: F401  registry population (post-inversion)
 from governor.proposer import (
-    LlmProposer, ProposerError, SearchProposer, build_brief, catalog_for_prompt,
-    parse_proposal, scripted_transport,
+    LlmProposer,
+    ProposerError,
+    SearchProposer,
+    build_brief,
+    catalog_for_prompt,
+    parse_proposal,
+    scripted_transport,
 )
 from plugins.rsi.repertoire import names as _strategy_names
 
@@ -123,8 +128,8 @@ def test_brief_carries_statistics_not_episodes():
 def test_llm_proposer_retries_past_a_refusal_then_succeeds():
     traces, labels = _traces()
     p = LlmProposer(transport=scripted_transport([
-        '{"feature": "observable.does_not_exist", "op": "lt", "threshold": 0.1,'
-        ' "dwell": 1, "arm_after": 10, "reducer": "value", "recovery": "regrasp"}',
+        ('{"feature": "observable.does_not_exist", "op": "lt", "threshold": 0.1,'
+         ' "dwell": 1, "arm_after": 10, "reducer": "value", "recovery": "regrasp"}'),
         VALID,
     ]))
     rule = p.propose(traces, labels, generation=1, privilege_budget=0,

@@ -1,16 +1,16 @@
 """Durable log, offline audit, and shadow-replay fidelity."""
 import json
 import shutil
-import zlib
 import tempfile
+import zlib
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from plugins.rsi.audit import audit_log, rebuild_views, shadow_replay
-from harness.spec import EpisodeSpec
 from harness.episode_log import EpisodeLog, chain_start, chain_step, write_episode
+from harness.spec import EpisodeSpec
+from plugins.rsi.audit import audit_log, rebuild_views, shadow_replay
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.rsi.stats.search import Trigger
 
@@ -47,7 +47,7 @@ def test_audit_verifies_every_episode(logged):
 
 def test_corrupting_one_value_is_caught(logged):
     log, _ = logged
-    rec = [r for r in log.episodes() if "block" in r][0]
+    rec = next(r for r in log.episodes() if "block" in r)
     blob = ROOT / "blocks" / f"{rec['block']}.json.z"
     raw = zlib.decompress(blob.read_bytes())
     payload = json.loads(raw)
@@ -64,7 +64,7 @@ def test_corrupting_one_value_is_caught(logged):
 
 def test_rebuilt_views_carry_zero_based_steps(logged):
     log, _ = logged
-    rec = [r for r in log.episodes() if "block" in r][0]
+    rec = next(r for r in log.episodes() if "block" in r)
     views = rebuild_views(log.get_block(rec["block"]), rec["seed"])
     assert views[0].step == 0, "trace index and view step must share one convention"
     assert views[-1].step == len(views) - 1

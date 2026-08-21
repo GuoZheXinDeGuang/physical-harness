@@ -7,7 +7,6 @@ declarative.
 
 import ast
 import pathlib
-
 import sys
 
 #: Transitional L0 allowance: plugins may import the legacy governor library

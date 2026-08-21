@@ -8,10 +8,9 @@ import numpy as np
 import pytest
 
 from harness.spec import EpisodeSpec
-from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.policies.drivers import ClonedDriver, ScriptedDriver
+from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.rsi.stats.search import REDUCERS, Trigger, reduce_series, search_triggers
-
 
 # --- running reductions -----------------------------------------------------
 
@@ -114,8 +113,8 @@ def test_recovery_steps_do_not_advance_the_policy_clock():
 # --- recovery repertoire ----------------------------------------------------
 
 def test_every_strategy_resolves_to_offset_steps():
-    from plugins.rsi.repertoire import REPERTOIRE
     from harness.spec import PHASE_HEIGHT
+    from plugins.rsi.repertoire import REPERTOIRE
     for s in REPERTOIRE:
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:
@@ -149,6 +148,7 @@ def test_servo_strategy_is_declared_as_feedback():
 def test_servo_primitives_read_only_proprioception():
     """The whole point: contact and finger motion are things a real robot feels."""
     import inspect
+
     from plugins.rsi import servo
     src = inspect.getsource(servo)
     for privileged in ("cube_pos", "cubeA_pos", "Can_pos", "object_z", "grasp_error"):
@@ -160,6 +160,7 @@ def test_servo_primitives_read_only_proprioception():
 def test_recovery_actor_runs_a_mixed_program():
     """Fixed and servo segments must compose in one program."""
     import numpy as np
+
     from plugins.rsi.recovery import RecoveryActor
     from plugins.rsi.repertoire import strategy
 
@@ -197,6 +198,7 @@ def test_earliness_weight_is_zero_by_measurement():
 def test_earliness_weight_changes_which_trigger_wins():
     """If the weight could not change the pick there would be nothing to calibrate."""
     import numpy as np
+
     from plugins.rsi.stats.search import search_triggers
 
     traces, labels = [], []
@@ -225,6 +227,7 @@ def test_zero_fp_penalty_admits_the_degenerate_fire_on_everything_trigger():
     AND false-positive rate 1.00 -- exactly round 4's blind-firing control, which
     scored -4.0pp. Any positive value excludes it."""
     import numpy as np
+
     from plugins.rsi.stats.search import search_triggers
 
     traces, labels = [], []
