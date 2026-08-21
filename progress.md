@@ -2869,3 +2869,36 @@ frontier 顺位不变: beam gen-1 回滚 > skill 路径可迁移 > ruff pin。
 2. 阶段归因产物接线(stages≠None 时写 store)。
 3. 然后回到 GOAL v3 主线: R3 qwen38 接 reasoner transport(用户已在本机部署
    sglang 服务)重跑 round-25 对比 —— 长程 Stack 现在是它的第二个试验场。
+
+## Round 80 - 2026-08-22 - 一扇窗和一根胶水管: zos 消费 harness, 以及为什么胶水不是答案
+
+### 做成了什么
+
+1. **watch_stack.py(1e9b6a1)**: 渲染 env provider 跑真 governed_rollout(零逻辑复制),
+   GUI 实放: seed 90000 素跑 177 步整完成堆叠; seed 90016 critic 第 88 步开火,
+   regrasp 救回(285 步)。--scan 找营救种子(90000-90029 段: 10 失败, 1 救回,
+   与 held-out 修复率 ~24% 一致)。
+2. **zos sim.* 工具(zos 2df18dd..1b23bf1)**: sim_test/sim_watch 挂 skill tree "sim" 枝
+   (risk=read), subprocess 到 harness venv 零新依赖, harness 缺席 precondition 拒绝。
+   zos 57 测试全绿, 端到端验证通过。
+3. **GOAL 定位修正(ccb892c, 用户裁定)**: physical-harness 是 agentic OS 本体,
+   zos 是驾驶舱; M 阶梯(M0 胶水已完成/M1 大脑/M2 场景+技能/M3 规划缝)入 GOAL。
+   M 阶梯拆解 workflow 已发(4 规划者: zos 解剖/M1/M2/M3)。
+
+### 什么没成(重要, 两次翻车都是同一类)
+
+- **首个真实回合就崩**: zos executor 是 tool.run(ctx, **args) kwargs 展开,
+  sim.py 首版 lambda 收位置 dict。模块自检当时全绿——因为自检从没按调用点的
+  形状打过。修复后自检里加了 executor 形状的调用断言。
+- **修复提交把红测试推了出去**: 自检的 mock-by-string 目标在 pytest runpy 下解析到
+  pytest.__main__。只看了模块自检没等全套跑完就 push。换 globals() 直换 + 全套绿后重推。
+- 两课合一: **自检的价值取决于它模拟调用点的保真度**; push 前必须等全套 summary,
+  模块级绿不是仓库级绿。这正是"验证要对着运行时"的工具版。
+- 战略读数: 胶水集成第一回合就漏, 支持用户"harness 才是 OS"的裁定——两个运行时
+  各有一套工具/调度/校验约定, 互相 shell out 永远在对齐税上漏水。共享同一内核契约
+  才是模块化(M 阶梯的存在理由)。
+
+### 下一轮种子
+
+M 阶梯 workflow 施工图回来后: M1(qwen38 大脑缝, =R3)最先——大脑先进内核。
+R2 收尾(held-out 复现 ×2 + 阶段归因产物)与 M1 可并行排。
