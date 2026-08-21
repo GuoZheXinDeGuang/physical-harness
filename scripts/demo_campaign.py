@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from governor.campaign import Preregistration
+from plugins.rsi.campaign import Preregistration
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog

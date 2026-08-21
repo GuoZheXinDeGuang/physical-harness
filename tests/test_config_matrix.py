@@ -104,7 +104,7 @@ def test_matrix_plans_covers_the_full_grid_with_one_shared_plan():
 
 
 def test_matrix_plan_overrides_are_compatible_with_preregistration():
-    from governor.campaign import Preregistration
+    from plugins.rsi.campaign import Preregistration
 
     plans = matrix_plans()
     shas = set()

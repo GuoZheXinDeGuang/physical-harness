@@ -26,7 +26,7 @@ from typing import Callable, Protocol, Sequence
 from governor.features import REGISTRY, Privilege
 from governor.governed import RecoverySpec, Rule
 from governor.repertoire import names as strategy_names
-from governor.search import REDUCERS, Trigger, search_triggers
+from plugins.rsi.stats.search import REDUCERS, Trigger, search_triggers
 
 
 class ProposerError(ValueError):
@@ -86,7 +86,7 @@ def build_brief(traces, labels, *, generation: int, privilege_budget: int) -> di
     providers are comparable, and it cannot smuggle in a privileged reading.
     """
     import numpy as np
-    from governor.search import divergence_profile, reduce_series
+    from plugins.rsi.stats.search import divergence_profile, reduce_series
 
     # Only what the traces actually carry: a trace holds exactly the features the
     # view held, which is itself budget-limited. Iterating the whole registry

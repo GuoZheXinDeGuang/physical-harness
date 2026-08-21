@@ -2,8 +2,8 @@
 import numpy as np
 import pytest
 
-from governor.screen import screen, _score_offline
-from governor.search import Trigger
+from plugins.rsi.stats.screen import screen, _score_offline
+from plugins.rsi.stats.search import Trigger
 
 
 def _trace(gap_series):
@@ -69,7 +69,7 @@ def test_screen_rescores_under_the_objective_it_is_given():
 
 def test_objective_weights_are_preregistered():
     """A constant that can move the headline belongs in the content hash."""
-    from governor.campaign import Preregistration
+    from plugins.rsi.campaign import Preregistration
 
     base = dict(dev=tuple(range(10)), heldout=tuple(range(100, 110)),
                 percept_noise=0.004, task="lift", policy="scripted",

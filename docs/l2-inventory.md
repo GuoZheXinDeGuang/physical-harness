@@ -10,9 +10,9 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 | env.py | plugins/embodiment_robosuite(env 构建+FrozenPolicy+任务表), EpisodeSpec 上提进 harness | **高: EpisodeSpec 是全系统的通用货币**, 上提时字段序/默认值/pickle 形态都不能动 |
 | policy.py | plugins/policies(驱动器+交还契约) | 中: RecoveryActor 与 governed 的耦合 |
 | governed.py | plugins/rsi(受治理 rollout 是 RSI workload 的核心) | 高: 与 features/percept/policy 三向耦合, 最后动 |
-| gate.py | plugins/rsi/stats(与 campaign 同 rung 移) | 低 |
+| gate.py / campaign.py | **已移(round 64, rung B)**, governor 留转发壳; 第一方调用点全部改指新家 | - |
 | power.py / search.py / screen.py | **已移(round 63, rung A)**, governor 留 PEP 562 转发壳 | - |
-| campaign.py | plugins/rsi(生命周期) | 中: CampaignStore 可与 harness artifacts 合一 |
+| (campaign 已并入上行; CampaignStore 与 harness artifacts 合一另立 rung, 动存档格式前先定兼容策略) | | |
 | beam.py / recovery_search.py / repertoire.py / servo.py / bc.py / demos.py / proposer.py / parallel.py | plugins/rsi 或 plugins/policies 按归属 | 低 |
 
 顺序建议(每步 parity): 统计四件套 -> episode_log/audit -> campaign -> policy ->

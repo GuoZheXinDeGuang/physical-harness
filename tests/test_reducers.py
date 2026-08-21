@@ -10,7 +10,7 @@ import pytest
 from governor.env import EpisodeSpec
 from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from governor.policy import ClonedDriver, ScriptedDriver
-from governor.search import REDUCERS, Trigger, reduce_series, search_triggers
+from plugins.rsi.stats.search import REDUCERS, Trigger, reduce_series, search_triggers
 
 
 # --- running reductions -----------------------------------------------------
@@ -190,14 +190,14 @@ def test_earliness_weight_is_zero_by_measurement():
     """Swept 0/0.1/0.25/0.5: W=0 wins the selection block by 7.4pp and held-out
     by 5.0pp. The positive weight assumed a repair must fit in the episode's
     remaining steps, which stopped being true when recovery got its own clock."""
-    from governor.search import DEFAULT_EARLINESS
+    from plugins.rsi.stats.search import DEFAULT_EARLINESS
     assert DEFAULT_EARLINESS == 0.0
 
 
 def test_earliness_weight_changes_which_trigger_wins():
     """If the weight could not change the pick there would be nothing to calibrate."""
     import numpy as np
-    from governor.search import search_triggers
+    from plugins.rsi.stats.search import search_triggers
 
     traces, labels = [], []
     for i in range(30):
@@ -225,7 +225,7 @@ def test_zero_fp_penalty_admits_the_degenerate_fire_on_everything_trigger():
     AND false-positive rate 1.00 -- exactly round 4's blind-firing control, which
     scored -4.0pp. Any positive value excludes it."""
     import numpy as np
-    from governor.search import search_triggers
+    from plugins.rsi.stats.search import search_triggers
 
     traces, labels = [], []
     for i in range(30):
@@ -247,7 +247,7 @@ def test_trigger_rejects_an_unknown_reducer_at_construction():
     """A typo must fail where it is written, not mid-episode."""
     import pytest
 
-    from governor.search import Trigger
+    from plugins.rsi.stats.search import Trigger
 
     with pytest.raises(ValueError, match="unknown reducer"):
         Trigger("observable.finger_gap", "gt", 0.05, 1, 0, "runing_min")

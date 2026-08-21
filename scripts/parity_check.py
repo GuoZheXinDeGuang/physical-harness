@@ -39,7 +39,7 @@ from typing import Any
 # Runnable as `python scripts/parity_check.py ...` without PYTHONPATH gymnastics.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from governor.campaign import Preregistration
+from plugins.rsi.campaign import Preregistration
 
 #: Preregistration fields whose canonical (json-round-tripped) form is a list
 #: but whose dataclass field is a tuple; every other field is json-stable.

@@ -46,7 +46,7 @@ def test_search_handles_variable_length_governed_traces():
     real campaign: np.stack over ragged traces.
     """
     import numpy as np
-    from governor.search import align, divergence_profile, earliest_divergence
+    from plugins.rsi.stats.search import align, divergence_profile, earliest_divergence
 
     short = {"observable.finger_gap": np.full(100, 0.04)}
     long_ = {"observable.finger_gap": np.concatenate([np.full(100, 0.001), np.full(112, 0.001)])}
@@ -67,7 +67,7 @@ def test_governed_episode_never_steps_a_terminated_env():
     'executing action in terminated episode' once the horizon is passed.
     """
     from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
-    from governor.search import Trigger
+    from plugins.rsi.stats.search import Trigger
 
     always = lambda i: Rule(f"g{i}", Trigger("observable.eef_z", "gt", -1e9, 1, 1),
                             RecoverySpec(sensor_sd=0.02))

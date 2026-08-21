@@ -25,11 +25,11 @@ from typing import Sequence
 
 import numpy as np
 
-from governor.campaign import CampaignStore, Preregistration, _specs, propose_rule, sha_json
+from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, propose_rule, sha_json
 from governor.env import EpisodeSpec
-from governor.gate import PairedResult, ablation_curve, paired_gate
+from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
 from governor.governed import Bundle, RecoverySpec, Rule
-from governor.search import search_triggers
+from plugins.rsi.stats.search import search_triggers
 
 
 @dataclass
@@ -202,7 +202,7 @@ def _size_slice(branch: Branch, reservoir, prereg: Preregistration, gen: int):
         return reservoir[:SEED_SLICE]
     if not prereg.scale_dev_by_power:
         return reservoir[:SEED_SLICE]
-    from governor.power import plan_generation
+    from plugins.rsi.stats.power import plan_generation
 
     rate = branch.residual_rate if branch.residual_rate is not None else 0.5
     plan = plan_generation(branch.depth + 1, round(rate * len(reservoir)), len(reservoir),

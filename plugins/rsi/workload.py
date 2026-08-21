@@ -26,8 +26,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from governor import campaign
-from governor.campaign import CampaignStore, Preregistration
+from plugins.rsi import campaign
+from plugins.rsi.campaign import CampaignStore, Preregistration
 from harness.kernel import Kernel
 
 #: The one SkillRecord "kind" this workload publishes. A fixed vocabulary word

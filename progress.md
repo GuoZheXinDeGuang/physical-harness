@@ -2394,3 +2394,31 @@ git mv + 重写同名路径后 stash pop 冲突(储藏的 untracked 文件与工
 
 L2 rung B: gate + campaign 同移(含 CampaignStore 与 harness artifacts 合一的评估),
 _run 的 pickle 路径随模块名变, spawn 测试要跟。
+
+## Round 64 - 2026-08-21 - L2 rung B: gate + campaign 入插件; 壳的一个真险当场兑现
+
+### rung B
+
+gate.py / campaign.py 移入 plugins/rsi, governor 留 PEP 562 壳。
+campaign 内部 import 全部改指插件兄弟(stats 三件套直连, 不过壳)。
+**壳的静默风险当场兑现**: 测试的 monkeypatch 打在壳模块上, 补丁没落到
+workload 真正调用的 plugins.rsi.campaign -> 真 run_campaign 带着 tests.fakes ref
+进 Pool -> ModuleNotFoundError。9 红全一个根因。
+处置: 不止修测试 -- **第一方调用点(scripts/profiles/tests/reasoner/governor 内部)
+全部搬离壳**, 壳只服务存档与外部引用。sed 扫 14 个文件, 逐一核对。
+
+### VERIFY
+
+164 passed(summary 行) + 脚本 parity 四组 PASS。
+_run 的 pickle 路径随模块名迁移在真 Pool 里验证过(parity 本身就是 spawn 全链)。
+
+### 教训
+
+**转发壳会把"打错目标的补丁"从报错变成静默失效** -- 壳期越短越好,
+第一方代码一步搬完, 壳只留给不可改的存档路径。
+
+### 下一轮种子
+
+L2 剩余: episode_log/audit 上提进 harness -> policy 入 plugins/policies ->
+features 反转(registry 上提) -> env/EpisodeSpec 上提(单独 rung) -> governed 收尾。
+下一 rung: episode_log + audit 上提(账本本来就是内核职能, 链原语已合一)。

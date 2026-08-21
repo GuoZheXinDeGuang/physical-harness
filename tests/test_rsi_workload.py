@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from governor import campaign
-from governor.campaign import CampaignStore, Preregistration
+from plugins.rsi import campaign
+from plugins.rsi.campaign import CampaignStore, Preregistration
 from harness.config import sha_json
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog

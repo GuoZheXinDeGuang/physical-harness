@@ -153,8 +153,8 @@ def test_a_blind_twin_fires_the_moment_it_arms():
     """The judgement gate depends on the twin actually being unconditional."""
     import numpy as np
 
-    from governor.campaign import _ALWAYS
-    from governor.search import Trigger
+    from plugins.rsi.campaign import _ALWAYS
+    from plugins.rsi.stats.search import Trigger
 
     twin = Trigger("observable.finger_gap", "gt", -_ALWAYS, 1, 5, "value")
     trace = {"observable.finger_gap": np.zeros(20)}
@@ -165,9 +165,9 @@ def test_a_blind_twin_fires_the_moment_it_arms():
 
 def test_a_blind_bundle_mirrors_every_rule_it_twins():
     """The held-out judgement check twins the WHOLE chain, not just its head."""
-    from governor.campaign import _ALWAYS
+    from plugins.rsi.campaign import _ALWAYS
     from governor.governed import Bundle, RecoverySpec, Rule
-    from governor.search import Trigger
+    from plugins.rsi.stats.search import Trigger
 
     rules = tuple(Rule(f"g{i}", Trigger("observable.finger_gap", "gt", 0.05, 1, 10 * i, "value"),
                        RecoverySpec(sensor_sd=0.01)) for i in (1, 2))

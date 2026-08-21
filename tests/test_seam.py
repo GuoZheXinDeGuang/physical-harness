@@ -80,7 +80,7 @@ def test_search_reasoner_propose_thin_adapter_round_trips():
     a brief in, a plain-Mapping proposal out, matching governor.proposer's
     own return shape (a Rule or None) collapsed through Rule.canonical().
     """
-    from governor.campaign import Preregistration
+    from plugins.rsi.campaign import Preregistration
 
     prereg = Preregistration(dev=tuple(range(20)), heldout=tuple(range(20, 30)),
                              percept_noise=0.02, critic_budget=0, action_budget=0,
@@ -143,7 +143,7 @@ def test_preregistration_provider_fields_are_appended_at_the_end():
     """Same guard EpisodeSpec has: the refs must stay last, defaulted."""
     import dataclasses as dc
 
-    from governor.campaign import Preregistration
+    from plugins.rsi.campaign import Preregistration
 
     names = [f.name for f in dc.fields(Preregistration)]
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]

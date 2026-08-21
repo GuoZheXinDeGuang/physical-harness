@@ -1,7 +1,7 @@
 """Per-generation sample sizing."""
 import pytest
 
-from governor.power import discordant_needed, mcnemar_p, plan_generation, power_at
+from plugins.rsi.stats.power import discordant_needed, mcnemar_p, plan_generation, power_at
 
 
 def test_mcnemar_matches_the_round_17_case():
@@ -61,7 +61,7 @@ def test_a_low_measured_yield_sizes_the_next_generation_larger():
     Two generations with identical residual rates must be sized differently
     when the campaign has learned that its recoveries change few outcomes.
     """
-    from governor.power import plan_generation
+    from plugins.rsi.stats.power import plan_generation
 
     optimistic = plan_generation(2, 150, 400, 4000, discordance_yield=0.70)
     measured = plan_generation(2, 150, 400, 4000, discordance_yield=0.26)
@@ -79,7 +79,7 @@ def test_screening_doubles_the_seeds_a_generation_needs():
     experiment from the one the plan claims -- the proposer learns from half
     the evidence.
     """
-    from governor.power import plan_generation
+    from plugins.rsi.stats.power import plan_generation
 
     plain = plan_generation(2, 150, 400, 4000, discordance_yield=0.26)
     screened = plan_generation(2, 150, 400, 4000, discordance_yield=0.26,

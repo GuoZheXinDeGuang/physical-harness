@@ -11,7 +11,7 @@ from governor.audit import audit_log, rebuild_views, shadow_replay
 from governor.env import EpisodeSpec
 from governor.episode_log import EpisodeLog, chain_start, chain_step, write_episode
 from governor.governed import Bundle, RecoverySpec, Rule, governed_rollout
-from governor.search import Trigger
+from plugins.rsi.stats.search import Trigger
 
 ROOT = Path("runs/_test_log")
 TRIG = Trigger("observable.gripper_effort", "gt", 0.050879, 2, 59)

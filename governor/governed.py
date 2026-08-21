@@ -35,7 +35,7 @@ from governor.invariant import (
 )
 from governor.episode_log import chain_start, chain_step
 from governor.percept import FeatureView, PrivilegePolicy, project
-from governor.search import Trigger
+from plugins.rsi.stats.search import Trigger
 
 #: A perfect percept is ground truth, so it costs privilege; a noisy one does not.
 PRIVILEGED_SENSOR_SD = 0.0

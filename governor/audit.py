@@ -25,7 +25,7 @@ import numpy as np
 
 from governor.episode_log import EpisodeLog, chain_start, chain_step
 from governor.percept import FeatureView
-from governor.search import Trigger
+from plugins.rsi.stats.search import Trigger
 
 
 @dataclass(frozen=True, slots=True)
