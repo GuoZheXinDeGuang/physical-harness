@@ -189,7 +189,7 @@ def test_recovery_actor_honours_the_grasp_height_offset():
     """
     import numpy as np
 
-    from plugins.policies.drivers import RecoveryActor
+    from plugins.rsi.recovery import RecoveryActor
 
     target = np.array([0.0, 0.0, 0.82])
     obs = {"robot0_eef_pos": np.array([0.0, 0.0, 0.9])}

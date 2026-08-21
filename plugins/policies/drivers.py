@@ -100,7 +100,7 @@ class ClonedDriver:
     HORIZON = 100
 
     def __init__(self, spec: EpisodeSpec, weights: Path) -> None:
-        from governor.bc import MLPPolicy
+        from plugins.policies.bc import MLPPolicy
 
         self.spec = spec
         self.net = MLPPolicy.load(Path(weights))
@@ -111,7 +111,7 @@ class ClonedDriver:
         return self.percept.observe_once(obs)
 
     def act(self, obs) -> np.ndarray:
-        from governor.bc import encode
+        from plugins.policies.bc import encode
 
         action = self.net.act(encode(obs, self.percept.target, self.k / self.HORIZON))
         self.k += 1
@@ -150,71 +150,11 @@ class ClonedDriver:
         return f"cloned@{self.net.sha()[:12]}"
 
 
-class RecoveryActor:
-    """Scripted repair that owns control for the length of its program.
-
-    A program is a sequence of SEGMENTS. A fixed segment replays a phase for a
-    set number of steps; a servo segment runs a closed-loop primitive from
-    :mod:`governor.servo` and decides its own length from proprioception. Mixing
-    them is the point: the approach can stay open-loop while the part that
-    actually has to make contact stops guessing at an estimated height.
-    """
-
-    def __init__(self, program, target: np.ndarray, height_offset: float = 0.0) -> None:
-        from governor.servo import make as make_servo
-
-        self.target = target
-        #: Round 61: recovery goals take the same per-embodiment vertical
-        #: correction the policy does. Without it the Sawyer campaign's
-        #: candidate judged perfectly (+20.7pp against its blind twin) and
-        #: repaired nothing (0 fixed): the regrasp closed 1cm above the cube
-        #: every single time. Detection transferred; repair was Panda-tuned.
-        self.height_offset = height_offset
-        self.segments: list = []
-        for step in program:
-            kind = step[0]
-            if kind.startswith("servo_"):
-                _k, budget = step[0], step[1]
-                kw = {"max_steps": budget}
-                if kind == "servo_descend":
-                    kw["target_xy"] = np.asarray(target)[:2]
-                if kind == "servo_probe":
-                    kw["centre"] = np.asarray(target)
-                self.segments.append(make_servo(kind, **kw))
-            else:
-                name, dur, dx, dy = step
-                self.segments.append([(name, dx, dy)] * dur)
-        self._i = 0
-
-    def _current(self):
-        while self._i < len(self.segments):
-            seg = self.segments[self._i]
-            if isinstance(seg, list):
-                if seg:
-                    return seg
-            elif not seg.done:
-                return seg
-            self._i += 1
-        return None
-
-    def act(self, obs) -> np.ndarray:
-        seg = self._current()
-        if isinstance(seg, list):
-            name, dx, dy = seg.pop(0)
-            height = PHASE_HEIGHT[name]
-            if name in ("descend", "close"):
-                height += self.height_offset
-            goal = np.array([self.target[0] + dx, self.target[1] + dy,
-                             self.target[2] + height])
-            delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * 8.0, -1, 1)
-            grip = 1.0 if name in ("close", "lift") else -1.0
-            return np.array([*delta, 0.0, 0.0, 0.0, grip])
-        return seg.act(obs)
-
-    @property
-    def done(self) -> bool:
-        return self._current() is None
-
+def _default_make_driver(spec: EpisodeSpec) -> PolicyDriver:
+    """Resolve the spec's frozen policy."""
+    if spec.policy in (None, "", "scripted"):
+        return ScriptedDriver(spec)
+    return ClonedDriver(spec, Path(spec.policy))
 
 def make_driver(spec: EpisodeSpec) -> PolicyDriver:
     """Resolve the spec's frozen policy driver.
@@ -231,10 +171,3 @@ def make_driver(spec: EpisodeSpec) -> PolicyDriver:
         provider = load_provider(ref)
         return provider.make_driver(spec)
     return _default_make_driver(spec)
-
-
-def _default_make_driver(spec: EpisodeSpec) -> PolicyDriver:
-    """Resolve the spec's frozen policy."""
-    if spec.policy in (None, "", "scripted"):
-        return ScriptedDriver(spec)
-    return ClonedDriver(spec, Path(spec.policy))

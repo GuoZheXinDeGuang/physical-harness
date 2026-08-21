@@ -13,7 +13,9 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 | gate.py / campaign.py | **已移(round 64, rung B)**, governor 留转发壳; 第一方调用点全部改指新家 | - |
 | power.py / search.py / screen.py | **已移(round 63, rung A)**, governor 留 PEP 562 转发壳 | - |
 | (campaign 已并入上行; CampaignStore 与 harness artifacts 合一另立 rung, 动存档格式前先定兼容策略) | | |
-| beam.py / recovery_search.py / repertoire.py / servo.py / bc.py / demos.py / proposer.py / parallel.py | plugins/rsi 或 plugins/policies 按归属 | 低 |
+| servo / repertoire / recovery_search / beam / parallel + RecoveryActor | **已移(round 67, rung E)** -> plugins/rsi(干预机构归 workload) | - |
+| bc / demos | **已移(round 67, rung E)** -> plugins/policies(策略训练管线) | - |
+| proposer.py | **退回 governor(有据)**: 同时被 reasoner 落点与 rsi 校验共享, 直接分家会造成插件互 import; 离开 governor 的前置条件是 brief 自带策略词表的重构 | 中 |
 
 顺序建议(每步 parity): 统计四件套 -> episode_log/audit -> campaign -> policy ->
 features 反转(含 registry 上提) -> env/EpisodeSpec 上提 -> governed 收尾 -> 删空壳。

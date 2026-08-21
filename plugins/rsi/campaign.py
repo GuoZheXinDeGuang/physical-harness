@@ -290,7 +290,7 @@ def run_campaign(
 
         # Residual failures under the CURRENT bundle are the target population.
         from plugins.rsi.gate import _run
-        from governor.parallel import default_executor
+        from plugins.rsi.parallel import default_executor
         cur = (executor or default_executor()).map(
             _run, [(s, bundle if bundle.rules else None) for s in dev_specs],
             workers=workers)
@@ -425,7 +425,7 @@ def _maybe_search_recovery(rule: Rule, parent: Bundle, dev_specs, prereg: Prereg
     methodology exists to prevent, so the searched program has to earn its place
     against the hand-written one on the same paired test.
     """
-    from governor.recovery_search import program_of, search_recovery
+    from plugins.rsi.recovery_search import program_of, search_recovery
 
     # The recovery gate must not include the seeds the recovery was searched on.
     # It did until round 8, and the consequence was measurable: the same searched

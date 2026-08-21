@@ -2461,3 +2461,34 @@ servo / repertoire / recovery_search / beam / parallel(按归属分流) + 6 个�
 
 rung E: bc + demos + servo + repertoire + recovery_search + beam + proposer + parallel
 一次分流(低耦合杂项批量走), 然后只剩 features/percept/invariant/env/governed 五件硬骨头。
+
+## Round 67 - 2026-08-21 - L2 rung E: 杂项批量分流; 边界测试两次立功
+
+### 归属决策(先于搬家)
+
+RecoveryActor / servo / repertoire / recovery_search / beam / parallel -> **plugins/rsi**:
+恢复是 critic 触发的干预机构, 是 workload 的那一半; drivers 只留名义行为。
+交还契约在运行时画的那条线, 现在也是插件边界。
+bc / demos -> **plugins/policies**(策略训练管线)。
+RecoveryActor 从 drivers.py 抽出时切多了(把后面的 make_driver 一起带走), 收集错误当场修。
+
+### 边界测试两次立功(它存在的意义)
+
+1. policies/demos -> rsi.parallel: 我的批量 sweep 自己制造的跨插件 import,
+   被测试抓住; demos 改用 harness.executor 直连。
+2. reasoner -> rsi.proposer: **暴露真设计问题** -- proposer 同时被 layer-1 落点(适配)
+   与 rsi(campaign 校验)共享, 硬分家怎么放都违规。
+   处置: proposer **有据退回 governor**(受认可的共享过渡层),
+   离开条件写进盘点(brief 自带策略词表, 校验不再 import repertoire)。
+   **"搬不动"本身是架构信息: 它标出了下一个该重构的耦合。**
+
+### VERIFY
+
+164 passed + 脚本 parity 四组 PASS。
+governor/ 现存: features / percept / invariant / env / governed(五件硬骨头)
++ proposer(有据滞留) + 15 个壳。
+
+### 下一轮种子
+
+五件硬骨头开工前先做一次 Review 轮(rung B-E 连搬四轮, 该对抗复查+清点壳的健康度),
+然后 features/percept/invariant 上提(registry 反转, 盘点里的"中"难点)。

@@ -29,7 +29,8 @@ from typing import Sequence
 import numpy as np
 
 from governor.env import EpisodeSpec, lifted, make_env, object_key
-from plugins.policies.drivers import RecoveryActor, make_driver
+from plugins.policies.drivers import make_driver
+from plugins.rsi.recovery import RecoveryActor
 from governor.invariant import (
     assert_privilege_budget, assert_view_reconstructable, record_view,
 )
@@ -61,7 +62,7 @@ class RecoverySpec:
 
     def steps(self):
         """Resolve to (phase, duration, dx, dy) steps."""
-        from governor.repertoire import strategy
+        from plugins.rsi.repertoire import strategy
 
         if self.program is not None:
             return tuple((n, d, 0.0, 0.0) for n, d in self.program)

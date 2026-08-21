@@ -77,7 +77,7 @@ def paired_gate(
     attributable to the single rule it appended -- the atomic-increment
     discipline is only meaningful if the comparison is against the parent.
     """
-    from governor.parallel import default_executor
+    from plugins.rsi.parallel import default_executor
 
     jobs = [(s, baseline) for s in specs] + [(s, bundle) for s in specs]
     out = (executor or default_executor()).map(_run, jobs, workers=workers)

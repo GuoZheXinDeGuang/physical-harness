@@ -114,7 +114,7 @@ def test_recovery_steps_do_not_advance_the_policy_clock():
 # --- recovery repertoire ----------------------------------------------------
 
 def test_every_strategy_resolves_to_offset_steps():
-    from governor.repertoire import REPERTOIRE
+    from plugins.rsi.repertoire import REPERTOIRE
     from governor.env import PHASE_HEIGHT
     for s in REPERTOIRE:
         assert s.steps, f"{s.name} has no steps"
@@ -128,7 +128,7 @@ def test_every_strategy_resolves_to_offset_steps():
 
 
 def test_unknown_strategy_is_rejected():
-    from governor.repertoire import strategy
+    from plugins.rsi.repertoire import strategy
     with pytest.raises(KeyError, match="unknown recovery strategy"):
         strategy("teleport")
 
@@ -140,7 +140,7 @@ def test_explicit_program_overrides_the_named_strategy():
 
 def test_servo_strategy_is_declared_as_feedback():
     """A feedback segment decides its own length, so `length` is an upper bound."""
-    from governor.repertoire import strategy
+    from plugins.rsi.repertoire import strategy
     servo = strategy("servo_regrasp")
     assert servo.uses_feedback
     assert not strategy("regrasp").uses_feedback
@@ -160,8 +160,8 @@ def test_servo_primitives_read_only_proprioception():
 def test_recovery_actor_runs_a_mixed_program():
     """Fixed and servo segments must compose in one program."""
     import numpy as np
-    from plugins.policies.drivers import RecoveryActor
-    from governor.repertoire import strategy
+    from plugins.rsi.recovery import RecoveryActor
+    from plugins.rsi.repertoire import strategy
 
     actor = RecoveryActor(strategy("servo_regrasp").steps, np.array([0.0, 0.0, 0.83]))
     obs = {"robot0_eef_pos": np.array([0.0, 0.0, 1.0]),
@@ -178,7 +178,7 @@ def test_recovery_actor_runs_a_mixed_program():
 
 def test_strategy_choice_changes_behaviour():
     """A repertoire whose members behave identically would be decoration."""
-    from governor.repertoire import strategy
+    from plugins.rsi.repertoire import strategy
     assert strategy("settle").steps != strategy("regrasp").steps
     assert strategy("lateral").steps != strategy("regrasp").steps
     assert any(dx != 0.0 for _n, _d, dx, _dy in strategy("lateral").steps)

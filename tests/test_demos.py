@@ -1,7 +1,7 @@
 """The demonstration pipeline is part of the artefact, not a scratch script."""
 import numpy as np
 
-from governor.demos import collect_one
+from plugins.policies.demos import collect_one
 
 
 def test_a_demonstration_is_reproducible_from_its_seed():
@@ -33,7 +33,7 @@ def test_collect_one_threads_the_env_provider_ref():
     embodiment. Legacy 4-tuple args stay valid (byte-identical default path)."""
     import numpy as np
 
-    from governor.demos import collect_one
+    from plugins.policies.demos import collect_one
 
     legacy = collect_one((20000, 0.15, "lift", 0.004))
     with_ref = collect_one((20000, 0.15, "lift", 0.004,
