@@ -234,6 +234,7 @@ class GenerationRecord:
 
 def run_campaign(
     prereg: Preregistration, store: CampaignStore, *, workers: int = 10, verbose: bool = True,
+    executor=None,
 ) -> dict:
     """Drive generations until nothing further clears the dev gate."""
     prereg_sha = store.put("preregistration", asdict(prereg))
@@ -289,10 +290,11 @@ def run_campaign(
                 print(f"  {plan.line()}")
 
         # Residual failures under the CURRENT bundle are the target population.
-        from multiprocessing import Pool
         from governor.gate import _run
-        with Pool(workers) as pool:
-            cur = pool.map(_run, [(s, bundle if bundle.rules else None) for s in dev_specs])
+        from governor.parallel import default_executor
+        cur = (executor or default_executor()).map(
+            _run, [(s, bundle if bundle.rules else None) for s in dev_specs],
+            workers=workers)
         labels = [r["success"] for r in cur]
         rate = float(np.mean(labels))
         if verbose:
@@ -314,7 +316,7 @@ def run_campaign(
         child = bundle.append(rule)
         child.assert_atomic_child_of(bundle)     # one rule appended, parent frozen
         dev_result = paired_gate(dev_specs, child, baseline=bundle if bundle.rules else None,
-                                 workers=workers)
+                                 workers=workers, executor=executor)
 
         # The blind control was a per-report check by hand until round 45, when a
         # third policy grew a rule that fired on 200/200 held-out episodes and
@@ -330,7 +332,8 @@ def run_campaign(
         # Head to head on the SAME seeds, not two separate comparisons against the
         # parent: netting 35 against a blind twin's 34 is one episode of noise, and
         # that is exactly what slipped through when this gate first shipped.
-        blind_result = paired_gate(dev_specs, child, baseline=blind_child, workers=workers)
+        blind_result = paired_gate(dev_specs, child, baseline=blind_child, workers=workers,
+                                  executor=executor)
         judged = (blind_result.p_value < prereg.alpha
                   and blind_result.fixed > blind_result.broken)
 
@@ -377,7 +380,7 @@ def run_campaign(
                     "final_sha": bundle.sha(), "rules": [r.rule_id for r in bundle.rules]}
     if bundle.rules:
         held = _specs(prereg.heldout, prereg)
-        final = paired_gate(held, bundle, baseline=None, workers=workers)
+        final = paired_gate(held, bundle, baseline=None, workers=workers, executor=executor)
         result["heldout"] = asdict(final)
         if verbose:
             print(f"\nheld-out (scored once, n={len(held)}): {final.line()}")
@@ -393,14 +396,15 @@ def run_campaign(
                                          r.trigger.arm_after, "value"), r.recovery)
                             for r in bundle.rules),
                 critic_budget=bundle.critic_budget, action_budget=bundle.action_budget)
-            held_blind = paired_gate(held, bundle, baseline=blind, workers=workers)
+            held_blind = paired_gate(held, bundle, baseline=blind, workers=workers,
+                                     executor=executor)
             result["heldout_vs_blind"] = asdict(held_blind)
             if verbose:
                 established = (held_blind.p_value < prereg.alpha
                                and held_blind.fixed > held_blind.broken)
                 print(f"held-out vs blind twin: {held_blind.line()}  "
                       f"-> judgement {'established' if established else 'NOT established'}")
-        curve = ablation_curve(held, bundle, workers=workers)
+        curve = ablation_curve(held, bundle, workers=workers, executor=executor)
         result["ablation"] = [(sd, asdict(r)) for sd, r in curve]
         if verbose:
             print("held-out transfer ablation:")

@@ -14,7 +14,6 @@ robustness, so sigma is what moves a clone's competence -- not hidden width.
 
 from __future__ import annotations
 
-from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
@@ -61,8 +60,8 @@ def collect(n: int, *, sigma: float, first_seed: int = 20000, task: str = "lift"
             percept_noise: float = 0.004, workers: int = 10) -> tuple[np.ndarray, np.ndarray, int]:
     """Collect `n` DART demonstrations, keeping only the ones that succeed."""
     args = [(first_seed + i, sigma, task, percept_noise) for i in range(n)]
-    with Pool(workers) as pool:
-        rows = pool.map(collect_one, args)
+    from governor.parallel import default_executor
+    rows = default_executor().map(collect_one, args, workers=workers)
     good = [r for r in rows if r is not None]
     if not good:
         raise RuntimeError(f"no demonstration succeeded at sigma={sigma}")

@@ -117,6 +117,7 @@ def run(
     kernel.resolve("embodiment.env", consumer=CONSUMER)
     kernel.resolve("policy.driver", consumer=CONSUMER)
     kernel.resolve("percept.model", consumer=CONSUMER)
+    executor = kernel.resolve("exec.rollouts", consumer=CONSUMER)
     skill_graph = kernel.resolve("graph.skill", consumer=CONSUMER)
 
     # Workers rebuild providers from the bare ref string, which cannot carry
@@ -137,7 +138,8 @@ def run(
     )
     store = CampaignStore(Path(store_root))
     start_seq = store.size()
-    result = campaign.run_campaign(prereg2, store, workers=workers, verbose=verbose)
+    result = campaign.run_campaign(prereg2, store, workers=workers, verbose=verbose,
+                                   executor=executor)
 
     mount_plan_sha = _mount_plan_sha(kernel)
     heldout = result.get("heldout") or {}

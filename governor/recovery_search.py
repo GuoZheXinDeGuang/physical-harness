@@ -58,10 +58,11 @@ def _run(job):
     return governed_rollout(spec, bundle)
 
 
-def _rate(specs: Sequence[EpisodeSpec], bundle: Bundle | None, workers: int) -> float:
-    from multiprocessing import Pool
-    with Pool(workers) as pool:
-        out = pool.map(_run, [(s, bundle) for s in specs])
+def _rate(specs: Sequence[EpisodeSpec], bundle: Bundle | None, workers: int,
+          executor=None) -> float:
+    from governor.parallel import default_executor
+    out = (executor or default_executor()).map(_run, [(s, bundle) for s in specs],
+                                               workers=workers)
     return float(np.mean([r["success"] for r in out]))
 
 

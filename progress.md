@@ -2162,3 +2162,33 @@ held-out 41.5% -> 72.5% 逐位复现。单元 160 绿。
    multiprocessing.Pool 换成 kernel 解析的 executor(分布式的前置)。
 2. 事件链统一: governor.episode_log 与 harness.events 同构但两套, 合一。
 3. features 注册表插件化(embodiment 声明自己的特征面)。
+
+## Round 57 - 2026-08-20 - L1 rung 2: executor 接管执行; 双 parity 收口 rung 1
+
+### rung 1 收口
+
+克隆策略 parity(percept 走插件实现): **四组全 PASS**。rung 1 双策略闭合。
+
+### rung 2: exec.rollouts 接管全部 rollout 执行
+
+governor 里 6 处散落的 `multiprocessing.Pool` 块(gate / campaign / parallel /
+recovery_search / beam / demos)全部换成 `executor.map(...)`。
+注入是**显式关键字参数**贯穿调用链, 缺省回落 `default_executor()`
+(LocalPoolExecutor, 与被替换的 Pool.map 逐位同义); 刻意不用模块全局(round 29)。
+executor 在父进程创建 pool, 与 provider ref 不同, **无 spawn 问题** -- 这两类
+依赖注入为什么用不同机制, 写进了 default_executor 的 docstring 和 ARCHITECTURE。
+workload 从 kernel 解析 `exec.rollouts` 下传: **将来换 Ray/远程后端 = 换一个 mount,
+六个调用点一行不动。**
+
+### VERIFY
+
+脚本策略 parity(executor 由 kernel 注入全链): **四组全 PASS**。160 测试绿。
+修正过程: 3 个 fixture 红(fake kernel 缺 exec.rollouts mount、resolved 断言、
+fake run_campaign 不接受 executor kwarg), 全是测试跟上接口, 无行为变化。
+
+### 下一轮种子(L1 rung 3 候选)
+
+1. 事件链合一: governor.episode_log 与 harness.events 同构但两套链构造, 合一后
+   campaign 的 episode 事件与 kernel 的能力事件进同一条可审计链。
+2. features 注册表插件化: embodiment 声明自己的特征面(现在 REGISTRY 是 governor 全局)。
+3. demos 采集走 kernel(现在仍 legacy 路径, 已记录为 L0 限制)。

@@ -68,7 +68,7 @@ def _run(job):
 
 def paired_gate(
     specs: Sequence[EpisodeSpec], bundle: Bundle,
-    baseline: Bundle | None = None, workers: int = 10,
+    baseline: Bundle | None = None, workers: int = 10, executor=None,
 ) -> PairedResult:
     """Run both arms on identical seeds and test the discordant pairs.
 
@@ -77,11 +77,10 @@ def paired_gate(
     attributable to the single rule it appended -- the atomic-increment
     discipline is only meaningful if the comparison is against the parent.
     """
-    from multiprocessing import Pool
+    from governor.parallel import default_executor
 
     jobs = [(s, baseline) for s in specs] + [(s, bundle) for s in specs]
-    with Pool(workers) as pool:
-        out = pool.map(_run, jobs)
+    out = (executor or default_executor()).map(_run, jobs, workers=workers)
     n = len(specs)
     base = np.array([r["success"] for r in out[:n]], dtype=bool)
     gov = np.array([r["success"] for r in out[n:]], dtype=bool)
@@ -99,6 +98,7 @@ def paired_gate(
 def ablation_curve(
     specs: Sequence[EpisodeSpec], bundle: Bundle,
     sensor_sds: Sequence[float] = (0.0, 0.010, 0.020, 0.030), workers: int = 10,
+    executor=None,
 ) -> list[tuple[float, PairedResult]]:
     """The transfer curve: same bundle, recovery percept degraded rung by rung."""
     rows = []
@@ -108,5 +108,6 @@ def ablation_curve(
         degraded = replace(bundle, rules=tuple(
             replace(r, recovery=replace(r.recovery, sensor_sd=sd)) for r in bundle.rules
         ))
-        rows.append((sd, paired_gate(specs, degraded, baseline=None, workers=workers)))
+        rows.append((sd, paired_gate(specs, degraded, baseline=None, workers=workers,
+                                     executor=executor)))
     return rows

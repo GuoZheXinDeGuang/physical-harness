@@ -38,6 +38,13 @@ parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 prere
 
 ## L1 进度
 
+- rung 2(round 57): **executor 接管全部 rollout 执行**。governor 里 6 处散落的
+  `multiprocessing.Pool` 块(gate / campaign / parallel / recovery_search / beam / demos)
+  换成 `executor.map(fn, items, workers=...)`; 注入方式是**显式关键字参数**贯穿调用链
+  (paired_gate / ablation_curve / run_campaign / rollout_many / _measure / _rate 均加
+  `executor=None`), 缺省回落 `governor.parallel.default_executor()`(与原 Pool.map 逐位同义)。
+  不用模块全局(round 29 的教训); executor 在父进程创建 pool, 无 spawn 问题。
+  workload 从 kernel 解析 `exec.rollouts` 注入 -- **换分布式后端 = 换一个 mount**。
 - rung 1(round 56): 恢复侧感知 `_percept_object` 的实现移入 embodiment 插件,
   governor 只留派发点与命名默认 `DEFAULT_PERCEPT_REF`。
   策略自身的 t=0 感知(`FrozenPolicy.observe_once`)是冻结策略本体的一部分, 不属于可挂载服务, 不迁。

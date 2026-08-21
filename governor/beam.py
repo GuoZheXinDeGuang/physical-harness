@@ -58,10 +58,10 @@ def _run(job):
     return governed_rollout(spec, bundle)
 
 
-def _measure(specs, bundle, workers):
-    from multiprocessing import Pool
-    with Pool(workers) as pool:
-        return pool.map(_run, [(s, bundle if bundle.rules else None) for s in specs])
+def _measure(specs, bundle, workers, executor=None):
+    from governor.parallel import default_executor
+    return (executor or default_executor()).map(
+        _run, [(s, bundle if bundle.rules else None) for s in specs], workers=workers)
 
 
 #: Episodes the seeding search sees. Generation 1's gate must use the SAME

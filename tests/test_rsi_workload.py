@@ -65,11 +65,17 @@ class _FakePercept:
         return None
 
 
+class _FakeExecutor:
+    def map(self, fn, items, *, workers):
+        return [fn(item) for item in items]
+
+
 def _kernel_with_fakes() -> Kernel:
     k = Kernel(CAPABILITIES)
     k.provide("embodiment.env", _FakeEnvProvider(), ref="tests.fakes:env")
     k.provide("policy.driver", _FakePolicyFactory(), ref="tests.fakes:policy")
     k.provide("percept.model", _FakePercept(), ref="tests.fakes:percept")
+    k.provide("exec.rollouts", _FakeExecutor(), ref="tests.fakes:executor")
     k.provide("graph.skill", InMemorySkillGraph(), ref="plugins.graphs:skill_graph_provider")
     return k
 
@@ -99,7 +105,7 @@ def _fake_run_campaign_factory(captured: dict, *, second_generation_promoted: bo
     second PROMOTED generation with a distinct trigger (proving two promotions
     produce two skills).
     """
-    def fake_run_campaign(prereg, store, *, workers=10, verbose=True):
+    def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None):
         captured["prereg"] = prereg
         captured["store"] = store
         prereg_sha = store.put("preregistration", dataclasses.asdict(prereg))
@@ -162,7 +168,8 @@ def test_kernel_resolutions_are_accounted_under_consumer_rsi(tmp_path, monkeypat
 
     resolved = {r.capability: r.consumer for r in kernel.resolutions()}
     assert resolved == {"embodiment.env": "rsi", "policy.driver": "rsi",
-                        "percept.model": "rsi", "graph.skill": "rsi"}
+                        "percept.model": "rsi", "exec.rollouts": "rsi",
+                        "graph.skill": "rsi"}
     assert not any(r.privileged for r in kernel.resolutions())
 
 
@@ -215,7 +222,7 @@ def test_returned_digests_match_graph_skills(tmp_path, monkeypatch):
 def test_no_promoted_generations_publishes_nothing(tmp_path, monkeypatch):
     kernel = _kernel_with_fakes()
 
-    def fake_run_campaign(prereg, store, *, workers=10, verbose=True):
+    def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None):
         prereg_sha = store.put("preregistration", dataclasses.asdict(prereg))
         store.put("generation", {
             "preregistration_sha": prereg_sha, "generation": 1,
@@ -260,6 +267,7 @@ def test_mount_plan_sha_present_when_kernel_mounted_a_plan(tmp_path, monkeypatch
         Mount("embodiment.env", "plugins.embodiment_robosuite:provider"),
         Mount("policy.driver", "plugins.policies:provider"),
         Mount("percept.model", "plugins.embodiment_robosuite.percept:provider"),
+        Mount("exec.rollouts", "harness.executor:provider"),
         Mount("graph.skill", "plugins.graphs:skill_graph_provider"),
     )))
     kernel.mount(plan)
