@@ -447,6 +447,20 @@ def test_rebuild_preregistration_drops_fields_the_dataclass_no_longer_has():
     assert parity_check.rebuild_preregistration(payload) == original
 
 
+def test_rebuild_preregistration_restores_stage_specs():
+    """A staged archive (runs/stack-g1) stores the chain as dicts; the rollout
+    consumes StageSpec attributes, so the rebuild must restore the dataclasses."""
+    from harness.stages import Clause, StageSpec
+
+    original = _prereg(stages=(
+        StageSpec("grasp", (Clause("observable.finger_gap", "gt", 0.01),), 62),))
+    payload = json.loads(json.dumps(dataclasses.asdict(original), default=str))
+    rebuilt = parity_check.rebuild_preregistration(payload)
+    assert rebuilt == original
+    assert isinstance(rebuilt.stages[0], StageSpec)
+    assert isinstance(rebuilt.stages[0].success[0], Clause)
+
+
 def test_rebuild_preregistration_defaults_provider_refs_for_pre_seam_archives():
     """runs/campaign-pj-scripted's real preregistration artifact predates
     env_provider/policy_provider and has no such keys at all."""

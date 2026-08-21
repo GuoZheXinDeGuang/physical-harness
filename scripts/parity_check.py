@@ -39,6 +39,7 @@ from typing import Any
 # Runnable as `python scripts/parity_check.py ...` without PYTHONPATH gymnastics.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from harness.stages import Clause, StageSpec
 from plugins.rsi.campaign import Preregistration
 
 #: Preregistration fields whose canonical (json-round-tripped) form is a list
@@ -120,6 +121,13 @@ def rebuild_preregistration(payload: dict[str, Any]) -> Preregistration:
     for field_name in _TUPLE_FIELDS:
         if field_name in kwargs:
             kwargs[field_name] = tuple(kwargs[field_name])
+    # A staged archive (R2, e.g. runs/stack-g1) stores StageSpec chains as
+    # dicts; the rollout consumes StageSpec attributes, so restore the real
+    # dataclasses -- asdict/sha round-trip identically either way.
+    if kwargs.get("stages") is not None:
+        kwargs["stages"] = tuple(
+            StageSpec(s["name"], tuple(Clause(**c) for c in s["success"]), s["budget"])
+            for s in kwargs["stages"])
     return Preregistration(**kwargs)
 
 
