@@ -3015,3 +3015,29 @@ M3 规划闭环), harness 13 commit + zos 6 commit 全部实时推送, 测试 17
   "done" 回显骗过了我一轮。**后台命令铁律: 显式 cd + set -o pipefail + 只认落盘 artifact。**
 - 跨测试 import 污染再次遮蔽真 bug(round 78 见过同形态)——凡"父进程直接用插件注册物"的
   新入口, 必须配新鲜进程测试。
+
+## Round 86 - 2026-08-22 - 规划图长出第二个节点; 探针与闭环必须跑同一个世界
+
+### 做成了什么
+
+1. **pick 技能参数化(0fd5949, 零偏离)**: 一个 pick 技能按 object 参数解析场景
+   (can→pickcan/milk→pickmilk, 第一次 arg threading, round 83 预告兑现); pickmilk 进
+   TASKS 执行词表(不进 3x2 矩阵); pick_stages()=单 grasp 阶段(对象无关 finger_gap>0.01,
+   举离归节点终态); Milk_pos 进 _OBJECT_KEYS(堵 eager scorer 崩点); "已完成节点不重跑"
+   定为 workload 模型无关地板(nodes_out 跨 replan 累积+循环首跳过), fault 带
+   nodes_done/nodes_left。246 测试。
+2. **milk 探针(45000-45011 烧毕)**: 最高风险落空——cube 调的相位抓高纸盒够用,
+   pickmilk 92% / pickcan 83%(共享子目标, sd=0.012), 双成功种子 10/12。
+3. **真 bug 第 N 次同形态(e5185de)**: pick 派发漏 percept_noise → 静默落到 EpisodeSpec
+   默认 0.020, 探针在 0.012——首次真闭环在探针成功的种子上失败。修复+测试钉死
+   (spec.percept_noise==0.012)。教训归档: **探针与闭环必须显式跑同一个世界,
+   "默认值兜底"就是漂移的藏身处**(与 percept_provider 哈希脱钩同族)。
+4. **双节点闭环真跑通**: task_plan.py --task clear_table --seed 45000 →
+   pick-can ✓ pick-milk ✓, replans 0, actuations 2, 账本 verify=True,
+   plan_complete 恰一条。**规划器价值(排序+跳过已完成)与 arg threading 全链行使。**
+   注入-失败 replan 按裁决走 fake 测试(同种子决定论)。
+
+### 推迟(YAGNI 已声明)
+
+stack+pick 混合图的按 task 派发 policy provider / object enum 校验 / covered_by
+node-key / per-attempt seed 变化——各自的触发条件记在施工图。

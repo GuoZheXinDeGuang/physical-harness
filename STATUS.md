@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 85 完成(三区块头条转正: +6.5/+9.5/+11.0, 54修0破 n=600; 阶段归因: 残余里放置反超抓取)
+**Round:** 86 完成(规划图第二节点: clear_table 双节点闭环真跑通, pick 技能 object 参数化)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -27,7 +27,9 @@
       zos 证据顾问层(安全下界自检钉死)。剩 Session.evidence 的 prompt/面板消费。
 - [x] M3 第一闭环(round 83): task.planner 缝 + 确定性 StackPlanner + 规划 workload,
       scripts/task_plan.py 真跑通(两层裁决成立: 规划图=控制器/阶段链=评分器)。
-      VLM 接入 = 换 mount。多节点分解 gated 于第二个技能 provider。
+- [x] M3 第二步(round 86): pick 技能 object 参数化 + clear_table 双节点图真闭环
+      (排序/跳过已完成地板/arg threading 全链行使)。milk 探针 92% 风险落空。
+      VLM 接入 = 换 mount(目录里已有两技能可选)。
 - [x] 文档(round 84): 双仓库 README 重写+生态关系, 校对员对码零修改通过。
 - gate(需要时解锁): Isaac 具身插件 —— 触发条件: 导航技能电池或房间尺度长程场景。
       导航证据暂由真机(zos)承担。go2W_Sim 桥接成本侦察报告备用。
@@ -41,6 +43,7 @@
 **已烧(round 78-79):** 标定 40000-40799; stack-g1 dev 用 41000-41580(余 419); held-out #1 = 42000-42199。
 **已烧(round 81):** round25-rerun dev 44000-44059 + held-out 44200-44399。
 **已烧(round 85):** stack held-out #2/#3 = 42200-42399 / 42400-42599(三块配额用毕)。
+**已烧(round 86):** pickcan/pickmilk 探针 45000-45011。
 
 **frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
 既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params
