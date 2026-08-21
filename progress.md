@@ -2825,3 +2825,47 @@ task="stack" + policy_provider=stack ref + stages=stack_stages()。开跑前:
 (2) horizon 按 名义177+max_generations×recovery长 重算 pin;
 (3) gen1 先验 yield 按标定实测调低再定样本量(evidence 施工图: 0.4/0.25 起步)。
 frontier 顺位不变: beam gen-1 回滚 > skill 路径可迁移 > ruff pin。
+
+## Round 79 - 2026-08-22 - 门禁机器首次在长程任务上开动: 一条诚实的规则, 一次正确的拒绝
+
+### 做成了什么
+
+1. **接线(33712e0)**: terminal_label 开关(形态 A——单一 success 键, 全臂结构性同判据),
+   Stack 终态经 provider.terminal_success(env._check_success), lift 默认路径逐字不变;
+   scripts/stack_campaign.py 入口(prereg 字面量提成 stack_prereg() 供哈希验证对真物);
+   horizon 不加字段(177+2×111=399<900, 算式进注释, search_recovery 必须 False)。
+   198 测试通过; demo-r3 逐字段 diff 唯一差异 = prereg 字段新增, 数字零移动。
+2. **Stack RSI campaign 实跑(runs/stack-g1, prereg febf8c7a80cb, ~40 分钟)**:
+   - **gen1 晋级**: observable.finger_gap < 0.001, dwell 1, armed t=58(close 相内), 零特权。
+     dev 59.7%→65.8%(12 修 0 破); 对盲发孪生 +27.0pp(62 修 9 破) p<1e-5 → judged。
+     功效规划按调低的先验把 gen1 定到 196 seeds(判断检验绑定, 与施工图实算一致)。
+   - **gen2 正确拒绝**: 候选 finger_gap < 0.0387 armed t=62(lift 起点), 门禁
+     16 修 12 破 p=0.57 → 拒。385 seeds 的量给足了, 不是欠功效错杀——这个候选就是噪声。
+   - **held-out(42000-42199, n=200, 终态判据)**: 58.5% → 65.0%, **+6.5pp, 13 修 0 破,
+     p=0.00024**; 对盲发孪生 +35.5pp(79 修 8 破) p<1e-5 → **judgement established**。
+     盲发基线只有 29.5%——无条件 regrasp 在长程上主动摧毁 29pp, 赢的是判断, 铁证。
+   - **消融曲线(零破坏全档)**: 真值 +18.0 / sd=0.010 +13.5 / 0.020 +6.5 / 0.030 +3.5。
+     特权买的仍是幅度不是有无——headline finding 在长程任务上复现。
+
+### 读数解释(作用域: 单区块, 本 bundle)
+
+- 长出来的规则是抓取阶段的"夹空"检测器, 在 Stack 上**重新赚到**(阈值 0.001 vs Lift 的
+  0.001787, 不是迁移是重学)。fires=54 ≈ held-out 里全部抓取失败(标定 ~27%×200),
+  修 13 → 抓取修复率 ~24% @ recovery sd=0.020。
+- **放置阶段零规则**——预期中的 round 19 天花板阶段级重现: 现役 recovery 库没有 place
+  原语, critic 词汇里也没有放置侧的可观测量信号(方块落桌后本体感受无 tell)。
+  这是 MSR place 原语进场的位置, 不是演化循环能自己解决的。
+- +6.5pp 是单区块数字, 头条纪律要求 ≥3 区块; 42200-42399 / 42400-42599 留给复现。
+
+### 什么没成 / 注意
+
+- 每阶段残余归因的 store artifact 没接(round 78 裁决砍掉了 flag, 阶段数据只在临时
+  result dict 里)——下一轮若要报告阶段归因表, 需接一个 stages≠None 时的归因产物。
+- gen2 只尝试了一个候选就收敛; 蓄水池用到 41000-41580(gen1 196 + gen2 385), 余 419 粒。
+
+### 下一轮种子
+
+1. held-out 第二/三区块复现(42200-42399, 42400-42599) —— 头条纪律。
+2. 阶段归因产物接线(stages≠None 时写 store)。
+3. 然后回到 GOAL v3 主线: R3 qwen38 接 reasoner transport(用户已在本机部署
+   sglang 服务)重跑 round-25 对比 —— 长程 Stack 现在是它的第二个试验场。
