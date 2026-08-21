@@ -7,23 +7,18 @@ own it. Field order and defaults are load-bearing: phase 1 archives and the
 parity protocol both depend on them, and the field-order guard tests pin the
 provider refs to the tail.
 
-NOMINAL_SCHEDULE rides along as the spec's default schedule; it is Panda
-vocabulary and moves to the embodiment plugin when the default becomes a
-mount-supplied value (L2 rung H).
+The tabletop motor vocabulary (PHASE_HEIGHT, NOMINAL_SCHEDULE) lives in
+harness/spec_tabletop.py; this module re-exports both so import paths and
+the schedule default stay stable.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-#: Per-phase height over the target, in metres. Shared motor vocabulary: the
-#: scripted drivers (policies plugin) and the recovery actor (rsi plugin) both
-#: speak it, so like NOMINAL_SCHEDULE it lives with the currency rather than
-#: in either plugin -- the cross-plugin import neither may make.
-PHASE_HEIGHT = {"above": 0.10, "descend": 0.005, "close": 0.005, "lift": 0.25}
-
-NOMINAL_SCHEDULE: tuple[tuple[str, int], ...] = (
-    ("above", 25), ("descend", 25), ("close", 12), ("lift", 38),
+from harness.spec_tabletop import (  # noqa: F401  re-export: tabletop motor vocabulary lives in its domain module
+    NOMINAL_SCHEDULE,
+    PHASE_HEIGHT,
 )
 
 

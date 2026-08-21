@@ -253,3 +253,26 @@ def test_recovery_actor_honours_the_grasp_height_offset():
             assert not np.array_equal(a, c), f"offset ignored in {name}"
         else:
             assert np.array_equal(a, c), f"offset leaked into {name}"
+
+
+def test_spec_reexport_is_object_identical():
+    """Round 77: the vocabulary split re-exports, never copies. A copy would
+    be value-equal yet silently break the hidden contract that EpisodeSpec's
+    schedule default and every import path resolve to one object."""
+    import harness.spec
+    import harness.spec_tabletop
+
+    assert harness.spec.PHASE_HEIGHT is harness.spec_tabletop.PHASE_HEIGHT
+    assert harness.spec.NOMINAL_SCHEDULE is harness.spec_tabletop.NOMINAL_SCHEDULE
+
+
+def test_phase_height_and_schedule_values_are_frozen():
+    """test_reducers checks only key membership, so a value typo during the
+    round 77 code-motion would pass the whole suite and surface only as a
+    demo parity break. Pin the literals through the re-export surface."""
+    from harness.spec import NOMINAL_SCHEDULE, PHASE_HEIGHT
+
+    assert PHASE_HEIGHT == {"above": 0.10, "descend": 0.005,
+                            "close": 0.005, "lift": 0.25}
+    assert NOMINAL_SCHEDULE == (("above", 25), ("descend", 25),
+                                ("close", 12), ("lift", 38))
