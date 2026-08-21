@@ -2944,3 +2944,29 @@ R2 收尾(held-out 复现 ×2 + 阶段归因产物)与 M1 可并行排。
 
 - M2 剩余一小截: Session.evidence 已建但 planner prompt/cli ask 面板还没消费(下轮)。
 - zos 全包 ruff 存量不干净(loop/world 等 22 处 E501 类), 本轮只守改动文件干净, 全包清理另排。
+
+## Round 83 - 2026-08-22 - M3 第一闭环: agentic 主循环成为 harness 的一个 workload
+
+### 做成了什么
+
+1. **task.planner 缝(adbb5e1)**: TaskPlanner Protocol(Reasoner 的姊妹缝, 非特权) +
+   plugins/task/validate.py(harness 原生验证器, fail-first 带可回喂文案; 白捡一条性质:
+   node.after 只许引用更早节点 → 合法图天然拓扑有序, workload 无需另做 toposort) +
+   确定性 StackPlanner(同 brief 逐字节同 JSON, round-25 零 API 参考路径方法论)。
+2. **规划 workload(90dfcb7)**: plugins/task/workload.py 的 while 循环——plan→validate
+   (无效把验证器文案折进 brief 重规划)→逐节点 governed_rollout(节点的 StageSpec 链在
+   派发时附着, 两层裁决成立: 规划图=控制器, 阶段链=评分器, 互不越界)→阶段失败构造
+   Fault 折进 brief→重规划; max_replans/max_actuations 是模型无关地板, 派发前强制;
+   kernel.note 恰好一条(赢输都发, 证据纪律)。governed_rollout 经 ref-string 跨插件
+   (AST 边界不许兄弟 import, 走 registry 的既定过法)。
+3. **真闭环收口**: scripts/task_plan.py --seed 90000 → mount 8 能力(含 task.planner),
+   node stack-0 success=True 177 步, grasp 阶段(0-92)✓ place 阶段(92-177)✓,
+   replans=0 actuations=1, 账本 16 行链 verify=True, 恰一条 task.plan_complete。
+   **VLM 接上 = 换一个 mount。** 223 测试通过, ruff 干净, 两 commit 实时推送。
+
+### 注意
+
+- SKILL_SPECS(执行半)与 planner CATALOGUE(符号半)是同一词表的两半, 手声明——
+  第二个技能 provider 出现时二者合流进 graph.skill 的目录形态(YAGNI 已声明)。
+- 1 节点闭环里 verify oracle 与 terminal_label 成功布尔重合(施工图预言的退化巧合),
+  第二技能出现时两方言分开。
