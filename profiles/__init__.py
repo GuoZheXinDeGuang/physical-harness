@@ -86,3 +86,17 @@ def sawyer_bundle():
     return Bundle("sawyer", (
         Mount("embodiment.env", "plugins.embodiment_robosuite:sawyer_provider"),
         Mount("policy.driver", "plugins.policies:sawyer_scripted_provider"),))
+
+
+def zos_world_bundle():
+    """Swap graph.scene to the zos World bridge: the real-robot deployment.
+
+    base_profile's graph.scene ref stays byte-identical (sha-stable); a zos
+    deployment layers this bundle and hands ``World.snapshot()`` dicts to the
+    resolved provider. Same story as sawyer_bundle: a config edit, not a code
+    edit, and the plan sha moves because the mount is experiment identity.
+    """
+    from harness.config import Bundle, Mount
+
+    return Bundle("zos-world", (
+        Mount("graph.scene", "plugins.graphs:world_scene_graph_provider"),))

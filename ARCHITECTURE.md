@@ -7,7 +7,7 @@
 | OS 板块 | 骨架契约(harness/contracts.py) | 第一个 provider |
 |---|---|---|
 | 1 Reasoning VLM | reasoner.proposer(Reasoner) | plugins/reasoner(SearchProposer 适配; 真模型走同一 transport, gated) |
-| 2 Scene Graph | graph.scene(SceneGraph) | plugins/graphs.StaticSceneGraph(占位, 等图团队) |
+| 2 Scene Graph | graph.scene(SceneGraph) | plugins/graphs.SimSceneGraph(robosuite obs, base_profile 默认); WorldSceneGraph(zos World.snapshot, 走 zos_world_bundle) |
 | 2 Skill Graph | graph.skill(SkillGraph) | plugins/graphs.InMemorySkillGraph(内容寻址) |
 | 3 具身/环境 | embodiment.env(EnvProvider), embodiment.ground_truth(privileged) | plugins/embodiment_robosuite |
 | 3 策略/技能 | policy.driver(PolicyFactory) | plugins/policies(scripted / bc 适配) |
