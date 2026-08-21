@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from harness.spec import EpisodeSpec
+from harness.spec import STACK_SCHEDULE, Clause, EpisodeSpec, StageSpec
 
 CONTROL_FREQ = 20
 #: Per-task scene wiring: the robosuite env id, the observation key holding the
@@ -56,6 +56,42 @@ def lifted(obs, spec: EpisodeSpec, start_z: float) -> bool:
     z = float(np.asarray(obs[object_key(spec)])[2])
     q = np.asarray(obs["robot0_gripper_qpos"])
     return bool(z > start_z + LIFT_MARGIN and abs(q[0] - q[1]) > 0.01)
+
+
+#: Phases of STACK_SCHEDULE that belong to the grasp stage; the rest are place.
+_STACK_GRASP_PHASES = ("above", "descend", "close", "lift")
+
+
+def stack_stages() -> tuple[StageSpec, ...]:
+    """The two-stage Stack measurement chain: grasp cubeA, seat it on cubeB.
+
+    Budgets are derived from STACK_SCHEDULE's cumulative phase durations, so a
+    stage boundary is exactly where the scripted policy's own schedule hands
+    the grasp half over to the place half. Clause thresholds are authored
+    tolerances (finger travel, lift margin, cube half-widths) -- never scene
+    facts like table height, per the round-10 lesson. The chain is measurement
+    only: terminal task success stays the single boolean the gate consumes.
+    """
+    grasp_budget = sum(d for name, d in STACK_SCHEDULE if name in _STACK_GRASP_PHASES)
+    place_budget = sum(d for _, d in STACK_SCHEDULE) - grasp_budget
+    return (
+        StageSpec("grasp", (
+            # The shared sub-goal, clause-shaped: fingers held apart by
+            # something (lifted()'s own 0.01 literal) and cubeA raised at
+            # least a lift margin above the seat plane -- relational via the
+            # residual, so no table-height constant appears anywhere.
+            Clause("observable.finger_gap", "gt", 0.01),
+            Clause("privileged.stack_z_residual", "gt", 0.04),
+        ), grasp_budget),
+        StageSpec("place", (
+            # Seated within cubeB's half-width in the plane, within cubeA's
+            # half-width of the seat height, and released (fingers wider than
+            # the 4cm cube they would otherwise still be pinching).
+            Clause("privileged.stack_xy_residual", "lt", 0.025),
+            Clause("privileged.stack_z_residual", "lt", 0.02),
+            Clause("observable.finger_gap", "gt", 0.05),
+        ), place_budget),
+    )
 
 
 def _default_make_env(spec: EpisodeSpec):

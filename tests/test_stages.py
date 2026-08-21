@@ -155,3 +155,119 @@ def test_handback_jump_scores_every_crossed_stage():
     # recovery steps do not advance k, so s3's span is the remaining 49
     # schedule steps (driver clock 51..100): exit at k = 32 + 49.
     assert s3["exited_step"] == 81
+
+
+# --- R2 rung C: the stack scoring pieces -------------------------------------
+
+def test_stack_residual_features_are_registered_relational_privileged():
+    """The relation lives in the FEATURE (grasp_error precedent): both
+    residuals are cubeA-relative-to-cubeB, declared in the privileged
+    namespace, with the 0.045 seat literal being cube geometry, not a scene
+    fact like table height."""
+    import plugins.embodiment_robosuite.features  # noqa: F401  registration is import-time
+    from harness.features import REGISTRY, Privilege
+
+    for name in ("privileged.stack_xy_residual", "privileged.stack_z_residual"):
+        assert name in REGISTRY and REGISTRY[name].privilege is Privilege.PRIVILEGED
+    obs = {"cubeA_pos": np.array([0.10, 0.00, 0.865]),
+           "cubeB_pos": np.array([0.10, 0.03, 0.825])}
+    assert REGISTRY["privileged.stack_xy_residual"].extract(obs) == pytest.approx(0.03)
+    assert REGISTRY["privileged.stack_z_residual"].extract(obs) == pytest.approx(
+        0.865 - (0.825 + 0.045))
+
+
+def test_stack_residuals_degrade_to_nan_off_the_stack_scene():
+    """project() is EAGER: a budget-1 scorer view on a LIFT obs extracts every
+    registered privileged feature, so off-scene residuals must degrade to NaN,
+    never raise -- otherwise registering them would break every lift-task
+    stage overlay above. NaN also fails both lt and gt, so an off-scene
+    clause is honestly false."""
+    import math
+
+    import plugins.embodiment_robosuite.features  # noqa: F401
+    from harness.percept import PrivilegePolicy, project
+
+    lift_obs = {
+        "robot0_gripper_qpos": np.array([0.02, -0.02]),
+        "robot0_eef_pos": np.array([0.0, 0.0, 1.0]),
+        "robot0_joint_vel": np.zeros(7),
+        "robot0_gripper_qvel": np.zeros(2),
+        "cube_pos": np.array([0.0, 0.0, 0.83]),
+    }
+    v = project(lift_obs, PrivilegePolicy(critic_budget=1).critic_names(), step=0, episode="e")
+    assert math.isnan(v["privileged.stack_xy_residual"])
+    assert math.isnan(v["privileged.stack_z_residual"])
+    chain = (StageSpec("place", (Clause("privileged.stack_xy_residual", "lt", 0.025),), 1),)
+    assert not chain[0].holds(v)
+    chain = (StageSpec("place", (Clause("privileged.stack_xy_residual", "gt", 0.025),), 1),)
+    assert not chain[0].holds(v)
+
+
+def test_stack_stages_chain_structure_is_frozen():
+    """Frozen-values guard for the calibration chain: budgets come from
+    STACK_SCHEDULE's cumulative halves and the clause thresholds are the
+    authored tolerance literals -- a typo here would surface only as a silent
+    attribution shift mid-campaign."""
+    from harness.spec import STACK_SCHEDULE
+    from plugins.embodiment_robosuite.env import stack_stages
+
+    grasp, place = stack_stages()
+    assert grasp.budget == 92 and place.budget == 85          # 25+25+12+30 / 25+25+10+25
+    assert grasp.budget + place.budget == sum(d for _, d in STACK_SCHEDULE)
+    assert dc.asdict(grasp) == {"name": "grasp", "budget": 92, "success": (
+        {"feature": "observable.finger_gap", "op": "gt", "threshold": 0.01},
+        {"feature": "privileged.stack_z_residual", "op": "gt", "threshold": 0.04},
+    )}
+    assert dc.asdict(place) == {"name": "place", "budget": 85, "success": (
+        {"feature": "privileged.stack_xy_residual", "op": "lt", "threshold": 0.025},
+        {"feature": "privileged.stack_z_residual", "op": "lt", "threshold": 0.02},
+        {"feature": "observable.finger_gap", "op": "gt", "threshold": 0.05},
+    )}
+
+
+def test_terminal_success_is_an_optional_contract_extension():
+    """Ruling 4: the gate only ever consumes the full-task terminal boolean.
+    Stack reaches the simulator's own predicate through the env handle and
+    fails LOUDLY without one; lift falls back to the shared sub-goal; and a
+    provider without the method still satisfies EnvProvider -- the extension
+    must not force a future Isaac embodiment."""
+    from harness.contracts import EnvProvider
+    from harness.registry import load_provider
+
+    p = load_provider("plugins.embodiment_robosuite:provider")
+    lift_obs = {"cube_pos": np.array([0.0, 0.0, 0.90]),
+                "robot0_gripper_qpos": np.array([0.02, -0.02])}
+    spec = EpisodeSpec(seed=0)
+    assert p.terminal_success(lift_obs, spec, 0.82) is p.success(lift_obs, spec, 0.82) is True
+
+    class _FakeEnv:
+        def _check_success(self):
+            return True
+
+    stack_spec = EpisodeSpec(seed=0, task="stack")
+    assert p.terminal_success({}, stack_spec, 0.0, env=_FakeEnv()) is True
+    with pytest.raises(ValueError, match="env"):
+        p.terminal_success({}, stack_spec, 0.0)
+
+    class _Minimal:
+        def make_env(self, spec): ...
+        def tasks(self): return ("lift",)
+        def object_key(self, spec): return "cube_pos"
+        def success(self, obs, spec, start_z): return False
+
+    assert isinstance(_Minimal(), EnvProvider)
+
+
+def test_calibrate_stack_script_help_smoke():
+    """The real sweeps belong to the orchestration layer; CI only proves the
+    script parses its CLI (pass/height/sd/N all reachable)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    r = subprocess.run([sys.executable, "scripts/calibrate_stack.py", "--help"],
+                       capture_output=True, text=True, cwd=root, timeout=120, check=False)
+    assert r.returncode == 0, r.stderr
+    for flag in ("--pass", "--heights", "--sd", "--sds", "--n", "--first-seed"):
+        assert flag in r.stdout

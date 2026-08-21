@@ -47,6 +47,23 @@ class RobosuiteEmbodiment:
     def success(self, obs: Any, spec: Any, start_z: float) -> bool:
         return _env.lifted(obs, spec, start_z)
 
+    def terminal_success(self, obs: Any, spec: Any, start_z: float, env: Any = None) -> bool:
+        """OPTIONAL contract extension (see harness.contracts.EnvProvider):
+        the full-task terminal boolean, the only thing a gate may consume.
+
+        Stack's terminal predicate is the simulator's own `_check_success()`
+        (lifted off the table AND touching cubeB AND released), which reads
+        contact ground truth the obs dict cannot carry -- hence the env
+        handle. lift/pickcan fall back to the shared sub-goal. No handle on
+        stack fails loudly rather than mislabelling.
+        """
+        if spec.task == "stack":
+            if env is None:
+                raise ValueError("stack terminal success needs the live env handle "
+                                 "(env._check_success reads contact ground truth)")
+            return bool(env._check_success())
+        return self.success(obs, spec, start_z)
+
 
 def provider() -> RobosuiteEmbodiment:
     return RobosuiteEmbodiment()

@@ -21,6 +21,18 @@ class EnvProvider(Protocol):
     "which observation key holds the target" and "did the shared sub-goal
     succeed" through the contract instead of importing this embodiment's
     plugin -- the coupling that would otherwise block governed's own move.
+
+    OPTIONAL extension (deliberately NOT in the structural check, so an
+    embodiment that only has the shared sub-goal -- a future Isaac provider,
+    say -- is not forced to implement it):
+
+        terminal_success(obs, spec, start_z, env=None) -> bool
+
+    The full-task terminal boolean, the only stage-shaped thing a gate may
+    ever consume (stage chains are attribution, never gating). Some terminal
+    predicates need the live env handle (robosuite Stack's `_check_success`
+    reads contact ground truth). Consumers reach it via getattr and fall back
+    to `success` when absent.
     """
 
     def make_env(self, spec: Any) -> Any: ...
