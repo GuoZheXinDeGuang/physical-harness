@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 77 完成(R0+R1 全部, demo 逐位不变)。循环已在 4090 重启(2026-08-22)
+**Round:** 79 完成(首个长程 campaign: stack gen1 晋级 held-out +6.5pp judgement established)。循环已在 4090 重启(2026-08-22)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
