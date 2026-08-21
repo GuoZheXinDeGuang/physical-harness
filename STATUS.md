@@ -1,9 +1,27 @@
 # STATUS
 
-**Goal:** PHASE 2: Agentic Robotics OS 的 backbone harness, 见 GOAL.md v2 + ARCHITECTURE.md。(phase 1 Governor 成为治理层, 其记录不动)
-**Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 76 完成(demo 重验逐位一致)。循环已停止(2026-08-21), 工作交接到 4090 台式机; 冷启动读本文件 + progress.md + GOAL.md + git log 即可续接
-**Updated:** 2026-08-21
+**Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
+**Mode:** **evolving**
+**Round:** 77 完成(R0+R1 全部, demo 逐位不变)。循环已在 4090 重启(2026-08-22)
+**Updated:** 2026-08-22
+
+## PHASE 3 状态
+
+- [x] R0(round 77): 4090 冷启动全绿; **跨机 parity 实测成立**(基线 demo 与 Mac 封存数字
+      逐位一致)。基线封存 runs/demo, round 77 终验封存 runs/demo-r1。
+- [x] R1(round 77): 四 rung 全部落地(769d7ca/656d12c/a1dfe0c/4f223d3 + chore 79da352)。
+      174 通过 3 跳过, ruff 全绿, demo 重跑 artifacts 逐位一致(唯一差异 = skills digest,
+      rung 2 新字段, 预期)。细节见 progress.md round 77。
+- [ ] R2: plugins/embodiment_isaac 冒烟(对接 ../Z-Robotics-Lab/go2W_Sim, Isaac Sim 5.1 Docker)。
+      双轨证据纪律从第一个 episode 起执行。
+- [ ] R3: 技能电池基线(anygrasp / Z-Navigation-Stack-go2w / FoundationStereo)。
+- [ ] R4: qwen38 接 reasoner transport, 重跑 round-25 对比。
+- gate(等用户): 无。双轨证据纪律已写进 GOAL v3 验收#5。
+
+**frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
+既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params
+漏进 mount_plan_sha) 3. ruff pin(venv 0.16.4 比 round 76 宽, 已 chore 清零但未 pin)。
+**待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
 
 ## 已达成（不要重新验证）
 

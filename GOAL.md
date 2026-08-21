@@ -1,39 +1,57 @@
-# GOAL v2 - Backbone Harness for the Agentic Robotics OS
+# GOAL v3 - 从单技能治理到 agentic 骨架
 
-(2026-08-20 重定向。phase 1 的 GOAL 与其 5 条验收已于 round 3 达成并在 rounds 4-53 深化, 记录在 progress.md 与 docs/report.html。)
+(2026-08-22 重定向, 4090 冷启动后。phase 2 的 GOAL v2 与其 5 条验收已达成并以双策略
+parity 收口, 记录在 STATUS.md 与 docs/l2-inventory.md; v2 全文在 git 历史。)
 
-## 背景
+## 背景变化
 
-用户的 Agentic Robotics OS 总览分三层, 每层由科研团队实现:
-1. Reasoning VLM(Qwen3-VL, 任务分解 / 技能组合 / 运行时验证 / 重规划)。
-2. World & Capability Graphs(Scene Graph, Skill Graph, grounded skill binding)。
-3. Low-level Policies & Control(VLA / 操作策略 / 技能执行运行时 / 硬件)。
+- 循环已从 Mac 交接到 4090。R0 收口: 本机 venv(mujoco 3.3.7 + robosuite 1.5.2 按 pin,
+  MUJOCO_GL=egl)全量测试 161 通过 3 跳过 0 失败; 跳过 = Mac 归档与 BC 权重不在 git, 预期。
+- 本机已有完整生态: `Z-Robotics-Lab/go2W_Sim`(Isaac Sim 5.1 Docker + Isaac Lab v2.3.2,
+  带传感器 Go2W+PiPER 数字孪生, 46 关节已验证)、`zos`(3.5k 行 agentic runtime, VLM 大脑,
+  skill tree 带 authority/risk/precondition 继承)、技能存量(anygrasp 抓取 /
+  Z-Navigation-Stack-go2w 导航 / FoundationStereo 感知)、`envs/qwen38`(顶层 VLM)。
+- 组织形态: MSR 出论文导向的模块(新技能/后训练 VLM), zlab 维护骨架并集成。
+  **集成判据 = provider + 过门禁的证据, 不是 demo。**
 
-本项目不实现这三层。
-本项目是它们插进来的 **backbone harness**:
-- 取 deepseek-harness 的 everything-is-a-plugin: 能力接缝(Definition/Provider/Consumer)、配置分层(profile/bundle/patch)、append-only 事件链、运行时不变量。
-- 取 Zetta 的 physical RSI: 冻结策略 + 演化 critic/recovery + 配对显著性门禁, 作为骨架上的一个 workload。
-- 保留我们自己的特权预算, 并把它从"特征读取记账"上提为"能力解析记账"。
+## 定位
 
-Governor(rounds 1-53)整体成为治理/评测层; 它的证据纪律(preregistration、配对门禁、功效规划、盲发孪生、多区块复现)一条不丢。
+physical-harness 内核 = zlab 主线 agentic system 的骨架。zos 是第一个消费者(把它的
+skill tree 手写 precondition 换成 harness 实测的 SkillRecord), go2W_Sim 是第一个
+非 robosuite 具身 provider, qwen38 是第一个真实 reasoner provider。
 
 ## 验收(5 条)
 
-1. **内核零插件依赖**: harness/ 不 import governor/ 或 plugins/, 由 AST 测试强制。
-   插件只依赖内核契约(过渡期允许依赖 governor 作为 legacy 库, L2 清除)。
-2. **挂载即配置**: profile/bundle/patch 解析为 MountPlan 并进内容哈希; 换 env / policy / executor / graph 是改配置不是改代码; 用 3 任务 x 2 策略的纯配置矩阵证明。
-3. **迁移保真(parity)**: 走 kernel 路径重跑已封存的现门禁 campaign, 提升规则的 canonical 与 dev 门禁数字与 runs/campaign-pj-* 存档逐位一致。
-4. **RSI 成为 workload 插件**: 每条被提升的技能以 SkillRecord 发布进 graph.skill 契约 - 前置条件=触发器, 效果=实测 delta, 失败模式=broken 计数, 能力边界=特权声明+消融曲线, 判断=对盲发孪生的 held-out 对比。
-5. **全部测试绿**: 91 项 phase-1 测试迁移存活 + 内核新测试; "可见即已记录"、canonical 字段完整性、特权记账在内核层各有攻击测试。
+1. **内核通用化**: harness/ 核心不再绑定 manipulation 特定词汇(PHASE_HEIGHT、
+   grasp_height_offset 等收进显式标注的领域词汇模块或插件); EpisodeSpec 泛化出任务无关核心。
+   AST 测试继续强制零插件依赖。**前置: 先补三个证据洞**(beam 路径缺盲孪生门禁、发布不把
+   held-out 判定作为一等字段、DEFAULT_PERCEPT_REF 不进内容哈希) —— 多方集成前证据门槛
+   必须各路径一致。
+2. **Isaac 具身插件**: plugins/embodiment_isaac 实现 embodiment.env 契约对接 go2W_Sim,
+   一条命令跑通一个 episode; robosuite 与 Isaac 是同一契约的两个 provider, 换 = 改 mount。
+3. **技能电池**: 感知/抓取/导航各包成 provider, 共享子目标判据(round 10 教训:
+   不用各任务自己的成功判据), 每个技能有实测基线成功率 + SkillRecord 发布路径。
+4. **真实 VLM 接入**: qwen38 经现有 reasoner transport + parse_proposal 接入,
+   重跑 round-25 对比(mock vs 确定性搜索 vs 真模型), prompt/response 落内容寻址 store。
+5. **双轨证据纪律成文并进预注册**: mujoco 轨保留逐位 parity + 全套统计门禁;
+   Isaac 轨为配对初始条件 + 大 n 统计门禁, **不承诺 bit-parity**(PhysX GPU 非位确定),
+   审计链降级为记录。哪条结论出自哪轨必须可查, 不许混轨报数。
 
-## 迁移阶梯(每级都以 parity 收口)
+## 迁移阶梯(每级收口)
 
-- **L0(当前)**: 内核 + 适配器插件; EpisodeSpec 携带 provider ref 字符串(spawn 安全), 旧路径缺省不变。
-- **L1**: 逐模块把实现移入插件, governor/ 变薄, 每步 parity。
-- **L2**: 删除 governor 命名空间; 插件间零残留依赖。
+- R0(已完成): 4090 冷启动, 测试全绿。
+- R1: 三个证据洞 + 内核通用化(验收#1), 每 rung 全量测试, mujoco 轨 demo 逐位不变
+  (4090 基线 runs/demo, 改动后重跑对比)。
+- R2: Isaac 冒烟(验收#2)。
+- R3: 技能电池基线(验收#3) —— 先测量, 再谈提升(difficulty-calibration 的老套路)。
+- R4: qwen38 接入(验收#4)。
+- R5: meta-RSI: 骨架架构改动本身走证据门禁(eval 电池上的配对提升), 与技能演化分开记账。
 
-## 硬约束
+## 硬约束(继承 + 新增)
 
-- 不改 RNG 推导与数值路径; 迁移不允许改变任何已封存实验的可复现结果。
+- 不改 RNG 推导与数值路径; mujoco 轨已封存实验的可复现结果不许变。
+- Mac 归档(runs/campaign-pj-*)需要拷过来; 跨机 bit-parity 本就不保证(浮点/编译器),
+  在 4090 重跑重封存新基线, 与 Mac 数字对比作为信息而非验收。
+- RSI 的边界照旧: 它优化判断(何时调用/怎么恢复/能力边界), 不发明能力。
+  抬天花板的是 MSR 的新模块, 进门要过盲对照。
 - heavy sim 串行; 单机 multiprocessing 是 exec.rollouts 的第一个 provider, 不是它的定义。
-- 零外部 API 仍是参考路径; reasoner 接真实模型是 gate, 等用户提供 key 与选型。

@@ -2724,3 +2724,50 @@ held-out 53% -> 73%, +20pp, p=1.9e-6, SkillRecord 落盘)。
 每件滞留原因与出口俱在盘点。剩余全部等用户:
 gate(真模型 reasoner / 分布式 executor) + 决策(ref 必填) + 三层契约细化。
 **循环转入待令心跳(1 小时档), 有输入立即恢复全速。**
+
+## Round 77 - 2026-08-22 - PHASE 3 开工: 4090 冷启动 + 三个证据洞 + 词汇拆分, demo 逐位不变
+
+(循环在 4090 重启, GOAL v3: 从单技能治理到 agentic 骨架。本轮 = R0 收口 + R1 全部四 rung。)
+
+### 做成了什么
+
+1. **R0 冷启动**: uv venv + mujoco 3.3.7/robosuite 1.5.2 按 pin, MUJOCO_GL=egl,
+   全量 161 通过 3 跳过(Mac 归档/BC 权重不在 git, 预期)。
+   **跨机 parity 实测成立**: 4090 基线 demo 与 Mac 封存数字逐位一致
+   (gen1 finger_gap<0.001787, dev 42.9->76.4, held-out +20pp p=1.9e-6, 消融 100/96/73/59)。
+2. **rung 3(769d7ca)**: Preregistration.percept_provider 默认 None -> DEFAULT_PERCEPT_REF,
+   显式 None 归一进 __post_init__; ARCHITECTURE L1 rung 1 caveat 闭合。真发现:
+   字段/下传/盖写早已存在, 洞只是"哈希记 None、行为用常量"的默认值脱钩。
+3. **rung 2(656d12c)**: SkillRecord 顶层 heldout_judgement_established(bool|None 三态,
+   恒在, 谓词逐字镜像 campaign 的判定打印), 消费者(zos skill tree)可直接过滤;
+   单块告诫(round 52)写进注释。campaign.py 零改动, 封存产物哈希不动。
+4. **rung 1(a1dfe0c)**: blind_twin() 抽取(campaign 两处 inline 替换, dataclass 相等 +
+   canonical 相等已断言锁定), beam 每代补盲孪生判定门禁、尊重 require_judgement,
+   history 记 blind_gate。tests/test_beam.py 新建 -- beam 此前零测试, 红绿验证:
+   stash 实现只留测试, 恰好门禁两测红。
+5. **rung 4(4f223d3)**: harness/spec_tabletop.py 扁平领域词汇模块(PHASE_HEIGHT/
+   NOMINAL_SCHEDULE 逐字剪切, 字节级比对), spec.py re-export 同对象, 零调用方改动;
+   两个新测试钉死 identity 与字面量(堵 test_reducers 只查 key membership 的静默漂移洞)。
+6. **终验**: 174 通过 3 跳过, ruff 全绿; demo 重跑 runs/demo-r1, **artifacts/ 四个内容寻址
+   文件与基线 sha256 逐位一致**, stdout 全部数字一致; skills digest 变化 = rung 2 新字段, 预期。
+
+### 什么没成 / 注意(重要)
+
+- **终验字面 FAIL 一处, 裁定为协议伪影**: skill 里 mount_plan_sha 随输出目录变
+  (demo 把 --out 路径塞进 graph.skill 的 mount params -> 进 plan 哈希)。机械复现:
+  两个 root 分别重算 resolve_plan 精确得到两个 sha, 相关文件 git diff 为空。
+  **side finding: skill record 不可路径迁移** -- 存储路径漏进 mount_plan_sha, 记 frontier。
+- **beam 的 gen-1 泄漏(既有, rung 1 发现)**: 深度 1 分支被拒后 seed 规则不回滚,
+  promoted=False 仍进选择块参选。rung 1 关死的是多代生长后的晋级, 这个洞还开着。
+- venv 的 ruff 升到 0.16.4(规则集变宽), HEAD 原有 29 处 finding 由 chore(79da352) 清掉;
+  round 68 记录过 autofix 咬 parity 数值路径, 本次全部人工核对。考虑 pin ruff。
+- pytest 9.1 的 -q 与 pyproject addopts 的 -q 叠加会吞 summary 行; 报数需单 -q。
+- git 全局身份未配置, commit 用 -c 匹配仓库既有作者。
+
+### 下一轮种子
+
+R2: plugins/embodiment_isaac 冒烟 -- 对接 ../Z-Robotics-Lab/go2W_Sim(Isaac Sim 5.1
+Docker + Isaac Lab 2.3.2, Go2W+PiPER 数字孪生), 实现 embodiment.env 契约跑通一个
+episode。双轨证据纪律(GOAL v3 验收#5)从第一个 episode 起执行: Isaac 轨不承诺
+bit-parity, 配对初始条件 + 大 n。frontier 顺位: beam gen-1 回滚 > skill record
+路径可迁移 > ruff pin。Mac 归档(runs/campaign-pj-*)待拷贝, 两个 skip 测试待解锁。
