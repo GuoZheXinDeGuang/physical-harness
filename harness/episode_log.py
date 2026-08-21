@@ -36,8 +36,8 @@ CHAIN_SEED = "governor/episode-chain/v1"
 # L1 rung 3: the chain math is harness.events'; only the seed is ours. The
 # construction is bit-identical to the local functions this replaced (there is
 # a golden-value test), so every archived episode log still verifies.
-from harness.events import chain_step  # noqa: F401  deliberate re-export for callers
 from harness.events import chain_start as _chain_start
+from harness.events import chain_step  # noqa: F401  deliberate re-export for callers
 
 
 def chain_start() -> str:
