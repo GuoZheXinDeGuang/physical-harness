@@ -2682,3 +2682,21 @@ env.py(67 行垫片) / policy.py 壳(governed laundering) / proposer.py(brief �
 
 报告 phase 2 章节(把 backbone 迁移、跨具身发现、per-rung parity 纪律写进 docs/report.html),
 或 proposer 的 brief 词表重构。gate 待用户: 真模型 reasoner / 分布式 executor。
+
+## Round 75 - 2026-08-21 - 报告 phase 2 章节入册, artifact 重发
+
+- 新增开篇 "P2 / 骨架" 一节(phase 1 记录原样保留在其后): 重定向与角色 /
+  三条被测试强制的插件化性质 / 迁移阶梯与 per-rung parity 纪律(含 "parity 抓住
+  初始化顺序 bug" 这条) / 跨具身新结论(检测迁移, 修复不迁移) / SkillRecord 即
+  Verify->Adapt 边的严格化 / phase 2 自查节选。附 GitHub 链接。
+- 顺手清掉 phase 1 章节里 172 处历史 em dash(用户全局规则), 全部换 " -- "。
+- artifact 同 URL 重发, docs/report.html 同步, 推 GitHub。
+
+### 下一步(frontier)
+
+工程侧收敛已到位。剩余项全部等用户:
+1. gate: 接真实模型 reasoner(需 key/选型; 你们的 Qwen3-VL 走同一 transport)。
+2. gate: 分布式 executor(新依赖 Ray/其他)。
+3. 决策: provider ref 必填 -> governor 归零。
+4. 三层团队接入时的契约细化。
+无这些输入时, 循环可做的增量工作已明显收敛; 下一轮若无新信号, 考虑收敛节奏或停轮待令。
