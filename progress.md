@@ -2540,3 +2540,28 @@ governor/ 现存实体: env.py / governed.py / proposer.py(有据滞留) + 壳�
 ### 下一轮种子
 
 rung G: env/EpisodeSpec 上提(盘点标注的"唯一动通用货币的一步", 单独 rung, 双策略 parity)。
+
+## Round 70 - 2026-08-21 - L2 rung G: EpisodeSpec 成为内核货币
+
+### 最小化的一步(有意)
+
+只动 EpisodeSpec 本体(+它的默认 NOMINAL_SCHEDULE, 出口已注明): 逐字迁入 harness/spec.py,
+governor.env 保持**真实 re-export**(不是壳 -- env.py 本级仍是实体模块, 类是同一对象,
+pickle/字段序/默认值逐位不变, 守卫测试原样通过)。
+env.py 其余部分(任务表/构建/FrozenPolicy)留待 rung H 随 EnvProvider 契约扩展一起走:
+object_key/lifted 必须经契约供给 rsi, 否则 governed 入 rsi 时又是跨插件 import。
+
+### ruff 抓到测试抓不到的
+
+搬家时 EpisodeSpec.child() 丢了 replace import -- **零调用点的死角, 164 绿全程沉默**,
+F821 一眼点名。潜伏 NameError 修掉; child() 顺带记为无人使用的 API(候删)。
+教训: **lint 与测试覆盖的是不同的错误面, 迁移轮两个都要过。**
+
+### VERIFY
+
+164 passed + ruff 全绿; **双策略 parity 串行后台跑**(货币级变更按盘点用双策略), 下唤醒收。
+
+### 下一轮种子
+
+收双 parity -> rung H: EnvProvider 契约扩展(object_key/success 语义入契约) +
+env.py 余部入 embodiment 插件; 之后只剩 governed(rung I)与清壳(rung J)。
