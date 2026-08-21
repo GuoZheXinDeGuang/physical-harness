@@ -20,6 +20,10 @@ from harness.spec_tabletop import (  # noqa: F401  re-export: tabletop motor voc
     NOMINAL_SCHEDULE,
     PHASE_HEIGHT,
 )
+from harness.stages import (  # noqa: F401  re-export: stage vocabulary lives in its domain module
+    Clause,
+    StageSpec,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +51,14 @@ class EpisodeSpec:
     #: round 60), so descend/close goals take a per-spec vertical correction.
     #: 0.0 reproduces the Panda behaviour bit for bit.
     grasp_height_offset: float = 0.0
+    #: R2 stage chain: a measurement overlay the governed rollout scores at
+    #: schedule boundaries (harness/stages.py). None means the single
+    #: embodiment.success subgoal and reproduces the pre-stage path byte for
+    #: byte -- unlike percept_provider there is no behaves-as-constant desync,
+    #: so None is the honest default. Task-shape config, not a provider ref:
+    #: it sits BEFORE the provider block so the triple below stays the literal
+    #: tail the seam guards pin.
+    stages: tuple[StageSpec, ...] | None = None
     #: L0 capability-seam dispatch: "module:factory" refs for embodiment.env and
     #: policy.driver (see harness/registry.py). None keeps the pre-kernel path
     #: byte-identical. These travel as strings rather than module-global hooks

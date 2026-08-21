@@ -235,6 +235,36 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     driver.observe_once(obs)
     start_z = float(np.asarray(obs[embodiment.object_key(spec)])[2])
 
+    # --- R2 stage overlay: a SCORER over the policy's schedule, never a
+    # controller. Everything is gated behind `stages is not None` so the
+    # stageless path stays byte-identical (runs/demo, runs/demo-r1 anchors).
+    # The scorer view may read privileged features -- a scorer is not a critic,
+    # embodiment.success already reads ground truth -- so its reads are
+    # accounted PER STAGE and never merged into `history`, the chain, or
+    # assert_privilege_budget: those feed the zero-privilege search.
+    stages = spec.stages
+    if stages is not None:
+        scorer_names = PrivilegePolicy(critic_budget=1).critic_names()
+        bounds: list[int] = []
+        for s in stages:
+            bounds.append(s.budget + (bounds[-1] if bounds else 0))
+        stage_results: list[dict] = []
+        stage_idx = 0
+        stage_entered = 0
+
+        def _score_stage(exited_step: int | None) -> None:
+            """Score the current stage on the CURRENT obs and advance."""
+            nonlocal stage_idx, stage_entered
+            sv = project(obs, scorer_names, step=k, episode=f"s{spec.seed}")
+            stage_results.append({
+                "name": stages[stage_idx].name,
+                "entered_step": stage_entered, "exited_step": exited_step,
+                "success": stages[stage_idx].holds(sv), "reached": True,
+                "privilege_used": sv.privilege_used(),
+            })
+            stage_entered = k
+            stage_idx += 1
+
     rules = list(bundle.rules) if bundle else []
     consec = {r.rule_id: 0 for r in rules}
     used = {r.rule_id: 0 for r in rules}
@@ -279,6 +309,14 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             history.setdefault(name, []).append(value)
         chain = chain_step(chain, logged.digest)
         k += 1
+        # Stage boundaries live on the DRIVER's schedule clock: on_handback
+        # supersedes the interrupted phase, so that clock can jump several
+        # cumulative budgets in one hop -- hence a while, scoring every crossed
+        # stage on the current (post-recovery) obs, not only the first.
+        if stages is not None:
+            pk = getattr(driver, "k", k)
+            while stage_idx < len(stages) and pk >= bounds[stage_idx]:
+                _score_stage(exited_step=k)
         if not rules:
             continue
 
@@ -314,9 +352,24 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         for rid in consec:
             consec[rid] = 0
 
+    if stages is not None:
+        # The loop can exit with boundaries still uncrossed on the ledger: an
+        # exhaust break lands before the in-loop check, and a hand-back jump
+        # can even exhaust the driver outright. Settle crossed stages first,
+        # then score the in-progress stage on the final obs, then record the
+        # stages the policy never reached.
+        pk = getattr(driver, "k", k)
+        while stage_idx < len(stages) and pk >= bounds[stage_idx]:
+            _score_stage(exited_step=k)
+        if stage_idx < len(stages) and pk > (bounds[stage_idx - 1] if stage_idx else 0):
+            _score_stage(exited_step=None)
+        for s in stages[stage_idx:]:
+            stage_results.append({"name": s.name, "entered_step": None, "exited_step": None,
+                                  "success": False, "reached": False, "privilege_used": 0})
+
     success = embodiment.success(obs, spec, start_z)
     env.close()
-    return {
+    result = {
         "seed": spec.seed,
         "task": spec.task,
         "policy": driver.identity,
@@ -331,3 +384,9 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         "declared_privilege": bundle.declared_privilege() if bundle else 0,
         "trace": {k: np.asarray(v) for k, v in history.items()},
     }
+    if stages is not None:
+        # The ONLY new key, and only on the opt-in path: stages=None emits
+        # nothing new anywhere. Per-stage results are measurement output like
+        # trace, not hashed identity.
+        result["stages"] = stage_results
+    return result

@@ -32,7 +32,7 @@ from pathlib import Path
 
 import numpy as np
 
-from harness.spec import EpisodeSpec
+from harness.spec import EpisodeSpec, StageSpec
 from plugins.rsi.gate import PairedResult, ablation_curve, paired_gate
 from plugins.rsi.governed import DEFAULT_PERCEPT_REF, Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger, search_triggers
@@ -134,6 +134,12 @@ class Preregistration:
     prior_judgement_yield: float = 0.35
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
+    #: R2 stage chain the governed rollout scores (harness/stages.py). In the
+    #: preregistration because "what stage chain this bundle was scored
+    #: against" is a conclusion-moving fact: asdict recursion carries it into
+    #: sha(). None == no stage overlay, byte-identical legacy path. Before the
+    #: provider triple, which stays the literal tail the seam guard pins.
+    stages: tuple[StageSpec, ...] | None = None
     #: L0 capability-seam refs ("module:factory" strings, harness/registry.py):
     #: which embodiment.env / policy.driver provider built this run's episodes.
     #: None keeps every existing archived campaign's replay path byte-identical
@@ -201,6 +207,7 @@ class CampaignStore:
 def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
     return [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
                         percept_noise=prereg.percept_noise,
+                        stages=prereg.stages,
                         env_provider=prereg.env_provider,
                         policy_provider=prereg.policy_provider,
                         percept_provider=prereg.percept_provider) for s in seeds]
