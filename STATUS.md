@@ -12,11 +12,19 @@
 - [x] R1(round 77): 四 rung 全部落地(769d7ca/656d12c/a1dfe0c/4f223d3 + chore 79da352)。
       174 通过 3 跳过, ruff 全绿, demo 重跑 artifacts 逐位一致(唯一差异 = skills digest,
       rung 2 新字段, 预期)。细节见 progress.md round 77。
-- [ ] R2: plugins/embodiment_isaac 冒烟(对接 ../Z-Robotics-Lab/go2W_Sim, Isaac Sim 5.1 Docker)。
-      双轨证据纪律从第一个 episode 起执行。
-- [ ] R3: 技能电池基线(anygrasp / Z-Navigation-Stack-go2w / FoundationStereo)。
-- [ ] R4: qwen38 接 reasoner transport, 重跑 round-25 对比。
-- gate(等用户): 无。双轨证据纪律已写进 GOAL v3 验收#5。
+- [ ] R2(用户裁定 2026-08-22 x2: 导航不做, robosuite 长程 manipulation): 三 rung ——
+      多阶段任务基建(阶段序列+子目标判据进哈希) / Stack 长程基线+难度标定+每阶段失败分布 /
+      长程 RSI campaign。anygrasp 包 provider 为后续 rung(PickPlace 多样物体处进场)。
+- [ ] R3: qwen38 接 reasoner transport, 重跑 round-25 对比。
+- gate(需要时解锁): Isaac 具身插件 —— 触发条件: 导航技能电池或房间尺度长程场景。
+      导航证据暂由真机(zos)承担。go2W_Sim 桥接成本侦察报告备用。
+
+**PHASE 3 区块预算(round 78 起, 规划先行于任何真跑):** phase 1/2 已烧段——held-out
+1000-1999 / 6000-6199 / 7000-7199 / 8000-8599 / 8800-8999 / 11200-11399 / 12000-12199 /
+12400-12599 / 13000-13199; dev-选择-诊断 2000-2899 六片; demo 30000 段。phase 3 用 40000+:
+**标定 40000-40999**(pass A 座高 40000-40199 / pass B sd 扫 40200-40599, 标定过的块永不再当
+门禁/held-out); **Stack campaign dev 蓄水池 41000-41999**; **held-out 42000-42199 /
+42200-42399 / 42400-42599**(头条至少三块); 选择 43000+ 需要时用; 44000+ 留后续 rung。
 
 **frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
 既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params

@@ -37,15 +37,18 @@ skill tree 手写 precondition 换成 harness 实测的 SkillRecord), go2W_Sim �
    Isaac 轨为配对初始条件 + 大 n 统计门禁, **不承诺 bit-parity**(PhysX GPU 非位确定),
    审计链降级为记录。哪条结论出自哪轨必须可查, 不许混轨报数。
 
-## 迁移阶梯(每级收口)
+## 迁移阶梯(每级收口; 2026-08-22 用户裁定: robosuite 先行, Isaac 降为 gated)
 
-- R0(已完成): 4090 冷启动, 测试全绿。
-- R1: 三个证据洞 + 内核通用化(验收#1), 每 rung 全量测试, mujoco 轨 demo 逐位不变
-  (4090 基线 runs/demo, 改动后重跑对比)。
-- R2: Isaac 冒烟(验收#2)。
-- R3: 技能电池基线(验收#3) —— 先测量, 再谈提升(difficulty-calibration 的老套路)。
-- R4: qwen38 接入(验收#4)。
-- R5: meta-RSI: 骨架架构改动本身走证据门禁(eval 电池上的配对提升), 与技能演化分开记账。
+- R0(已完成): 4090 冷启动, 测试全绿, 跨机 parity 实测成立。
+- R1(已完成, round 77): 三个证据洞 + 词汇拆分, demo 逐位不变。
+- R2: 技能电池 robosuite 轨(验收#3 的前半) —— anygrasp 包成 provider 接进骨架,
+  抓取技能过门禁闭环。**诚实边界**: MuJoCo 干净渲染下感知技能测的是"接入+门禁机制",
+  不是感知本身的真机表现(那要 Isaac RTX 或真机数据)。
+- R3: qwen38 接 reasoner transport(验收#4), 重跑 round-25 对比。
+- R4: meta-RSI: 骨架架构改动本身走证据门禁(eval 电池上的配对提升), 与技能演化分开记账。
+- gate(需要时解锁): Isaac 具身插件(验收#2) —— 触发条件: 需要导航技能电池或房间尺度
+  长程场景。robosuite 无法做导航; 导航证据暂由真机(zos + Z-Navigation-Stack-go2w)承担。
+  桥接成本侦察报告备用。
 
 ## 硬约束(继承 + 新增)
 

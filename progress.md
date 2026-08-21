@@ -2771,3 +2771,57 @@ Docker + Isaac Lab 2.3.2, Go2W+PiPER 数字孪生), 实现 embodiment.env 契约
 episode。双轨证据纪律(GOAL v3 验收#5)从第一个 episode 起执行: Isaac 轨不承诺
 bit-parity, 配对初始条件 + 大 n。frontier 顺位: beam gen-1 回滚 > skill record
 路径可迁移 > ruff pin。Mac 归档(runs/campaign-pj-*)待拷贝, 两个 skip 测试待解锁。
+
+## Round 78 - 2026-08-22 - 长程 Stack: 阶段机 overlay + 基线策略 + 难度标定, demo 数字零移动
+
+(R2 第一批: robosuite 长程 manipulation。规划 workflow 5 施工图 + 编排层裁决书调解三处冲突,
+实施 workflow 三 rung 串行 + 人工终验。)
+
+### 做成了什么
+
+1. **rung A(0fc7afe) 阶段机核心**: harness/stages.py — Clause(feature,op,threshold) +
+   StageSpec(name,success,budget), 普通 frozen dataclass 经 asdict 递归进哈希(裁决:不手写
+   canonical, round 34 盲区结构性免疫)。EpisodeSpec.stages/Preregistration.stages 插在
+   provider 三元组之前(裁决:保 provider-tail 守卫, 全仓 keyword 构造已验证)。
+   governed_rollout 阶段评分 overlay: 独立 scorer FeatureView, 与 critic 的预算/history
+   严格隔离; on_handback 跨界 while 补分; stages=None 逐位 no-op 有专测。
+2. **rung B(3b13b15) Stack 基线策略**: STACK_PHASE_HEIGHT/STACK_SCHEDULE 独立字面量
+   (8 相位 ~177 policy 步), StackScriptedDriver 走 provider ref 派发, t=0 一次读双目标
+   (cubeB 直读 obs, z 精确 xy 加噪), retarget 只更新 target_a。lift 路径零改动。
+3. **rung C(707dc25) 评分与标定件**: privileged.stack_xy_residual/stack_z_residual 关系特征
+   (容差字面量, 防 round 10 场景事实脆性), stack_stages() 两阶段链 builder, 终局成功 =
+   env._check_success 经 provider 可选扩展方法, scripts/calibrate_stack.py 两遍设计。
+4. **终验(人工, workflow 终验 agent 未交表)**: 194 通过 3 跳过, ruff 绿。demo 重跑
+   runs/demo-r2 与 r1 逐字段对比: generation/campaign_result 唯一差异 = preregistration_sha
+   (stages 字段新增的预期后果), prereg 只多 stages:null 键, skill 差 prereg_sha+
+   mount_plan_sha(输出路径伪影, round 77 已知)。**全部门禁数字/规则 canonical/消融曲线逐位一致。**
+5. **难度标定(种子 40000-40799 烧毕)**:
+   - pass A 座高 [0.040,0.060] 五点全同(65/25/10) — 先按"两臂全同先怀疑实验"核查:
+     place-miss 几何随座高在变(0.056→0.050m), 旋钮确实到达策略; 结果不敏感的真因是
+     放置失败是横向的(xy ~5cm, 方块落桌), 座高救不了。座高保持 0.050。
+   - pass B 陡坎: sd 0.005/0.010/0.015/0.020 → 90/80/40/27.5%(40200 段), 0.010→0.015 悬崖。
+   - 细化(40400 段): 0.012→52.5%(抓 20/放 27.5), 0.013→40%, 0.014→37.5%。
+   - **确认(n=100 双区块): sd=0.012 → 58.0%(40600) / 52.0%(40700), 跨度 6pp。**
+     **操作点锁定 sd=0.012**; 失败结构两阶段兼备(抓取 ~27%, 放置 14-22%) —
+     长程 campaign 在两个阶段都有素材, 这是选 0.012 而非更深噪声的核心理由。
+
+### 什么没成 / 注意
+
+- 实施 workflow 的终验 agent 干完活没交结构化输出, workflow 判 failed; 实际三 rung 全提交,
+  终验由编排层人工补做。教训: schema 输出的 agent 提示里要把"最后必须调 StructuredOutput"
+  写得更凶, 或终验这类关键步骤留在编排层手里。
+- demo-r2 第一次跑到 gen1 被打断(workflow 报错连带杀进程), 曾短暂误判为行为漂移;
+  逐字段 diff 才裁清。碎跑要删干净重跑, 不留半个 store。
+- n=40 的区块噪声实测很大(同 sd=0.010: 40000 段 65% vs 40200 段 80%); 40-60% 带的
+  定位必须 n≥100 双区块, 单块 n=40 只配做粗定位。
+- place miss 的形态值得记住: xy ~5cm + seat -5cm + 100% released = 方块放歪落桌,
+  不是没松手也不是座高错 — campaign 轮的 place 阶段 critic 要检的是这个。
+
+### 下一轮种子
+
+Stack RSI campaign: dev 蓄水池 41000-41999, held-out 42000 段三块, sd=0.012,
+task="stack" + policy_provider=stack ref + stages=stack_stages()。开跑前:
+(1) campaign 的 label 接线到终局成功(评分 provider 方法已备, campaign.py 未接);
+(2) horizon 按 名义177+max_generations×recovery长 重算 pin;
+(3) gen1 先验 yield 按标定实测调低再定样本量(evidence 施工图: 0.4/0.25 起步)。
+frontier 顺位不变: beam gen-1 回滚 > skill 路径可迁移 > ruff pin。
