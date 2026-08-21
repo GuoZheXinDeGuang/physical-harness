@@ -35,6 +35,16 @@ class InMemorySkillGraph:
         self._root = Path(root) if root else None
         if self._root is not None:
             self._root.mkdir(parents=True, exist_ok=True)
+            # Read-back is what makes `root` a shared store rather than a write
+            # spool: a campaign publishes here, and a LATER process (the zos
+            # cockpit) mounts the same root and reads the promoted records
+            # through skills() — the kernel-accounted seam, so no consumer ever
+            # globs this directory itself. Filename stem IS the content digest
+            # (publish() named it). A corrupt file raises right here at mount
+            # time — loud where mounted, and zos's evidence reader degrades to
+            # an honest empty index on its side.
+            for f in sorted(self._root.glob("*.json")):
+                self._skills[f.stem] = json.loads(f.read_text())
 
     def publish(self, record: Mapping) -> str:
         payload = dict(record)
@@ -178,7 +188,7 @@ if __name__ == "__main__":
                          "conf": 0.91, "t_seen": now, "source": "vlm"},
             "bottle_2": {"label": "bottle", "x": 10.6, "y": 2.11, "z": 0.10,
                          "conf": 0.60, "t_seen": now, "source": "vlm"}},
-        "authority": "IDLE", "t_pose": now - 0.2, "odom_age": 0.2, "t_places": now,
+        "authority": "idle", "t_pose": now - 0.2, "odom_age": 0.2, "t_places": now,
     }
     g = WorldSceneGraph().snapshot(snap)
     rel = {r["to"]: r["rel"] for r in g["relations"]}
@@ -216,6 +226,20 @@ if __name__ == "__main__":
     assert sg["relations"] == [{"from": "eef", "to": "cubeA", "rel": "0.500m planar"}]
     assert SimSceneGraph().snapshot({}) == {
         "frame": "world", "t": 0.0, "nodes": [], "relations": []}
+
+    # Skill store read-back: publish with a root, a FRESH instance loads it —
+    # this is the cross-process half of the graph.skill seam (campaign writes,
+    # a later zos process mounts the same root and reads through skills()).
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        first = InMemorySkillGraph(root=td)
+        rec = {"kind": "grasp_recovery", "task": "stack", "generation": 1}
+        digest = first.publish(rec)
+        reread = InMemorySkillGraph(root=td)
+        assert reread.skills() == (rec,), reread.skills()
+        assert reread.publish(rec) == digest, "content addressing drifted across the reload"
+        assert len(reread.skills()) == 1, "re-publishing a loaded record must not duplicate it"
+    assert InMemorySkillGraph().skills() == (), "root-less stays a pure in-memory store"
 
     # The module must stay light: importable with no numpy in the process.
     import sys
