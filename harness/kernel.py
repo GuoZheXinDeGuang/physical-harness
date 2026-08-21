@@ -110,6 +110,18 @@ class Kernel:
                               "privileged": definition.privileged})
         return provider
 
+    def note(self, kind: str, data: dict) -> None:
+        """Let a workload write into the SAME chained ledger kernel events use.
+
+        This is what makes the session log a system ledger rather than a kernel
+        diary: a campaign's completion, its preregistration sha and the skills
+        it published sit in one verifiable chain with the mounts and
+        resolutions that produced them. No log mounted means silently no-op --
+        note() is evidence, never control flow.
+        """
+        if self._log is not None:
+            self._log.append(kind, data)
+
     def resolutions(self) -> tuple[Resolution, ...]:
         return tuple(self._resolutions)
 

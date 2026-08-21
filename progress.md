@@ -2208,3 +2208,27 @@ fake run_campaign 不接受 executor kwarg), 全是测试跟上接口, 无行为
 教训: **"多轮在跑什么"必须从外面看得懂。** 我的轮次记录对自己是资产,
 对用户是黑箱; README + demo 入口才是别人判断 "pipeline 通没通" 的界面。
 顺带收口: rung 2 克隆 parity 四组 PASS(双策略双 rung 全部闭合)。
+
+## Round 58b - 2026-08-20 - L1 rung 3: 事件链合一
+
+### 做了什么
+
+1. 链原语收敛到一份: `harness.events.chain_start(seed)/chain_step(prev, *parts)`,
+   SessionLog 与 governor.episode_log 都用它。episode_log 的种子与数学逐位不变 --
+   **重构前先取 golden 值钉进测试**(chain_start 与一步 chain_step 的具体 sha),
+   动了它归档 episode log 的审计就会 silent break, 现在会先红。
+   另加同一性断言(episode_log.chain_step IS events.chain_step), 再长出第二套会被抓。
+2. `Kernel.note()`: workload 在 campaign 结束时把 prereg sha / 规则 / 技能摘要 /
+   held-out 写进内核会话链。**挂载 -> 解析 -> campaign 结果第一次进同一本可验证的账**;
+   测试断言完成事件位于解析事件下游且整链 verify()。
+
+### VERIFY
+
+脚本策略 parity(rung 3 之后): 四组全 PASS。
+rerun 的 session-log 末行即 rsi.campaign_complete(链上)。163 测试绿。
+
+### 下一轮种子(L1 rung 4 候选)
+
+1. features 注册表插件化: REGISTRY 是 governor 全局, embodiment 应声明自己的特征面。
+2. demos 采集走 kernel(最后一个 legacy 路径)。
+3. 或先做一次 Review 轮: L1 已三级, 该对新架构整体做一次对抗复查。

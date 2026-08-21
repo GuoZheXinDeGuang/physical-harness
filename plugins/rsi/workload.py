@@ -180,4 +180,12 @@ def run(
             skill_record["mount_plan_sha"] = mount_plan_sha
         digests.append(skill_graph.publish(skill_record))
 
+    kernel.note("rsi.campaign_complete", {
+        "prereg_sha": result.get("preregistration_sha"),
+        "rules": result.get("rules"),
+        "skills": digests,
+        "heldout": {k: heldout[k] for k in ("n", "base_rate", "governed_rate",
+                                            "fixed", "broken", "p_value")
+                    if k in heldout},
+    })
     return {"result": result, "skills": digests}

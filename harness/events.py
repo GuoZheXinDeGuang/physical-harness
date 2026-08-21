@@ -20,12 +20,30 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def chain_start(seed: str) -> str:
+    """Open a hash chain. One primitive serves every ledger in the system:
+
+    the kernel's session log and governor's episode log used to carry two
+    structurally identical chain constructions; L1 rung 3 collapses them onto
+    this pair so "chained and auditable" means one piece of code, verified one
+    way, everywhere.
+    """
+    return _sha(seed)
+
+
+def chain_step(previous: str, *parts: str) -> str:
+    """Fold parts into the chain: sha256("prev:part[:part...]")."""
+    if not parts:
+        raise ValueError("chain_step needs at least one part")
+    return _sha(":".join((previous, *parts)))
+
+
 class SessionLog:
     """Append-only, chain-committed event log; optionally mirrored to disk."""
 
     def __init__(self, root: Path | None = None) -> None:
         self._rows: list[dict] = []
-        self._chain = _sha(_SEED)
+        self._chain = chain_start(_SEED)
         self._root = root
         if root is not None:
             root.mkdir(parents=True, exist_ok=True)
@@ -33,7 +51,7 @@ class SessionLog:
     def append(self, kind: str, data: dict) -> int:
         payload = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
         data_sha = _sha(payload)
-        self._chain = _sha(f"{self._chain}:{kind}:{data_sha}")
+        self._chain = chain_step(self._chain, kind, data_sha)
         row = {"seq": len(self._rows), "kind": kind, "data": data,
                "sha": data_sha, "chain": self._chain}
         self._rows.append(row)
@@ -46,13 +64,13 @@ class SessionLog:
         return tuple(self._rows)
 
     def verify(self) -> bool:
-        chain = _sha(_SEED)
+        chain = chain_start(_SEED)
         for row in self._rows:
             payload = json.dumps(row["data"], sort_keys=True, separators=(",", ":"),
                                  default=str)
             if _sha(payload) != row["sha"]:
                 return False
-            chain = _sha(f"{chain}:{row['kind']}:{row['sha']}")
+            chain = chain_step(chain, row["kind"], row["sha"])
             if chain != row["chain"]:
                 return False
         return True

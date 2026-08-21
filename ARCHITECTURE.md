@@ -38,6 +38,11 @@ parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 prere
 
 ## L1 进度
 
+- rung 3(round 58b): **事件链合一**。链原语(chain_start/chain_step)只在 harness.events
+  存在一份, governor.episode_log 复用同一实现(种子不同, 数学逐位不变 -- 有 golden 值测试,
+  归档的 episode log 仍可审计)。新增 `Kernel.note()`: workload 把 campaign 完成事件
+  (prereg sha / 规则 / 技能摘要 / held-out)写进**同一条**内核会话链 --
+  挂载、解析、campaign 结果如今在一本可验证的账里, note() 是证据不是控制流。
 - rung 2(round 57): **executor 接管全部 rollout 执行**。governor 里 6 处散落的
   `multiprocessing.Pool` 块(gate / campaign / parallel / recovery_search / beam / demos)
   换成 `executor.map(fn, items, workers=...)`; 注入方式是**显式关键字参数**贯穿调用链

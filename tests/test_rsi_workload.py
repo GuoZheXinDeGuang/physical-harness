@@ -508,3 +508,29 @@ def test_the_real_archive_compared_against_itself_is_all_pass():
     heldout = by_kind["campaign_result"][0]["heldout"]
     heldout_result = parity_check.compare_heldout(heldout, heldout)
     assert all(r.ok for r in (*gen_results, heldout_result))
+
+
+def test_campaign_completion_enters_the_session_chain(tmp_path, monkeypatch):
+    """L1 rung 3: the campaign's outcome and the mounts that produced it sit in
+    ONE verifiable ledger."""
+    log = SessionLog()
+    kernel = Kernel(CAPABILITIES, log=log)
+    kernel.provide("embodiment.env", _FakeEnvProvider(), ref="tests.fakes:env")
+    kernel.provide("policy.driver", _FakePolicyFactory(), ref="tests.fakes:policy")
+    kernel.provide("percept.model", _FakePercept(), ref="tests.fakes:percept")
+    kernel.provide("exec.rollouts", _FakeExecutor(), ref="tests.fakes:executor")
+    kernel.provide("graph.skill", InMemorySkillGraph(), ref="plugins.graphs:skill_graph_provider")
+    captured: dict = {}
+    monkeypatch.setattr(campaign, "run_campaign",
+                        _fake_run_campaign_factory(captured, second_generation_promoted=False))
+
+    out = workload.run(_prereg(), tmp_path / "store", kernel, workers=2, verbose=False)
+
+    rows = [r for r in log.rows() if r["kind"] == "rsi.campaign_complete"]
+    assert len(rows) == 1
+    assert rows[0]["data"]["skills"] == out["skills"]
+    assert rows[0]["data"]["prereg_sha"] == out["result"]["preregistration_sha"]
+    resolve_kinds = [r["kind"] for r in log.rows()]
+    assert resolve_kinds.index("capability.resolve") < resolve_kinds.index("rsi.campaign_complete"), \
+        "the completion must sit downstream of the resolutions in the same chain"
+    assert log.verify(), "the combined ledger no longer verifies"

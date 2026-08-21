@@ -35,14 +35,15 @@ import numpy as np
 
 CHAIN_SEED = "governor/episode-chain/v1"
 
+# L1 rung 3: the chain math is harness.events'; only the seed is ours. The
+# construction is bit-identical to the local functions this replaced (there is
+# a golden-value test), so every archived episode log still verifies.
+from harness.events import chain_step  # noqa: E402  re-exported for audit/governed
+from harness.events import chain_start as _chain_start
+
 
 def chain_start() -> str:
-    return hashlib.sha256(CHAIN_SEED.encode()).hexdigest()
-
-
-def chain_step(previous: str, view_digest: str) -> str:
-    """Fold one decision view into the episode's commitment."""
-    return hashlib.sha256(f"{previous}:{view_digest}".encode()).hexdigest()
+    return _chain_start(CHAIN_SEED)
 
 
 @dataclass

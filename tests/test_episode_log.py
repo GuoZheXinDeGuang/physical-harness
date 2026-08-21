@@ -89,3 +89,17 @@ def test_shadow_replay_scores_without_touching_the_simulator(logged):
     log, _ = logged
     res = shadow_replay(log, TRIG, bundle_sha="ungoverned")
     assert res.n > 0 and 0.0 <= res.recall <= 1.0 and 0.0 <= res.false_positive <= 1.0
+
+
+def test_chain_math_is_shared_and_unchanged():
+    """L1 rung 3: one primitive, two ledgers, and archived logs still verify.
+
+    The golden values were computed with the pre-unification local functions;
+    if either moves, every archived episode log's audit breaks silently.
+    """
+    from harness import events
+
+    assert chain_step is events.chain_step, "episode log grew its own chain again"
+    assert chain_start() == "8204c8f48bc01bf20362cae11f58f967eaf90be025750499468b8cdfa6a74044"
+    assert chain_step(chain_start(), "abc123") == \
+        "a45aa0358b9a7f6e64b44aab89bab1b0a24f6d62a0397fb297f2650df0142ce1"
