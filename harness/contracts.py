@@ -77,6 +77,20 @@ class Reasoner(Protocol):
 
 
 @runtime_checkable
+class TaskPlanner(Protocol):
+    """Layer 1 seam, sibling to Reasoner: decompose a brief into a skill-call graph.
+
+    ``brief`` carries task/scene/catalogue (and optionally fault/budget); the
+    return is one plain-Mapping graph -- ``{goal, nodes: [{id, skill, args,
+    after}], verify: [{after, predicate}]}`` -- that names skills from the
+    offered catalogue, never inventing them. Structurally minimal so a
+    deterministic stand-in and a VLM satisfy the same shape.
+    """
+
+    def plan(self, brief: Mapping) -> Mapping: ...
+
+
+@runtime_checkable
 class SkillGraph(Protocol):
     """Layer 2 seam: measured skills with preconditions, effects, failure modes, capability boundaries."""
 

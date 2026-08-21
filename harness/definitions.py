@@ -19,6 +19,9 @@ CAPABILITIES: tuple[Definition, ...] = (
                "Execution fabric: maps episode jobs to results."),
     Definition("reasoner.proposer", contracts.Reasoner,
                "Layer 1 seam: proposes interventions from an evidence brief."),
+    Definition("task.planner", contracts.TaskPlanner,
+               "Layer 1 seam: decomposes a task+scene+skill catalogue into a "
+               "skill-call graph. Authors symbols, reads no ground truth."),
     Definition("graph.skill", contracts.SkillGraph,
                "Layer 2 seam: measured skills with preconditions/effects/failure modes."),
     Definition("graph.scene", contracts.SceneGraph,
