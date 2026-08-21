@@ -149,3 +149,34 @@ def test_local_pool_executor_maps():
     from harness.executor import LocalPoolExecutor
 
     assert LocalPoolExecutor().map(abs, [-1, 2, -3], workers=2) == [1, 2, 3]
+
+
+def test_a_written_ledger_verifies_offline_and_catches_disk_tampering(tmp_path):
+    """Round 59: the chain must protect the FILE, not only the process memory."""
+    log = SessionLog(tmp_path)
+    for i in range(4):
+        log.append("event", {"i": i})
+    assert SessionLog.load(tmp_path).verify(), "a clean written ledger failed to verify"
+
+    path = tmp_path / "rows.jsonl"
+    lines = path.read_text().splitlines()
+    lines[1] = lines[1].replace('"i": 1', '"i": 9')
+    path.write_text("\n".join(lines) + "\n")
+    assert not SessionLog.load(tmp_path).verify(), "an on-disk edit went unnoticed"
+
+    # A fresh writer refuses an existing ledger: it would interleave a second
+    # chain into the file and nothing could ever verify it again.
+    with pytest.raises(FileExistsError):
+        SessionLog(tmp_path)
+
+
+def test_a_reopened_ledger_continues_the_same_chain(tmp_path):
+    log = SessionLog(tmp_path)
+    log.append("event", {"i": 0})
+    first_chain = log.rows()[-1]["chain"]
+
+    loaded = SessionLog.load(tmp_path)
+    loaded.append("event", {"i": 1})
+    assert loaded.rows()[0]["chain"] == first_chain
+    assert loaded.verify(), "continuation broke the chain"
+    assert SessionLog.load(tmp_path).verify(), "the on-disk continuation does not verify"

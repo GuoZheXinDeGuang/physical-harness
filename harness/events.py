@@ -47,6 +47,13 @@ class SessionLog:
         self._root = root
         if root is not None:
             root.mkdir(parents=True, exist_ok=True)
+            if (root / "rows.jsonl").exists():
+                # A fresh writer starts a fresh chain; appending it to an
+                # existing file would interleave two chains into one ledger
+                # that can never verify again. Reopen with load() instead.
+                raise FileExistsError(
+                    f"{root} already holds a ledger; use SessionLog.load() to "
+                    "continue it, or point the writer at a fresh directory")
 
     def append(self, kind: str, data: dict) -> int:
         payload = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
@@ -59,6 +66,31 @@ class SessionLog:
             with (self._root / "rows.jsonl").open("a") as fh:
                 fh.write(json.dumps(row, sort_keys=True, default=str) + "\n")
         return row["seq"]
+
+    @classmethod
+    def load(cls, root: Path) -> "SessionLog":
+        """Reopen a written ledger so it can be verified OFFLINE.
+
+        Round 59's review found the gap this closes: rows.jsonl was written but
+        nothing could re-read it, so an on-disk edit went uncatchable. A loaded
+        log replays the stored rows as-is; verify() then recomputes both the
+        per-row payload hashes and the whole chain against what the file
+        claims. Appending continues from the last stored chain value.
+        """
+        log = cls.__new__(cls)
+        log._rows = []
+        log._root = root
+        log._chain = chain_start(_SEED)
+        path = root / "rows.jsonl"
+        if path.exists():
+            with path.open() as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        log._rows.append(json.loads(line))
+            if log._rows:
+                log._chain = log._rows[-1]["chain"]
+        return log
 
     def rows(self) -> tuple[dict, ...]:
         return tuple(self._rows)

@@ -35,7 +35,6 @@ import numpy as np
 from governor.env import EpisodeSpec
 from governor.gate import PairedResult, ablation_curve, paired_gate
 from governor.governed import Bundle, RecoverySpec, Rule
-from governor.parallel import rollout_many
 from governor.search import (DEFAULT_EARLINESS, DEFAULT_FP_PENALTY, Trigger,
                              search_triggers)
 

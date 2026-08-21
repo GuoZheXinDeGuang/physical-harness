@@ -2232,3 +2232,38 @@ rerun 的 session-log 末行即 rsi.campaign_complete(链上)。163 测试绿。
 1. features 注册表插件化: REGISTRY 是 governor 全局, embodiment 应声明自己的特征面。
 2. demos 采集走 kernel(最后一个 legacy 路径)。
 3. 或先做一次 Review 轮: L1 已三级, 该对新架构整体做一次对抗复查。
+
+## Round 59 - Review 轮(phase 2 架构) - 账本落盘却不可离线验证
+
+### 对抗攻击(真跑, 不在纸上验)
+
+| 攻击 | 结果 |
+|---|---|
+| 改写落盘 session-log 的一个字节 | **命中**: SessionLog 只写不读, 磁盘篡改无人能抓 |
+| 新写者打开已有账本目录 | **命中**: 新链续写旧文件, 产出永远验不过的双链账本 |
+| 插件边界/spawn/契约检查 | 已有测试全部扛住 |
+
+两个命中当轮修掉:
+- `SessionLog.load(root)`: 离线重读 + verify() 重算每行 payload 哈希与整条链;
+  篡改测试(改磁盘一个字节 -> 验证失败)钉住。
+- 写者 fail-closed: `SessionLog(root)` 遇到已有 rows.jsonl 直接拒绝,
+  指向 load(); 续写链的正确路径有专门测试(重开续写后离线仍可验证)。
+
+**教训与 round 45 同构: 只在进程内成立的保护不是保护。**
+链在内存里防篡改、落盘后不防, 和门禁只在手工检查里存在是同一类洞。
+
+### 清理
+
+- campaign.py 里 rollout_many 的死 import(executor 迁移后无人调用); 函数本身保留(公共入口)。
+- README 测试数 160 -> 165+(不再精确追数, 防止每轮过期)。
+
+### ambition critic(下一步该修的天花板)
+
+1. **第二个具身, 纯配置**: EpisodeSpec.robot 字段就在那里(默认 Panda)。
+   用 Sawyer 造第二个 embodiment 变体 = 一个 bundle + 重标定基线,
+   是 "everything is a plugin" 最便宜也最有力的实证。<- 下一轮
+2. demos 走 kernel(最后一个 legacy 采集路径)。
+3. features 注册表插件化(REGISTRY 仍是 governor 全局)。
+4. gate 待用户: 真模型 reasoner / 分布式 executor(新依赖)。
+
+166 测试绿。
