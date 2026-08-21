@@ -38,7 +38,7 @@ def test_episode_spec_omits_new_fields_unchanged():
     assert dc.asdict(s) == {
         "seed": 7, "task": "lift", "robot": "Panda", "horizon": 900,
         "percept_noise": 0.020, "arm_noise": 0.02, "kp": 8.0, "policy": "scripted",
-        "schedule": NOMINAL_SCHEDULE, "env_provider": None, "policy_provider": None, "percept_provider": None,
+        "schedule": NOMINAL_SCHEDULE, "grasp_height_offset": 0.0, "env_provider": None, "policy_provider": None, "percept_provider": None,
     }
 
 
@@ -149,3 +149,33 @@ def test_preregistration_provider_fields_are_appended_at_the_end():
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
     for f in dc.fields(Preregistration)[-3:]:
         assert f.default is None
+
+
+def test_grasp_height_offset_moves_only_descend_and_close():
+    """Round 60: the Sawyer correction must not touch above/lift, and 0.0 must
+    reproduce the Panda action bit for bit."""
+    import numpy as np
+
+    from governor.env import EpisodeSpec, FrozenPolicy
+
+    obs = {"robot0_eef_pos": np.array([0.0, 0.0, 0.9])}
+    plain = FrozenPolicy(EpisodeSpec(seed=1))
+    shifted = FrozenPolicy(EpisodeSpec(seed=1, grasp_height_offset=-0.01))
+    plain.target = np.array([0.0, 0.0, 0.82])
+    shifted.target = np.array([0.0, 0.0, 0.82])
+    for phase in ("above", "lift"):
+        assert np.array_equal(plain.act(obs, phase), shifted.act(obs, phase)), phase
+    for phase in ("descend", "close"):
+        assert not np.array_equal(plain.act(obs, phase), shifted.act(obs, phase)), phase
+    default = FrozenPolicy(EpisodeSpec(seed=1, grasp_height_offset=0.0))
+    default.target = plain.target
+    for phase in ("above", "descend", "close", "lift"):
+        assert np.array_equal(plain.act(obs, phase), default.act(obs, phase))
+
+
+def test_sawyer_providers_satisfy_their_contracts():
+    from harness.contracts import EnvProvider, PolicyFactory
+    from harness.registry import load_provider
+
+    assert isinstance(load_provider("plugins.embodiment_robosuite:sawyer_provider"), EnvProvider)
+    assert isinstance(load_provider("plugins.policies:sawyer_scripted_provider"), PolicyFactory)

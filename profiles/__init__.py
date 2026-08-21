@@ -73,3 +73,17 @@ def matrix_plans() -> dict[tuple[str, str], tuple[MountPlan, dict[str, str]]]:
         for task in TASKS
         for policy in POLICIES
     }
+
+
+def sawyer_bundle():
+    """Swap the embodiment to Sawyer: one bundle, zero code changes anywhere else.
+
+    resolve_plan(base_profile(), bundles=(sawyer_bundle(),)) is the whole story
+    of "a second robot": the plan sha changes (the mount is part of the
+    experiment's identity), every other capability keeps its provider.
+    """
+    from harness.config import Bundle, Mount
+
+    return Bundle("sawyer", (
+        Mount("embodiment.env", "plugins.embodiment_robosuite:sawyer_provider"),
+        Mount("policy.driver", "plugins.policies:sawyer_scripted_provider"),))

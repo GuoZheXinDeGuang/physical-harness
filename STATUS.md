@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 2: Agentic Robotics OS 的 backbone harness, 见 GOAL.md v2 + ARCHITECTURE.md。(phase 1 Governor 成为治理层, 其记录不动)
 **Mode:** **evolving**（GOAL.md 五条验收已于 Round 3 全部达成，见 docs/round3-result.md）
-**Round:** 59 完成(Review: 账本离线验证补上, fail-closed 写者)
+**Round:** 60 完成(第二具身纯配置挂载成立; Sawyer 探索 campaign 后台)
 **Updated:** 2026-08-19
 
 ## 已达成（不要重新验证）

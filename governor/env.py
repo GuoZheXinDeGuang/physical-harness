@@ -72,6 +72,11 @@ class EpisodeSpec:
     #: black box either way; only the harness knows which one it is.
     policy: str = "scripted"
     schedule: tuple[tuple[str, int], ...] = NOMINAL_SCHEDULE
+    #: Added for the second embodiment: robots differ in where the eef site
+    #: sits relative to the fingertips (Sawyer's is ~1cm off Panda's, measured
+    #: round 60), so descend/close goals take a per-spec vertical correction.
+    #: 0.0 reproduces the Panda behaviour bit for bit.
+    grasp_height_offset: float = 0.0
     #: L0 capability-seam dispatch: "module:factory" refs for embodiment.env and
     #: policy.driver (see harness/registry.py). None keeps the pre-kernel path
     #: byte-identical. These travel as strings rather than module-global hooks
@@ -168,7 +173,10 @@ class FrozenPolicy:
 
     def act(self, obs: Mapping[str, np.ndarray], phase: str) -> np.ndarray:
         """One 7-dof OSC_POSE action toward the phase goal, from the stale percept."""
-        goal = np.array([self.target[0], self.target[1], self.target[2] + PHASE_HEIGHT[phase]])
+        height = PHASE_HEIGHT[phase]
+        if phase in ("descend", "close"):
+            height += self.spec.grasp_height_offset
+        goal = np.array([self.target[0], self.target[1], self.target[2] + height])
         delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * self.spec.kp, -1, 1)
         grip = 1.0 if phase in ("close", "lift") else -1.0
         return np.array([*delta, 0.0, 0.0, 0.0, grip])

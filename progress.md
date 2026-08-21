@@ -2267,3 +2267,46 @@ rerun 的 session-log 末行即 rsi.campaign_complete(链上)。163 测试绿。
 4. gate 待用户: 真模型 reasoner / 分布式 executor(新依赖)。
 
 166 测试绿。
+
+## Round 60 - 2026-08-20/21 - 第二具身(Sawyer): 骨架主张成立, 策略能力是另一回事
+
+### 骨架主张: 证明了
+
+- `sawyer_provider()`(零参 factory, 换 robot) + `sawyer_scripted_provider()`(零参 factory,
+  换日程/kp/抓取高度) + `sawyer_bundle()`(一个 bundle 同时换两个 mount)。
+  **换机器人 = resolve_plan(base_profile(), bundles=(sawyer_bundle(),)), 别处零改动**,
+  plan sha 随之变(挂载进实验身份)。
+- 变体常量住在 provider 里(ref 被预注册), 不是没人哈希的模块全局;
+  Mount params 到不了 spawn worker, 所以每个变体是自己的 factory -- 这正是 params 守卫的意义。
+- `EpisodeSpec.grasp_height_offset`(默认 0.0, Panda 逐位不变, 有测试钉住
+  只作用于 descend/close)。
+
+### 策略能力: 如实记录的诊断链
+
+| 假设 | 探针 | 结果 |
+|---|---|---|
+| 日程太短(手臂慢) | 拉长 x1.5/x2, kp 8/12 | 0-2/12, 不是主因 |
+| eef site z 偏移 | descend/close 高度 -10/-20/-30mm | **-10mm: 1/12 -> 9/12(瞬时判据), 命中** |
+| 判据对等吗 | 探针"曾举起" vs 门禁"终局举着" | **不对等**: 同配置 6/12 vs 1/12 -- 抓得薄, lift 中滑落 |
+| close 不够/举太猛 | close 24, kp 8 | 终局判据 2/24 -> 5/24, 有效但不够 |
+| xy 也有 site 偏移 | y 修正 -7/-14/-21mm | **全部更差, 假设否掉**(那 1.4cm 是单集噪声) |
+
+终局判据下最佳 ~21%(n=24)。剩余失败是**握持保持**(举起后滑落), 这是 layer-3 的
+策略调优工作, 不是骨架的 -- 骨架的贡献恰恰是把它变成一个干净的、可交接的工位。
+按时间盒纪律停手调, 常量更到最佳变体并写明诊断出处。
+
+### 两个当场吃到的老教训
+
+- **判据必须和门禁对等**(round 45 的姊妹): 我的探针用"曾经举起", 门禁用"终局举着",
+  9/12 和 1/12 之间隔着一个判据, 差点把调优方向带偏。
+- y 偏移假设被探针否掉: **先验前提再造东西**(round 21)第三次付息。
+
+### 进行中(后台)
+
+Sawyer 探索性 campaign(runs/campaign-sawyer, dev 40000-40139 / heldout 42000-42099):
+21% 基线上滑落失败是否可选择性检测? 零规则也是信息(第二具身上的价值下界检验)。
+
+### 下一轮种子
+
+收 Sawyer campaign 结果 -> RECORD; README 加第二具身一节; 然后回迁移阶梯
+(demos 走 kernel / features 插件化)。
