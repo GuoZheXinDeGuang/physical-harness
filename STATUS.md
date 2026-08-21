@@ -21,7 +21,7 @@
 - [ ] R2 收尾: held-out 第 2/3 区块复现 + 阶段归因产物接线。
 - [~] R3/M1(round 81): transport+对比 harness 落地; search +27.0 vs naive +31.5(单区块,
       earliness 修后天真挑法仍领先——"目标函数第二未标定假设"进 frontier)。
-      qwen38 臂待 GPU 腾位(rynnbrain 占 6.4GB, sglang 需 21.6GB)。
+      qwen38 臂 → gate(用户裁定 2026-08-22: 先放一放; 腾 GPU 后 round25_rerun 补跑即可)。
 - [x] M2(round 82): graph.scene 真 provider + InMemorySkillGraph 回读修复 +
       zos 证据顾问层(安全下界自检钉死)。剩 Session.evidence 的 prompt/面板消费。
 - [x] M3 第一闭环(round 83): task.planner 缝 + 确定性 StackPlanner + 规划 workload,
