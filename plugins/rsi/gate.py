@@ -25,7 +25,7 @@ from math import comb
 
 import numpy as np
 
-from governor.env import EpisodeSpec
+from harness.spec import EpisodeSpec
 from plugins.rsi.governed import Bundle, governed_rollout
 
 

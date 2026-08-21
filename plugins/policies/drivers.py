@@ -24,13 +24,67 @@ uncontrolled failure source.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 
-from governor.env import EpisodeSpec, FrozenPolicy, phase_at
 from harness.registry import load_provider
+from harness.spec import PHASE_HEIGHT, EpisodeSpec
+
+
+def _object_key(spec):
+    """Which observation key holds the target: contract-first, legacy fallback.
+
+    Same shape as the rsi rollout's embodiment access: a spec with a provider
+    ref answers through the EnvProvider contract; the no-ref legacy path goes
+    through the governor shim, the one documented default-binding point.
+    """
+    if spec.env_provider:
+        from harness.registry import load_provider
+
+        return load_provider(spec.env_provider).object_key(spec)
+    import governor.env as legacy
+
+    return legacy.object_key(spec)
+
+@dataclass(slots=True)
+class FrozenPolicy:
+    """The black-box policy under governance. Never learns, never retries."""
+
+    spec: EpisodeSpec
+    target: np.ndarray = field(default=None, repr=False)
+
+    def observe_once(self, obs: Mapping[str, np.ndarray]) -> np.ndarray:
+        """Take the single noisy percept the policy will act on for the whole episode."""
+        rng = np.random.RandomState(self.spec.seed * 7919 + 11)
+        sd = self.spec.percept_noise
+        self.target = np.asarray(obs[_object_key(self.spec)]).copy() + np.array(
+            [rng.normal(0, sd), rng.normal(0, sd), 0.0]
+        )
+        return self.target
+
+    def act(self, obs: Mapping[str, np.ndarray], phase: str) -> np.ndarray:
+        """One 7-dof OSC_POSE action toward the phase goal, from the stale percept."""
+        height = PHASE_HEIGHT[phase]
+        if phase in ("descend", "close"):
+            height += self.spec.grasp_height_offset
+        goal = np.array([self.target[0], self.target[1], self.target[2] + height])
+        delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * self.spec.kp, -1, 1)
+        grip = 1.0 if phase in ("close", "lift") else -1.0
+        return np.array([*delta, 0.0, 0.0, 0.0, grip])
+
+
+def phase_at(schedule: tuple[tuple[str, int], ...], t: int) -> str | None:
+    """Phase owning control step `t`, or None once the schedule is exhausted."""
+    acc = 0
+    for name, dur in schedule:
+        if t < acc + dur:
+            return name
+        acc += dur
+    return None
 
 
 class PolicyDriver(Protocol):

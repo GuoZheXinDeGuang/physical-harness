@@ -7,7 +7,7 @@ undo, so each has a test that fails loudly if it does.
 import numpy as np
 import pytest
 
-from governor.env import EpisodeSpec
+from harness.spec import EpisodeSpec
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.policies.drivers import ClonedDriver, ScriptedDriver
 from plugins.rsi.stats.search import REDUCERS, Trigger, reduce_series, search_triggers
@@ -115,7 +115,7 @@ def test_recovery_steps_do_not_advance_the_policy_clock():
 
 def test_every_strategy_resolves_to_offset_steps():
     from plugins.rsi.repertoire import REPERTOIRE
-    from governor.env import PHASE_HEIGHT
+    from harness.spec import PHASE_HEIGHT
     for s in REPERTOIRE:
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:

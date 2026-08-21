@@ -2648,3 +2648,37 @@ governor/ 收缩为 {env 运动词表+派发, proposer, policy 壳} 的最小滞
 1. 共享词表重构(消掉最后三件滞留, governor 归零)。
 2. gate(等用户): 真实模型 reasoner / 分布式 executor。
 3. 报告 phase 2 章节(把迁移与新知识写进 docs/report.html)。
+
+## Round 74 - 2026-08-21 - 共享词表重构第一步: 运动词表归货币模块
+
+### 做了什么
+
+- **PHASE_HEIGHT 上提 harness/spec.py**, 与 NOMINAL_SCHEDULE 同列 --
+  被 policies(drivers)与 rsi(recovery)共享的运动词表, 其合法居所是货币模块,
+  两个插件都可 import 内核, 谁也不用 import 谁。
+- **FrozenPolicy + phase_at 回真正的家**(plugins/policies/drivers.py);
+  它的 object_key 依赖改为契约优先(_object_key: ref -> provider, legacy -> governor 垫片),
+  与 governed 的 _embodiment 同构。
+- EpisodeSpec 的 import 全仓归位 harness.spec(12 个文件)。
+- governor/env.py 收缩为 **67 行**: 三个派发函数 + legacy 默认绑定, 纯垫片。
+
+### 修复过程(如实, 5 个来回)
+
+批量 sweep 又踩了熟悉的坑: import 行的名字顺序变体漏网、moved 代码块缺 dataclass/Mapping
+import、一处缩进错位。每次都是收集错误立刻暴露, 逐个修。
+**教训重申(第三次): 文本级 sweep 每次都要跟全量收集; 变体模式先 grep 再写规则。**
+
+### VERIFY
+
+164 passed + ruff 全绿 + parity 四组 PASS(高度值逐位未动, 只是搬了家)。
+
+### governor 终态(3 文件, 每件有据)
+
+env.py(67 行垫片) / policy.py 壳(governed laundering) / proposer.py(brief 词表重构后走)。
+**滞留原因全部同根: legacy 无 ref 路径需要一个默认绑定点。**
+让 governor 归零 = 让 ref 成为必填 -- 那是 phase 1 测试面的大改, 值不值得单独决策。
+
+### 下一轮种子
+
+报告 phase 2 章节(把 backbone 迁移、跨具身发现、per-rung parity 纪律写进 docs/report.html),
+或 proposer 的 brief 词表重构。gate 待用户: 真模型 reasoner / 分布式 executor。

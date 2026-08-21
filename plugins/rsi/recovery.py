@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from governor.env import PHASE_HEIGHT
+from harness.spec import PHASE_HEIGHT
 
 
 class RecoveryActor:

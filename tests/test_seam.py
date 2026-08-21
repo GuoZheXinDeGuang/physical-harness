@@ -156,7 +156,8 @@ def test_grasp_height_offset_moves_only_descend_and_close():
     reproduce the Panda action bit for bit."""
     import numpy as np
 
-    from governor.env import EpisodeSpec, FrozenPolicy
+    from harness.spec import EpisodeSpec
+    from plugins.policies.drivers import FrozenPolicy
 
     obs = {"robot0_eef_pos": np.array([0.0, 0.0, 0.9])}
     plain = FrozenPolicy(EpisodeSpec(seed=1))

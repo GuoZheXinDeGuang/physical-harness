@@ -9,7 +9,8 @@ import hashlib
 import numpy as np
 import pytest
 
-from governor.env import EpisodeSpec, rollout
+from harness.spec import EpisodeSpec
+from governor.env import rollout
 
 
 def _digest(result) -> str:

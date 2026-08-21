@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 
-from governor.env import EpisodeSpec
+from harness.spec import EpisodeSpec
 from plugins.rsi.campaign import CampaignStore, Preregistration, _specs, propose_rule
 from plugins.rsi.gate import ablation_curve, paired_gate
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule

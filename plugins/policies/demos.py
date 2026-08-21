@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from governor.env import EpisodeSpec, lifted, make_env, object_key
+from governor.env import lifted, make_env, object_key
+from harness.spec import EpisodeSpec
 from plugins.policies.bc import encode
 from plugins.policies.drivers import ScriptedDriver
 

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from governor.env import EpisodeSpec
+from harness.spec import EpisodeSpec
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 
 #: Candidate durations per phase slot. The phase ORDER is fixed -- retreat, restage,

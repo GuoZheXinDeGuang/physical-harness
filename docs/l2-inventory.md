@@ -9,7 +9,9 @@ L2 的定义(GOAL v2): 删除 governor 命名空间, 插件间零残留依赖。
 | features.py / percept.py / invariant.py | **已移(round 69, rung F)**: 契约机制 -> harness, 提取器声明 -> plugins/embodiment_robosuite/features.py(import 时注册, worker 经 provider ref 触发) | - |
 | EpisodeSpec | **已上提(round 70, rung G)** -> harness/spec.py 逐字迁移, governor.env 真实 re-export(类同一对象), pickle/字段序不变 | - |
 | env 具身部分(TASKS/task_config/object_key/lifted/_default_make_env/CONTROL_FREQ) | **已移(round 71, rung H)** -> plugins/embodiment_robosuite/env.py; EnvProvider 契约扩展 object_key/success, rsi 经契约取语义 | - |
-| FrozenPolicy / phase_at / PHASE_HEIGHT + make_env 派发点 | **有据滞留 governor**: 运动词表被 policies(drivers)与 rsi(recovery)共享, 与 proposer 同类; 出口 = 恢复程序携带绝对高度或 spec 携带高度表 | 中 |
+| FrozenPolicy / phase_at | **已移(round 74)** -> plugins/policies/drivers.py(真正的家), object_key 契约优先 |-|
+| PHASE_HEIGHT | **已上提(round 74)** -> harness/spec.py, 与 NOMINAL_SCHEDULE 同列(共享运动词表 = 货币模块的数据) | - |
+| governor 终态 | env.py 67 行(make_env/object_key/lifted 派发 + legacy 默认绑定点) + policy.py 壳(governed 的 laundering) + proposer.py(reasoner/rsi 共享, 出口 = brief 携带词表) | 低 |
 | policy.py | **已移(round 66, rung D)**: plugins/policies/drivers.py(驱动器+交还契约+RecoveryActor), 适配器改指兄弟模块 | - |
 | governed.py | **已移(round 72, rung I)** -> plugins/rsi/governed.py: 具身语义走契约优先(_embodiment: ref->provider, legacy 回落), PRIVILEGED_SENSOR_SD 上提 harness.percept; make_driver 经 governor 壳(与运动词表同类滞留) | - |
 | gate.py / campaign.py | **已移(round 64, rung B)**, governor 留转发壳; 第一方调用点全部改指新家 | - |
