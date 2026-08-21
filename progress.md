@@ -2970,3 +2970,18 @@ R2 收尾(held-out 复现 ×2 + 阶段归因产物)与 M1 可并行排。
   第二个技能 provider 出现时二者合流进 graph.skill 的目录形态(YAGNI 已声明)。
 - 1 节点闭环里 verify oracle 与 terminal_label 成功布尔重合(施工图预言的退化巧合),
   第二技能出现时两方言分开。
+
+## Round 84 - 2026-08-22 - README 追上操作系统: 双仓库文档重写, 校对员零修改通过
+
+1. **harness README 全量重写(bf65cad)**: 定位/30 秒上手/七入口表(全部 --help 实测)/
+   9 能力缝表(从 definitions.py 现状生成)/证据纪律/R+M 阶梯现状/生态图/parity 段。
+   stack-g1 输出摘录按封存 artifact 逐位重建, 非抄旧文; 全部单区块数字带作用域。
+2. **zos README 更新(1e8bd96)**: 驾驶舱定位 + 与 physical-harness 关系节(M 阶梯现状,
+   安全下界铁律句在文中) + 仿真测试节; 漂移校对(LOC 3563→16132 实数、工具表逐名对
+   build() 产出、测试数带日期口径); 保留原 LOC 对比表/设计论点/架构图。全文中文化。
+3. **交叉校对零修改**: 生态段 diff 为空、互链 ls-remote 可达、223/59 测试数实跑核实、
+   runs/stack-g1 与 round25-rerun 的每个数字逐项核对全中。
+
+**今日(2026-08-22)总账: rounds 81-84, M 阶梯一天三级(M1 大脑导线/M2 场景+证据顾问/
+M3 规划闭环), harness 13 commit + zos 6 commit 全部实时推送, 测试 174→223(harness)
+与 57→59(zos), 每一轮全量绿、每个封存数字零移动。**

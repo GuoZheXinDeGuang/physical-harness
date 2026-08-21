@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 82 完成(M1 大脑导线+对比 / M2 场景图+证据顾问层)。今日目标: M3 闭环 + 双仓库 README(round 83-84)
+**Round:** 84 完成(M3 规划闭环 + 双仓库 README, 校对零修改)。今日 M1/M2/M3 三级齐落, 详见 progress rounds 81-84
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -24,6 +24,10 @@
       qwen38 臂待 GPU 腾位(rynnbrain 占 6.4GB, sglang 需 21.6GB)。
 - [x] M2(round 82): graph.scene 真 provider + InMemorySkillGraph 回读修复 +
       zos 证据顾问层(安全下界自检钉死)。剩 Session.evidence 的 prompt/面板消费。
+- [x] M3 第一闭环(round 83): task.planner 缝 + 确定性 StackPlanner + 规划 workload,
+      scripts/task_plan.py 真跑通(两层裁决成立: 规划图=控制器/阶段链=评分器)。
+      VLM 接入 = 换 mount。多节点分解 gated 于第二个技能 provider。
+- [x] 文档(round 84): 双仓库 README 重写+生态关系, 校对员对码零修改通过。
 - gate(需要时解锁): Isaac 具身插件 —— 触发条件: 导航技能电池或房间尺度长程场景。
       导航证据暂由真机(zos)承担。go2W_Sim 桥接成本侦察报告备用。
 
