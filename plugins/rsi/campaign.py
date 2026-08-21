@@ -140,6 +140,11 @@ class Preregistration:
     #: sha(). None == no stage overlay, byte-identical legacy path. Before the
     #: provider triple, which stays the literal tail the seam guard pins.
     stages: tuple[StageSpec, ...] | None = None
+    #: R2 round 79: score episodes on the embodiment's full-task terminal boolean
+    #: instead of the shared sub-goal. Changing the success criterion is a new
+    #: claim about what this campaign measured, so it enters the content hash.
+    #: Before the provider triple, which stays the literal tail the seam guard pins.
+    terminal_label: bool = False
     #: L0 capability-seam refs ("module:factory" strings, harness/registry.py):
     #: which embodiment.env / policy.driver provider built this run's episodes.
     #: None keeps every existing archived campaign's replay path byte-identical
@@ -208,6 +213,7 @@ def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
     return [EpisodeSpec(seed=s, task=prereg.task, policy=prereg.policy,
                         percept_noise=prereg.percept_noise,
                         stages=prereg.stages,
+                        terminal_label=prereg.terminal_label,
                         env_provider=prereg.env_provider,
                         policy_provider=prereg.policy_provider,
                         percept_provider=prereg.percept_provider) for s in seeds]

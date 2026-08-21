@@ -101,6 +101,20 @@ def test_specs_threads_the_stage_chain():
     assert _specs([0], _prereg())[0].stages is None
 
 
+def test_terminal_label_enters_the_campaign_hash():
+    """Round 79: swapping the success criterion is a new claim, so it must move
+    prereg.sha(); the default (False) stays byte-identical to the legacy hash."""
+    assert _prereg(terminal_label=True).sha() != _prereg().sha()
+    assert _prereg(terminal_label=False).sha() == _prereg().sha()
+
+
+def test_specs_threads_the_terminal_label():
+    from plugins.rsi.campaign import _specs
+
+    assert _specs([0], _prereg(terminal_label=True))[0].terminal_label is True
+    assert _specs([0], _prereg())[0].terminal_label is False
+
+
 # --- accounting semantics on real rollouts -----------------------------------
 
 def test_stage_accounting_on_the_grasp_only_policy():
@@ -256,6 +270,61 @@ def test_terminal_success_is_an_optional_contract_extension():
         def success(self, obs, spec, start_z): return False
 
     assert isinstance(_Minimal(), EnvProvider)
+
+
+def _fake_embodiment(*, has_terminal: bool):
+    """A real Lift env under the hood (so the rollout runs), but success() and
+    terminal_success() return DIFFERENT constants so the branch selection is
+    observable in result['success']. terminal_success is present only when
+    has_terminal, so the missing-method path is reachable too."""
+    from plugins.rsi.governed import _LegacyEmbodiment
+
+    legacy = _LegacyEmbodiment()
+
+    class _Fake:
+        def make_env(self, spec):
+            return legacy.make_env(spec)
+
+        def object_key(self, spec):
+            return legacy.object_key(spec)
+
+        def success(self, obs, spec, start_z):
+            return False
+
+    fake = _Fake()
+    if has_terminal:
+        fake.terminal_success = lambda obs, spec, start_z, env=None: True
+    return fake
+
+
+def test_terminal_label_selects_the_terminal_predicate(monkeypatch):
+    """Round 79: terminal_label=True reads embodiment.terminal_success (here
+    True) rather than embodiment.success (here False); =False reads success
+    bit-for-bit; True with no terminal_success on the embodiment fails loud."""
+    from plugins.rsi import governed
+
+    monkeypatch.setattr(governed, "_embodiment",
+                        lambda spec: _fake_embodiment(has_terminal=True))
+    on = governed_rollout(EpisodeSpec(seed=3, terminal_label=True), None)
+    assert on["success"] is True                       # terminal, not success's False
+    off = governed_rollout(EpisodeSpec(seed=3, terminal_label=False), None)
+    assert off["success"] is False                     # the original success() path
+
+    monkeypatch.setattr(governed, "_embodiment",
+                        lambda spec: _fake_embodiment(has_terminal=False))
+    with pytest.raises(ValueError, match="terminal_success"):
+        governed_rollout(EpisodeSpec(seed=3, terminal_label=True), None)
+
+
+def test_terminal_label_default_leaves_the_lift_success_untouched():
+    """Red line: the switch defaults False, so a plain lift spec still reads
+    embodiment.success. And because lift's terminal_success FALLS BACK to that
+    same sub-goal, flipping the label on lift cannot move result['success']
+    either -- only stack, whose terminal predicate differs, can."""
+    off = governed_rollout(EpisodeSpec(seed=3), None)
+    on = governed_rollout(EpisodeSpec(seed=3, terminal_label=True,
+                                      env_provider="plugins.embodiment_robosuite:provider"), None)
+    assert off["success"] == on["success"]
 
 
 def test_calibrate_stack_script_help_smoke():

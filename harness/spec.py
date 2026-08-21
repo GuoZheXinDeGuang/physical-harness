@@ -61,6 +61,11 @@ class EpisodeSpec:
     #: it sits BEFORE the provider block so the triple below stays the literal
     #: tail the seam guards pin.
     stages: tuple[StageSpec, ...] | None = None
+    #: R2 round 79: swap the episode's success predicate from the shared sub-goal
+    #: (embodiment.success) to the embodiment's full-task terminal boolean
+    #: (embodiment.terminal_success). False keeps the legacy sub-goal path
+    #: byte-identical; task-shape config, so it sits before the provider tail.
+    terminal_label: bool = False
     #: L0 capability-seam dispatch: "module:factory" refs for embodiment.env and
     #: policy.driver (see harness/registry.py). None keeps the pre-kernel path
     #: byte-identical. These travel as strings rather than module-global hooks

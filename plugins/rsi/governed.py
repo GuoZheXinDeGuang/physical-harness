@@ -367,7 +367,22 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             stage_results.append({"name": s.name, "entered_step": None, "exited_step": None,
                                   "success": False, "reached": False, "privilege_used": 0})
 
-    success = embodiment.success(obs, spec, start_z)
+    # R2 round 79: terminal_label swaps the shared sub-goal for the embodiment's
+    # full-task terminal boolean. Scored here, while env is still alive, because
+    # some terminal predicates need the live handle (Stack's _check_success reads
+    # contact ground truth the obs dict cannot carry). No handle-less fallback:
+    # an embodiment asked for a terminal label it cannot produce fails loud rather
+    # than mislabelling silently. terminal_label False is the byte-identical
+    # legacy path.
+    if spec.terminal_label:
+        terminal = getattr(embodiment, "terminal_success", None)
+        if terminal is None:
+            raise ValueError(
+                f"spec.terminal_label is set but embodiment {type(embodiment).__name__} "
+                "has no terminal_success; refusing to fall back to the sub-goal (round 79)")
+        success = bool(terminal(obs, spec, start_z, env=env))
+    else:
+        success = embodiment.success(obs, spec, start_z)
     env.close()
     result = {
         "seed": spec.seed,

@@ -39,6 +39,7 @@ def test_episode_spec_omits_new_fields_unchanged():
         "seed": 7, "task": "lift", "robot": "Panda", "horizon": 900,
         "percept_noise": 0.020, "arm_noise": 0.02, "kp": 8.0, "policy": "scripted",
         "schedule": NOMINAL_SCHEDULE, "grasp_height_offset": 0.0, "stages": None,
+        "terminal_label": False,
         "env_provider": None, "policy_provider": None, "percept_provider": None,
     }
 
@@ -47,10 +48,13 @@ def test_new_fields_are_appended_at_the_end():
     """This codebase's defaulted-field-ordering rule, checked structurally.
 
     R2 ruling: `stages` is task-shape config, not a provider ref, so it sits
-    BEFORE the provider block -- the triple stays the literal tail this pins."""
+    BEFORE the provider block -- the triple stays the literal tail this pins.
+    Round 79 slots `terminal_label` in the same task-shape band, still before
+    the provider tail."""
     names = [f.name for f in dc.fields(EpisodeSpec)]
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
-    assert names[-4] == "stages"
+    assert names[-4] == "terminal_label"
+    assert names[-5] == "stages"
     assert all(f.default is None for f in dc.fields(EpisodeSpec)
               if f.name in ("env_provider", "policy_provider", "stages"))
 
@@ -170,8 +174,10 @@ def test_preregistration_provider_fields_are_appended_at_the_end():
     names = list(fields)
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
     # R2 ruling: `stages` sits directly before the provider block, like on
-    # EpisodeSpec -- the triple keeps the literal tail.
-    assert names[-4] == "stages"
+    # EpisodeSpec -- the triple keeps the literal tail. Round 79's
+    # terminal_label joins the same task-shape band ahead of the tail.
+    assert names[-4] == "terminal_label"
+    assert names[-5] == "stages"
     assert fields["stages"].default is None
     assert fields["env_provider"].default is None
     assert fields["policy_provider"].default is None
