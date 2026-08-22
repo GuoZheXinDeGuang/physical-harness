@@ -3181,3 +3181,33 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
   StackScriptedDriver 实现——replace 目前 stack 专属, 无守卫; 换 driver 前要补。
 - 校准注记: 高度偏置只加在 descend/close, place 半程无 per-embodiment 修正
   (Panda 偏置 0 无影响; Sawyer 上场前必补, round 61 教训)。
+
+## Round 91 - 2026-08-23 凌晨 - place-g1 封存: 门禁拒绝了它该拒绝的, 顺手把抓取头条加厚到第四块
+
+### 做成了什么
+
+1. **首个特权预算 campaign 真跑完整(runs/place-g1, prereg 7c2df739)**: 从 stack-g1
+   最终 bundle 续种(重预算 critic=1, 父 sha 断言通过), gen1 功率自定 267 席,
+   搜索在特权目录里自选 privileged.stack_xy_residual > 0.0338(dwell 3, arm 108),
+   recovery_name=replace 全程穿线。预注册三新字段哈希折叠, 封存 prereg 逐位向后兼容。
+2. **gen1 被 dev 门禁正确拒绝**: vs 父代 91 发 **0 修 0 破 p=1.0**——放置候选没带来任何
+   边际收益, 门禁一票否决, 没有任何东西漏到 held-out 评审。负结果完整封存。
+3. **意外正收获: 抓取规则第四块复验**: 最终 bundle(=父代)在处女块 47000-47199 上
+   **+10.5pp(50.5→61.0), 21 修 0 破, p=9.5e-07, 判定确立**(vs 盲发 +31.0pp); 消融
+   +27.5/+21.0/+10.5/+5.5 全档零破坏。**抓取头条现为四块: +6.5/+9.5/+11.0/+10.5,
+   75 修 0 破 n=800**。
+4. 全程 board 实时可见(place-g1 live 徽章), 这是仪表盘第一次看着 campaign 长出来。
+
+### 什么没成 / 注意
+
+- **谜题(frontier #1, round 92 首选)**: campaign 候选 91 发 0 翻转 vs 探针 B 同原语
+  42.6% 转化。判别变量仅阈值(0.0338/0.025)、dwell(3/1)、布防(108/92)。盲孪生
+  (无条件 t=108, -19.5pp, 74修22破)证明 replace 在 campaign 路径真执行、真起效——
+  所以是**触发器选席问题而非机制问题**。配对轨迹对比可零种子裁决。
+  候补假设: 放置修复窗口窄(过了某时刻/某错位幅度就救不回), dwell 3 + 晚布防恰好
+  把开火推出窗口; 若成立, 目标函数需要窗口感知——round 88 修复的直系续篇。
+- campaign 在 gen1 拒绝后终止(generations=1), 47200/47400 复现块与 dev 46267+ 未烧,
+  等 round 92 裁决后再定去向。
+- rung 3 代码(prereg 字段/续种/campaign 侧裁决 C)仍在 worktree round90-replace
+  (9cd229e), 等外部 chip 会话落地后调和合并——campaign 是从 worktree 起跑的,
+  主线尚无 rung 3 代码, 复现 place-g1 需先合并。
