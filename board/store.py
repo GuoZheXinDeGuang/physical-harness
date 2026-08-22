@@ -28,6 +28,20 @@ def is_store(store_dir: str | Path) -> bool:
     return (Path(store_dir) / "index.jsonl").exists()
 
 
+def safe_child(runs_dir: str | Path, name: str, is_kind) -> Path | None:
+    """Resolve ``name`` to a direct child of ``runs_dir`` that passes ``is_kind``,
+    rejecting path traversal. One audited guard for every name-addressed read
+    (stores and sessions), shared by the board HTTP shell and the MCP server so
+    neither can be walked outside runs_dir with a ``../`` name."""
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        return None
+    runs_dir = Path(runs_dir)
+    path = (runs_dir / name).resolve()
+    if path.parent != runs_dir.resolve() or not is_kind(path):
+        return None
+    return path
+
+
 def _index_rows(store_dir: Path) -> list[dict]:
     """Index rows in seq order, skipping any line that is not valid JSON.
 
