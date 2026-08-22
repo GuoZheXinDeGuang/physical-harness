@@ -251,16 +251,27 @@ def run_probe(store_dir: str | Path, out_dir: str | Path, *,
         return paired_gate(heldout_specs, bundle, baseline=None, workers=workers,
                            executor=executor)
 
-    sealed_fixed = int(rerun["arms"]["search"]["heldout"]["fixed"])
+    sealed_heldout = rerun["arms"]["search"]["heldout"]
+    sealed_fixed = int(sealed_heldout["fixed"])
+    sealed_broken = int(sealed_heldout["broken"])
+    sealed_fires = int(sealed_heldout["fires"])
     if verbose:
         print(f"P2 held-out {len(heldout_specs)} seeds; anchor: search@43 must reproduce "
-              f"fixed={sealed_fixed}")
+              f"fixed={sealed_fixed} broken={sealed_broken} fires={sealed_fires}")
     anchor = _paired(search_rule)  # sealed search rule already arms at 43
     if verbose:
         print(f"  search@43: {anchor.line()}")
-    if anchor.fixed != sealed_fixed:
+    # Guard the WHOLE discordant signature, not just fixed: a drift that broke an
+    # episode it used to fix while breaking a fresh one nets the same fixed count,
+    # and a detection drift moves fires without moving fixed. Any of the three
+    # moving means the reconstruction or environment drifted.
+    drift = {k: (got, sealed) for k, got, sealed in
+             (("fixed", anchor.fixed, sealed_fixed),
+              ("broken", anchor.broken, sealed_broken),
+              ("fires", anchor.fires, sealed_fires)) if got != sealed}
+    if drift:
         raise SystemExit(
-            f"P2 anchor drift: search@43 fixed={anchor.fixed} != sealed {sealed_fixed}. "
+            f"P2 anchor drift: search@43 {drift} (got, sealed). "
             "The reconstruction or the environment drifted; every downstream number "
             "would be garbage. Stopping WITHOUT writing an artifact.")
 

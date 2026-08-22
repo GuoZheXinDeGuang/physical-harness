@@ -126,8 +126,11 @@ def _fake_store(root, *, search_fixed: int):
                       _recovery())
     store = CampaignStore(root)
     store.put("preregistration", dataclasses.asdict(prereg))
+    # The anchor guard now checks the WHOLE discordant signature (fixed, broken,
+    # fires): _fake_run fires on every governed episode (10) and breaks none.
     store.put("round25_rerun", {"arena": "lift", "arms": {
-        "search": {"rule": search_rule.canonical(), "heldout": {"fixed": search_fixed}},
+        "search": {"rule": search_rule.canonical(),
+                   "heldout": {"fixed": search_fixed, "broken": 0, "fires": 10}},
         "naive_mock": {"rule": naive_rule.canonical(), "heldout": {"fixed": 5}}}})
     return prereg
 

@@ -45,6 +45,16 @@ Op = Literal["lt", "gt"]
 Reducer = Literal["value", "min", "max", "range"]
 REDUCERS: tuple[Reducer, ...] = ("value", "min", "max", "range")
 
+#: The reducers RUNTIME honors. ``governed_rollout`` (plugins/rsi/governed.py,
+#: the trigger loop ~line 333) compares the INSTANTANEOUS reading
+#: ``view[trig.feature]`` to the threshold and never applies ``trig.reducer``, so
+#: a running-reduction candidate is scored under semantics the rollout will never
+#: run -- the round-88 semantic split, where a range-reduced rule scored 0.0 in
+#: search yet fired 119/200 at runtime. Search therefore enumerates ONLY what
+#: runtime honors. The ``Trigger.reducer`` FIELD stays (sealed rules carry it and
+#: it is part of the canonical/hash form); only enumeration narrows.
+RUNTIME_REDUCERS: tuple[Reducer, ...] = ("value",)
+
 
 def reduce_series(series: np.ndarray, reducer: Reducer) -> np.ndarray:
     """Running reduction: element t is the reduction over steps 0..t inclusive."""
@@ -85,16 +95,32 @@ class Trigger:
     def privilege(self) -> int:
         return privilege_cost([self.feature])
 
+    def crosses(self, value) -> bool:
+        """The instantaneous predicate: does this reading cross the threshold?
+
+        The ONE place the op/threshold comparison lives. ``governed_rollout``'s
+        runtime loop and :meth:`fire_step` BOTH route through it, so search can
+        never score a crossing the rollout would not fire on. Fix-once: the
+        semantic split of round 88 was two copies of this test drifting apart.
+        """
+        return bool(value < self.threshold if self.op == "lt" else value > self.threshold)
+
     def fire_step(self, trace: dict[str, np.ndarray]) -> int | None:
-        """First step index at which this trigger fires, or None."""
+        """First step index at which this trigger fires, or None.
+
+        Runtime reads the instantaneous value; the reducer is applied HERE for
+        sealed-rule fidelity (a canonical range rule replays faithfully), but
+        search only enumerates ``RUNTIME_REDUCERS`` (value), so every SEARCHED
+        candidate is scored exactly as ``governed_rollout`` will fire it -- the
+        arm/dwell recurrence below is the same one the runtime loop steps.
+        """
         series = reduce_series(trace[self.feature], self.reducer)
-        hit = series < self.threshold if self.op == "lt" else series > self.threshold
         consec = 0
         for t in range(len(series)):
             if t < self.arm_after:
                 consec = 0
                 continue
-            consec = consec + 1 if hit[t] else 0
+            consec = consec + 1 if self.crosses(series[t]) else 0
             if consec >= self.dwell:
                 return t
         return None
@@ -198,6 +224,19 @@ def earliest_divergence(traces, labels, feature: str, sigma: float = GENERATION_
     return int(idx[0]) if idx.size else None
 
 
+def peak_divergence(traces, labels, feature: str) -> int | None:
+    """Step of MAXIMUM |separation| between the outcome groups, or None.
+
+    :func:`earliest_divergence` finds the sigma ONSET; this finds the peak, where
+    the two groups are furthest apart. Round 88: repair yield rides fire time, and
+    the peak is where a late-armed trigger fires -- structurally unreachable from
+    the onset arms {eod, eod+2, eod+6} alone. Generic argmax of the divergence
+    profile, no hardcoded step; None when nothing clears MIN_GROUP_SAMPLES.
+    """
+    prof = np.abs(np.nan_to_num(divergence_profile(traces, labels, feature), nan=0.0))
+    return int(prof.argmax()) if prof.size and prof.max() > 0.0 else None
+
+
 #: Weight on how much lead time a trigger leaves for a repair. ZERO, measured.
 #:
 #: Hand-picked at 0.25 in round 2 and never calibrated. It encodes an assumption
@@ -222,22 +261,25 @@ DEFAULT_EARLINESS = 0.0
 DEFAULT_FP_PENALTY = 1.2
 
 
-def search_triggers(
+def _score_candidates(
     traces: Sequence[dict[str, np.ndarray]],
     labels: Sequence[bool],
     *,
-    privilege_budget: int = 0,
-    dwells: Iterable[int] = (1, 2, 3),
-    top_k: int = 8,
-    min_recall: float = 0.5,
-    earliness: float = DEFAULT_EARLINESS,
-    fp_penalty: float = DEFAULT_FP_PENALTY,
+    privilege_budget: int,
+    dwells: Iterable[int],
+    min_recall: float,
+    earliness: float,
+    fp_penalty: float,
 ) -> list[TriggerScore]:
-    """Rank triggers by detection quality under the privilege budget.
+    """Enumerate and score every admissible candidate, best score first.
 
-    Only features whose privilege cost fits `privilege_budget` are considered,
-    which is what makes a zero-budget campaign structurally unable to discover a
-    rule that a real robot could not evaluate.
+    Value reducer ONLY (``RUNTIME_REDUCERS``): the rollout evaluates the
+    instantaneous reading, so scoring a running-reduction candidate would judge it
+    under semantics the rollout never runs (round 88). The arm set anchors at the
+    divergence ONSET and its neighbours {eod, eod+2, eod+6} AND at the sigma PEAK
+    {peak-2, peak}, because repair yield rides fire time and the strongest
+    separation -- where a late trigger repairs most -- is unreachable from the
+    onset alone.
     """
     labels = np.asarray(labels, dtype=bool)
     if labels.all() or (~labels).any() is False:
@@ -247,15 +289,21 @@ def search_triggers(
                   if (0 if f.privilege is Privilege.OBSERVABLE else 1) <= privilege_budget]
     out: list[TriggerScore] = []
     for feature in sorted(admissible):
-      for reducer in REDUCERS:
+      for reducer in RUNTIME_REDUCERS:
         reduced = [{feature: reduce_series(t[feature], reducer)} for t in traces]
         eod = earliest_divergence(reduced, labels, feature)
         if eod is None:
             continue
-        traces_r = reduced
-        # Arm at or after the divergence: firing before the signal exists is noise.
-        arms = sorted({eod, min(eod + 2, n_steps - 1), min(eod + 6, n_steps - 1)})
-        values = np.concatenate([t[feature][eod:] for t in traces_r if len(t[feature]) > eod])
+        # Arm at the divergence ONSET and its neighbours -- firing before the
+        # signal exists is noise -- AND at the sigma PEAK (round 88), where the
+        # separation is strongest and a late trigger repairs most; {eod, eod+2,
+        # eod+6} cannot reach it. Generic argmax, guarded into the horizon.
+        arms = {eod, min(eod + 2, n_steps - 1), min(eod + 6, n_steps - 1)}
+        peak = peak_divergence(reduced, labels, feature)
+        if peak is not None:
+            arms |= {max(peak - 2, 0), min(peak, n_steps - 1)}
+        arms = sorted(arms)
+        values = np.concatenate([t[feature][eod:] for t in reduced if len(t[feature]) > eod])
         for thr in _quantile_grid(values):
             for op in ("lt", "gt"):
                 for dwell in dwells:
@@ -276,7 +324,34 @@ def search_triggers(
                         score = recall - fp_penalty * fpr + earliness * (lead / n_steps)
                         out.append(TriggerScore(trig, recall, fpr, med, lead, score))
     out.sort(key=lambda s: -s.score)
-    # keep the best trigger per (feature, op) so the head is not one rule's neighbours
+    return out
+
+
+def search_triggers(
+    traces: Sequence[dict[str, np.ndarray]],
+    labels: Sequence[bool],
+    *,
+    privilege_budget: int = 0,
+    dwells: Iterable[int] = (1, 2, 3),
+    top_k: int = 8,
+    min_recall: float = 0.5,
+    earliness: float = DEFAULT_EARLINESS,
+    fp_penalty: float = DEFAULT_FP_PENALTY,
+) -> list[TriggerScore]:
+    """Rank triggers by detection quality under the privilege budget.
+
+    Only features whose privilege cost fits `privilege_budget` are considered,
+    which is what makes a zero-budget campaign structurally unable to discover a
+    rule that a real robot could not evaluate.
+    """
+    out = _score_candidates(traces, labels, privilege_budget=privilege_budget,
+                            dwells=dwells, min_recall=min_recall,
+                            earliness=earliness, fp_penalty=fp_penalty)
+    # keep the best trigger per (feature, op, reducer) so the head is not one
+    # rule's neighbours. Within a family this keeps whatever enumerated first,
+    # which is BLIND to fire-time repair yield -- the SELECTION layer breaks the
+    # top-score tie by a governed replay (governor.proposer.SearchProposer),
+    # where a rollout is affordable and the scorer stays a scorer.
     seen: set[tuple[str, str, str]] = set()
     deduped: list[TriggerScore] = []
     for s in out:
@@ -288,3 +363,31 @@ def search_triggers(
         if len(deduped) >= top_k:
             break
     return deduped
+
+
+def top_score_candidates(
+    traces: Sequence[dict[str, np.ndarray]],
+    labels: Sequence[bool],
+    *,
+    privilege_budget: int = 0,
+    dwells: Iterable[int] = (1, 2, 3),
+    min_recall: float = 0.5,
+    earliness: float = DEFAULT_EARLINESS,
+    fp_penalty: float = DEFAULT_FP_PENALTY,
+) -> list[TriggerScore]:
+    """Every candidate tied at the float-exact top score, in enumeration order.
+
+    NOT deduped by family: arm variants of ONE feature are exactly what differ in
+    fire time, and fire time is what the objective is blind to (round 88:
+    detection saturates, 3+ candidates at score 1.0). The SELECTION layer replays
+    these against the dev block to break the tie by repair yield; it caps how many
+    it will pay a rollout for. Returning the full tie set (uncapped) lets the
+    caller log what the cap dropped.
+    """
+    out = _score_candidates(traces, labels, privilege_budget=privilege_budget,
+                            dwells=dwells, min_recall=min_recall,
+                            earliness=earliness, fp_penalty=fp_penalty)
+    if not out:
+        return []
+    top = out[0].score
+    return [s for s in out if s.score == top]

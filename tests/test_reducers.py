@@ -7,6 +7,7 @@ undo, so each has a test that fails loudly if it does.
 import numpy as np
 import pytest
 
+import plugins.embodiment_robosuite.features  # noqa: F401  registry population (isolation-safe)
 from harness.spec import EpisodeSpec
 from plugins.policies.drivers import ClonedDriver, ScriptedDriver
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
@@ -49,9 +50,12 @@ def test_value_reducer_is_the_pre_round_14_behaviour():
     assert plain.fire_step({"observable.finger_gap": x}) == 2
 
 
-def test_search_can_return_a_reduced_trigger():
-    """Failures that are time-misaligned are invisible instantaneously and
-    visible under a running reduction."""
+def test_search_enumerates_only_runtime_honored_reducers():
+    """Round 88 semantic honesty: governed_rollout reads the INSTANTANEOUS value
+    and ignores trig.reducer, so search must not propose a running reduction the
+    rollout will never honor. A purely time-misaligned signal -- visible only
+    under a reduction -- now surfaces nothing rather than a phantom min-rule that
+    scores well offline and never fires at runtime."""
     traces, labels = [], []
     rng = np.random.RandomState(3)
     for i in range(40):
@@ -67,11 +71,84 @@ def test_search_can_return_a_reduced_trigger():
             "observable.joint_speed": np.zeros(60),
         })
         labels.append(not failing)
-    ranked = search_triggers(traces, labels, privilege_budget=0, top_k=6)
-    assert ranked, "no candidate found for a time-misaligned signal"
-    assert any(s.trigger.reducer != "value" for s in ranked), (
-        "a misaligned signal should surface a running reduction"
+    misaligned = search_triggers(traces, labels, privilege_budget=0, top_k=6)
+    assert all(s.trigger.reducer == "value" for s in misaligned), (
+        "a reduction-only signal must never surface a running-reduction phantom"
     )
+
+    # A signal that DOES separate instantaneously still ranks -- as value only.
+    for t, y in zip(traces, labels):
+        t["observable.finger_gap"] = np.full(60, 0.04 if y else 0.001)
+    ranked = search_triggers(traces, labels, privilege_budget=0, top_k=6)
+    assert ranked, "an instantaneous signal must still surface a candidate"
+    assert all(s.trigger.reducer == "value" for s in ranked), (
+        "search must enumerate only value -- what runtime honors"
+    )
+
+
+def test_search_prediction_matches_the_runtime_fire_step():
+    """Semantics-alignment pin (fakes, no rollout): the step search PREDICTS
+    (Trigger.fire_step) equals the step the RUNTIME loop fires, because both route
+    the op/threshold test through the one shared Trigger.crosses. The runtime
+    recurrence below is exactly governed.py's trigger loop stepped over a raw
+    series -- value-only, via crosses -- and must agree with fire_step. The live
+    cross-call anchor is tests/test_episode_log.py (a real governed_rollout)."""
+    series = np.array([0.05, 0.05, 0.009, 0.004, 0.004, 0.05, 0.003, 0.003])
+    trig = Trigger("observable.finger_gap", "lt", 0.005, 2, 2)  # value reducer
+    consec, runtime_fire = 0, None
+    for t, value in enumerate(series):
+        if t < trig.arm_after:                     # governed.py: arm_after guard
+            consec = 0
+            continue
+        consec = consec + 1 if trig.crosses(value) else 0   # the SHARED predicate
+        if consec >= trig.dwell:
+            runtime_fire = t
+            break
+    assert runtime_fire == 4
+    assert trig.fire_step({"observable.finger_gap": series}) == runtime_fire
+
+
+def _peaked_traces(n=40, N=80):
+    """Failing (even) episodes peel finger_gap from 0.04 starting at t=10, with
+    the widest gap at t=50; succeeding (odd) ones hold 0.04. Diverges at the ONSET
+    t=10, peaks at t=50."""
+    traces, labels = [], []
+    for s in range(n):
+        failing = s % 2 == 0
+        fg = np.full(N, 0.04)
+        if failing:
+            for t in range(10, N):
+                diff = 0.03 * (t - 9) / 41 if t <= 50 else 0.03 * (N - t) / 30
+                fg[t] = 0.04 - diff
+        traces.append({
+            "observable.finger_gap": fg,
+            "observable.eef_z": np.linspace(1.0, 0.9, N),
+            "observable.gripper_effort": np.zeros(N),
+            "observable.joint_speed": np.zeros(N),
+        })
+        labels.append(not failing)
+    return traces, labels
+
+
+def test_peak_step_enters_the_candidate_arm_set():
+    """Round 88 part B: traces diverging at t=10 but peaking at t=50. The onset
+    arms {10,12,16} miss the peak, so search now ALSO anchors at {peak-2, peak} =
+    {48, 50}. That the peak was structurally unreachable is the whole reason repair
+    yield rode fire time."""
+    from plugins.rsi.stats.search import (
+        _score_candidates,
+        earliest_divergence,
+        peak_divergence,
+    )
+    traces, labels = _peaked_traces()
+    reduced = [{"observable.finger_gap": t["observable.finger_gap"]} for t in traces]
+    assert earliest_divergence(reduced, labels, "observable.finger_gap") == 10
+    assert peak_divergence(reduced, labels, "observable.finger_gap") == 50
+    cands = _score_candidates(traces, labels, privilege_budget=0, dwells=(1,),
+                              min_recall=0.5, earliness=0.0, fp_penalty=1.2)
+    arms = {c.trigger.arm_after for c in cands
+            if c.trigger.feature == "observable.finger_gap"}
+    assert {48, 50} <= arms, f"peak arms missing from {sorted(arms)}"
 
 
 # --- hand-back contract -----------------------------------------------------

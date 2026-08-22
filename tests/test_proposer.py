@@ -154,3 +154,117 @@ def test_both_providers_satisfy_the_same_contract():
                                 strategies=STRATEGIES, recovery_sensor_sd=0.02)
         assert rule is not None and rule.declared_privilege() == 0
         assert provider.identity
+
+
+# --- repair-aware tie-break (round 88 part C) -------------------------------
+
+def _peaked(n=40, N=80, span=0.035):
+    """Failing (even) episodes peel finger_gap from 0.04 at t=10, widest at t=50;
+    diverges at the onset AND peaks late, so many arm variants tie at score 1.0."""
+    from harness.spec import EpisodeSpec
+    traces, labels, specs = [], [], []
+    for s in range(n):
+        failing = s % 2 == 0
+        fg = np.full(N, 0.04)
+        if failing:
+            for t in range(10, N):
+                diff = span * (t - 9) / 41 if t <= 50 else span * (N - t) / 30
+                fg[t] = 0.04 - diff
+        traces.append({
+            "observable.finger_gap": fg,
+            "observable.eef_z": np.linspace(1.0, 0.9, N),
+            "observable.gripper_effort": np.zeros(N),
+            "observable.joint_speed": np.zeros(N),
+        })
+        labels.append(not failing)
+        specs.append(EpisodeSpec(seed=s))
+    return traces, labels, specs
+
+
+class _CountingExecutor:
+    def __init__(self):
+        self.map_calls = 0
+
+    def map(self, fn, items, *, workers):
+        self.map_calls += 1
+        return [fn(item) for item in items]
+
+
+def test_tiebreak_picks_max_fixed_capped_and_dropped_logged(monkeypatch):
+    """Detection saturates, so the objective ties many arm variants at the top
+    score and the dedup keeps the earliest arm. The tie-break replays the ties on
+    the dev block, keeps the max-fixed, caps replays at TIE_BREAK_CAP, and logs
+    what the cap dropped."""
+    from governor.proposer import TIE_BREAK_CAP, SearchProposer
+    from plugins.rsi import gate
+
+    traces, labels, dev_specs = _peaked()
+
+    def _fake_run(job):
+        # A failing dev seed is repaired ONLY by a late arm (>= 40); later arms
+        # fix more, so the tie-break must reject the early-arm default.
+        spec, bundle = job
+        failing = spec.seed % 2 == 0
+        fixed = failing and bundle.rules[0].trigger.arm_after >= 40
+        return {"success": (not failing) or fixed, "fired_at": 0, "trace": {}}
+    monkeypatch.setattr(gate, "_run", _fake_run)
+
+    ex = _CountingExecutor()
+    p = SearchProposer()
+    rule = p.propose(traces, labels, generation=1, privilege_budget=0,
+                     recovery_sensor_sd=0.02, dev_specs=dev_specs, executor=ex)
+    sel = p.selection
+
+    assert rule.trigger.arm_after >= 40, "tie-break must arm at the peak, not the onset"
+    assert sel["pick_fixed"] == 20 == max(y["fixed"] for y in sel["yields"])
+    assert sel["tied"] > TIE_BREAK_CAP, "fixture must actually exercise the cap"
+    assert sel["replayed"] == TIE_BREAK_CAP
+    assert ex.map_calls == TIE_BREAK_CAP, "one dev replay per capped candidate"
+    assert len(sel["dropped"]) == sel["tied"] - TIE_BREAK_CAP
+
+    # determinism: an identical call makes the identical pick.
+    p2 = SearchProposer()
+    rule2 = p2.propose(traces, labels, generation=1, privilege_budget=0,
+                       recovery_sensor_sd=0.02, dev_specs=dev_specs, executor=_CountingExecutor())
+    assert rule2.trigger == rule.trigger
+
+
+def test_tiebreak_residual_ties_keep_enumeration_order(monkeypatch):
+    """When every tied candidate fixes the SAME number, the pick is the first in
+    enumeration order -- the dedup default -- so a genuine tie is never reshuffled
+    nondeterministically."""
+    from governor.proposer import SearchProposer
+    from plugins.rsi import gate
+    from plugins.rsi.stats.search import search_triggers
+
+    traces, labels, dev_specs = _peaked()
+    # nobody is fixed: every candidate ties at 0 fixed.
+    monkeypatch.setattr(gate, "_run", lambda job: {
+        "success": job[0].seed % 2 == 1, "fired_at": None, "trace": {}})
+
+    class _Ex:
+        def map(self, fn, items, *, workers):
+            return [fn(item) for item in items]
+
+    default = search_triggers(traces, labels, privilege_budget=0, top_k=3)[0].trigger
+    p = SearchProposer()
+    rule = p.propose(traces, labels, generation=1, privilege_budget=0,
+                     recovery_sensor_sd=0.02, dev_specs=dev_specs, executor=_Ex())
+    assert rule.trigger == default
+    assert p.selection["pick_fixed"] == 0
+
+
+def test_search_without_dev_block_keeps_the_ranked_head(monkeypatch):
+    """No dev_specs/executor supplied -> no replay, byte-for-byte the old pick
+    (ranked[0]). This is the reasoner-adapter and no-rollout path."""
+    from governor.proposer import SearchProposer
+    from plugins.rsi import gate
+    from plugins.rsi.stats.search import search_triggers
+
+    traces, labels, _ = _peaked()
+    monkeypatch.setattr(gate, "_run", lambda job: (_ for _ in ()).throw(
+        AssertionError("no replay must run without a dev block")))
+    default = search_triggers(traces, labels, privilege_budget=0, top_k=3)[0].trigger
+    rule = SearchProposer().propose(traces, labels, generation=1, privilege_budget=0,
+                                    recovery_sensor_sd=0.02)
+    assert rule.trigger == default

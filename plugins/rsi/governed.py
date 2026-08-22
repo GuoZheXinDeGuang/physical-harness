@@ -330,8 +330,11 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             if k - 1 < trig.arm_after:
                 consec[rule.rule_id] = 0
                 continue
-            value = view[trig.feature]
-            hit = value < trig.threshold if trig.op == "lt" else value > trig.threshold
+            # Instantaneous reading, value-only: the reducer is NOT applied here
+            # (search enumerates only what this loop honors, search.RUNTIME_REDUCERS).
+            # `crosses` is the one shared op/threshold predicate -- the same test
+            # Trigger.fire_step steps offline, so search scores what runtime fires.
+            hit = trig.crosses(view[trig.feature])
             consec[rule.rule_id] = consec[rule.rule_id] + 1 if hit else 0
             if triggered is None and consec[rule.rule_id] >= trig.dwell:
                 triggered = rule
