@@ -254,6 +254,14 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
                    "prereg_sha": _prereg_sha(out), "skills": copied})
 
 
+#: A brief is a selector plus budgets -- nothing else. Providers are chosen
+#: server-side (POLICY_BY_TASK / CAMPAIGN_SCRIPTS); any other key is rejected.
+_BRIEF_KEYS = {
+    "task": {"kind", "task", "seed", "max_replans", "max_actuations"},
+    "campaign": {"kind", "campaign", "dev", "heldout"},
+}
+
+
 def _process(rt: Runtime, path: Path) -> None:
     """Claim one brief, run it, file it under done/ or failed/."""
     brief_id = path.name
@@ -270,6 +278,12 @@ def _process(rt: Runtime, path: Path) -> None:
         return
     try:
         kind = brief.get("kind", "task")
+        unknown = set(brief) - _BRIEF_KEYS.get(kind, set())
+        if unknown:
+            # Rejection, not neutralization: a brief is selector+budgets only, and
+            # an injected key (a provider ref, say) must fail loudly rather than
+            # ride along ignored until some future reader starts honoring it.
+            raise ValueError(f"unknown brief keys {sorted(unknown)}")
         if kind == "task":
             _run_task(brief, rt.log, rt.skills_root)
         elif kind == "campaign":
@@ -282,7 +296,14 @@ def _process(rt: Runtime, path: Path) -> None:
                        "error": repr(exc)})
         os.replace(claimed, rt.failed / brief_id)
         return
-    os.replace(claimed, rt.done / brief_id)
+    try:
+        os.replace(claimed, rt.done / brief_id)
+    except OSError as exc:
+        # A filesystem failure at the very last rename must not kill the loop;
+        # the brief stays in processing/ and re-queues on the next boot.
+        rt.log.append("runtime.task_error",
+                      {"brief": brief_id, "task": brief.get("task"),
+                       "error": f"done-rename failed: {exc!r}"})
 
 
 def _pending(rt: Runtime) -> list[Path]:

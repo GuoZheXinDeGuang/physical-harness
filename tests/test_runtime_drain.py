@@ -96,3 +96,24 @@ def test_boot_requeues_processing_and_continues_chain(tmp_path, monkeypatch):
     assert (rt2.done / "stuck.json").exists(), "the requeued brief ran to completion"
     assert len(rt2.log.rows()) > rows_after_first, "the chain grew, it did not restart"
     assert SessionLog.load(session / "session-log").verify()
+
+
+def test_brief_with_injected_provider_ref_is_rejected(tmp_path, monkeypatch):
+    """An unknown key (e.g. a smuggled provider ref) fails loudly to failed/ --
+    rejection, not silent neutralization (round 94 hardening)."""
+    from scripts import harness_runtime as hr
+    calls = []
+    monkeypatch.setattr(hr, "_run_task", lambda *a, **k: calls.append(a))
+    session = tmp_path / "s"
+    rt = hr.boot(session)
+    evil = {"task": "stack", "seed": 90001, "policy": "evil.module:provider"}
+    tmp = tmp_path / "evil.json.tmp"
+    tmp.write_text(json.dumps(evil))
+    os.replace(tmp, rt.inbox / "evil.json")
+    hr.main(session, drain=True)
+    assert not calls, "injected-key brief must never reach _run_task"
+    assert (rt.failed / "evil.json").exists()
+    reloaded = SessionLog.load(session / "session-log")
+    errors = [row for row in reloaded.rows() if row["kind"] == "runtime.task_error"]
+    assert len(errors) == 1 and "unknown brief keys" in errors[0]["data"]["error"]
+    assert reloaded.verify()
