@@ -1,0 +1,69 @@
+# dsh 驾驶舱采纳施工图 (round 95 design, 2026-08-23)
+
+用户裁定: GUI/CLI 不再自建, 改用 deepseek-harness。三个开放问题的裁决:
+1. 工具链: nvm 局部 Node 22 + pnpm 11.7, 不碰系统 node。
+2. RC 风险: pin 0.1.1-rc.2; rungs 1-3 证对等后 rung 4 才删自建 GUI; profile 接受随版本重同步。
+3. 接受 LLM 在 inbox 前(MCP 缝固有); 运行时 _BRIEF_KEYS 服务端重验证是权威守卫。
+
+## Design
+
+DECISION SUMMARY (round-95 adoption ruling)
+
+No deal-breaker on the repo itself: dsh is real, MIT (Copyright 2026 DeepSeek, standard text, no extra clauses), and we VENDOR nothing — we run stock dsh via npx plus our own adapter in our repo, so MIT is satisfied trivially. Two real gates remain: (a) it will not run on the 4090 box as-is (Node 22.19+/24 + pnpm 11.7 required; box has Node 18, no pnpm) and (b) it is a 2-day-old developer preview that PROMISES compatibility-breaking changes. Both shape the seam choice.
+
+(1) SEAM WE RIDE = #1, MCP server (recon's smallest-honest), NOT #4 custom agent loop. Rationale, in order:
+- Ponytail/"adopt don't rebuild": seam #4 (custom ctx.agents/agentLoop) is the only path that renders our evidence with no LLM turn, but it means writing a TS/JS agent factory + ConversationNode panels INSIDE dsh's churning 52-package Cordis monorepo, coupled to its internal SessionEvent vocabulary that WILL break. That is rebuilding our GUI in someone else's unstable types — the opposite of the ruling. Rejected.
+- MCP is an external STABLE standard (recon risk #2 names MCP/ACP/SDK-JSON-RPC as the churn-insulated wires). dsh is an MCP CLIENT (packages/mcp/mcp-client); we stand up an MCP SERVER in OUR repo and connect it with ONE Cordis config row. Zero dsh code, zero vendoring, survives dsh's breaking changes.
+- It re-enforces our authority boundary instead of eroding it. The MCP seam does put dsh's LLM in front of the inbox (it composes the submit_brief call) — but that is NOT authority laundering, because submit_brief drops into the SAME inbox the resident runtime already re-validates against `_BRIEF_KEYS` server-side on claim (harness_runtime.py:281-286). The LLM proposing a brief and the runtime granting it stay separate; the tool boundary and the runtime's re-validation are the guard. An injected provider key still hard-fails to failed/.
+- Rejected alternatives explicitly: #2 (subagent over dsh SDK JSON-RPC) and #3 (ACP) insert subagent-delegation semantics AND, for #2, couple us to dsh's internal SessionEvent envelopes; #3 is lossy (drops tool calls/plans). #5 (fake ctx.llm) is semantically wrong. #6 (fork console) is ruled out by recon (build-time Zod codegen, not repointable).
+
+ADAPTER = a small Python MCP server (stdio transport) living in OUR repo (board/mcp_server.py), NOT inside harness_runtime.py. It imports board.store wholesale for reads and the shared atomic-drop helper for writes; it never imports the resident runtime. This keeps invariant "M4 is the backend, no UI concerns" — the runtime gains nothing. One new dep (the standard `mcp` Python SDK) scoped to this one module; justified over hand-rolling the MCP stdio handshake (correctness on framing/handshake edge cases). dsh side = one mcp-client row in a profile under $DSH_HOME/profiles/physical-harness, pinned to 0.1.1-rc.2.
+
+(2) CLI STORY. dsh CLI covers the OPERATOR/interactive surface only: `dsh web` (chat -> MCP submit_brief / poll_session / list_stores) and `dsh --profile headless "run stack campaign dev=41000-41999 heldout=42000-42199"` (one-shot -> LLM -> submit_brief). This is what replaces the interactive per-task driver role of task_plan.py and the hand-rolled board HTTP shell. EXPERIMENT scripts STAY scripts, unchanged, by design: stack_campaign.py (fronted only via the CAMPAIGN_SCRIPTS allowlist, never by path), demo_campaign.py, all probes, rescore_heldout.py, round25_rerun.py, parity_check.py, soak.py, eval_battery.py. calibrate_stack.py stays a script AND stays the physical tuning knob — never abstract it into the cockpit (hardware needs the sweep). watch_stack.py stays (dsh cannot render MuJoCo; --scan headless stays the sim seam for zos/eval). task_plan.py stays as the inbox-independent plan-loop reference/test; it is superseded as an operator entry by dsh->MCP but is not GUI/CLI hand-rolling, so it is not deleted.
+
+(3) BOARD — see board_ruling. Net: the hand-rolled frontend (board/index.html) and HTTP shell (scripts/rsi_board.py) DIE; the pure layers (board/store.py, board/report.py) LIVE and are reused by the MCP server and promoted: report.py becomes THE exported deliverable dsh surfaces, and gains the Sessions/chain-verify section it currently lacks so no view is lost on deletion.
+
+(4) ZOS BOUNDARY = no unification. dsh becomes the DEV/RSI cockpit (fronts campaigns/board/inbox, reads runs/ read-only, writes only via brief). zos stays the ROBOT cockpit (World/gate/loop). They share exactly ONE seam: the frozen inbox contract. This ruling UNBLOCKS the deferred M4#6 (STATUS.md:68) — the cockpit boundary it was gated on is now decided — so zos/tools/sim.py sim_test can re-point from the watch_stack.py subprocess to a brief-drop, using the SAME shared atomic-drop helper the MCP server uses (two producers, one atomic-rename-claiming consumer = exactly what the inbox already defends). The evidence.py IRON RULE is untouched: harness evidence stays advisory, never enters gate.check_pre/skills.resolve, <3 blocks never renders "proven".
+
+(5) WHAT GETS DELETED = board/index.html + scripts/rsi_board.py, and only after rungs 1-3 prove read parity (MCP tools), snapshot parity (report.py Sessions section), and the submit path. The traversal guard _safe_child and the atomic-drop helper are EXTRACTED to shared homes (board.store, brief_drop.py) BEFORE their hosts are deleted, so neither guard is lost. The four externally-edited files (governor/proposer.py, plugins/rsi/campaign.py, tests/test_proposer.py, tests/test_stage_attribution.py) are not touched by any rung; the MCP layer is designed against store.py's PUBLIC dicts, never campaign.py internals (recon risk #6).
+
+## Rungs
+
+Each rung is independently landable with a test + RECORD; none touches the four externally-edited files. Everything after rung 0 is gated on rung 0.
+
+RUNG 0 - dsh eval + toolchain (prereq, deletes nothing). Install Node 22.19+/24 and pnpm 11.7 (nvm-scoped, not system) on the 4090 box; `npx @deepseek-ai/dsh@0.1.1-rc.2 web --no-open --port 3080`; create $DSH_HOME/profiles/physical-harness with a mcp-client row pointing at a 3-line stdio echo MCP server. Files: profiles/dsh/ (new, our repo — the profile package.json + cordis.patch.yml only; dsh itself is NOT vendored). TEST: dsh web binds 127.0.0.1:3080 AND the echo tool appears as mcp__<name>__echo in a chat. RECORD: exact toolchain versions + the working profile. This de-risks the two deal-breakers before any deletion. DELETES: nothing.
+
+RUNG 1 - harness MCP server, read-only (deletes nothing). New board/mcp_server.py exposing list_stores/store/heldout/sessions/session/ledger/rounds, each a one-call passthrough to board.store (reuse wholesale, same public dicts rsi_board serves). Extract _safe_child from scripts/rsi_board.py into board.store (so the guard survives rsi_board's later deletion) and use it in the MCP server for every name-addressed read. Wire the mcp-client row in the profile to this server. TEST: pytest asserting each MCP tool returns byte-identical dicts to the corresponding board.store call, session tool carries chain_ok, and a `../` store name is rejected by the shared guard. DELETES: nothing.
+
+RUNG 2 - report.py Sessions section + cron entry (deletes nothing, prepares deletion). Wire read_session/discover_sessions + chain_ok rendering into build_report as a new Sessions section (closes recon gap: report currently has no runtime-chain section, invariant #5). Add a __main__ / `python -m board.report --out PATH` so cron keeps headless report generation after rsi_board dies. TEST: generated HTML contains a Sessions section with a chain badge; assert a tampered fixture renders chain_ok=false and a mid-write fixture renders "not verifiable" (distinct states). DELETES: nothing.
+
+RUNG 3 - submit_brief MCP tool + shared atomic-drop helper (deletes nothing). Extract soak.py:_drop into scripts/brief_drop.py (temp write + os.replace only — NO _BRIEF_KEYS copy; the runtime stays the sole authority); soak.py imports it (no behavior change); MCP submit_brief imports it and drops into the session inbox. TEST: submit_brief drops a well-formed brief -> `harness_runtime --drain` files it under done/; a brief with an injected extra key -> runtime files it under failed/ + one runtime.task_error note (proves the server-side guard still fires through the new producer). DELETES: nothing.
+
+RUNG 4 - kill the hand-rolled GUI (the refactor payload). Now that MCP covers live reads (r1), report covers all six sections incl Sessions (r2), cron report entry exists (r2), and the submit path exists (r3): DELETE board/index.html and scripts/rsi_board.py. TEST: `python -m board.report` emits HTML with all six sections; MCP tools serve all live views; `grep -rn "rsi_board\|index.html"` finds no live importer/reference. RECORD: parity note mapping each old /api/* endpoint + tab to its MCP tool / report section. DELETES: board/index.html (28KB SPA), scripts/rsi_board.py (HTTP shell).
+
+RUNG 5 - zos sim_test -> brief-drop, unblocks M4#6 (cwd = zos repo, cross-repo). Re-point zos/tools/sim.py sim_test from the watch_stack.py --scan subprocess to a brief-drop via the shared brief_drop.py helper into the runtime inbox; keep sim_watch on watch_stack.py (live MuJoCo window, dsh can't render it). TEST: sim_test drops a scratch-seed brief (90100+ band) -> runtime drain -> sealed entry appears; sim_watch still opens a window. DELETES: sim_test's direct watch_stack.py --scan call path (superseded), nothing in the harness repo.
+
+## Board ruling (逐视图)
+
+Per-view ruling. The user said stop hand-rolling GUI, so every interactive HTML tab is RETIRED; the pure data/artifact layer (store.py, report.py) is kept and reused. Only block-comparison is "genuinely hard in dsh" and is kept as the minimum (report.py's static render), not rebuilt as a dsh TS panel.
+
+| View | Ruling | Where it lives after |
+|---|---|---|
+| Campaign explorer (campaigns tab, /api/stores, /api/store) | RETIRE HTML tab; KEEP AS DATA-API | Live: MCP list_stores/store (rung 1). Snapshot: report.py campaigns section (already exists). store.py unchanged. |
+| Block comparison (heldout tab, multi-block SVG charts, /api/heldout) | RETIRE HTML tab; KEEP MINIMUM as report artifact | The one view genuinely impractical in dsh without writing churning TS panels. Its charts already exist as report.py Python/SVG ports — surfaced as the exported HTML deliverable dsh links. Live drill-down via MCP heldout tool. NOT rebuilt as a dsh client plugin. |
+| Live sessions (sessions tab, chain badges, /api/sessions, /api/session) | RETIRE HTML tab; DSH-rendered live + report snapshot | Live: MCP session/sessions tools carry chain_ok (rung 1), dsh renders as tool cards. Snapshot: NEW report.py Sessions section with chain badge (rung 2). Invariant #5 preserved in both. |
+| Ledger map (ledger tab, /api/ledger) | RETIRE HTML tab; KEEP AS DATA-API | Live: MCP ledger tool. Snapshot: report.py ledger section (exists). parse_ledger stays in store.py untouched — it is also the runtime seed-guard's source of truth (invariant #4), never reimplemented. |
+| Rounds feed (rounds tab, /api/rounds) | RETIRE HTML tab | Snapshot: report.py rounds section (exists). Low live value; MCP rounds tool optional. |
+| Report export (/api/report, Content-Disposition download) | KEEP report.py entirely; PROMOTE to primary deliverable | report.py build_report unchanged as pure headless artifact generator. Exposed via MCP fetch_report tool (dsh surfaces it as a produced-file deliverable) + `python -m board.report --out` for cron (rung 2). The `<a href>` button dies with index.html. |
+
+Consequence: board/index.html and scripts/rsi_board.py are fully deleted at rung 4. board/store.py and board/report.py survive and become the shared read/artifact layer behind the MCP server. No view is lost — each maps to (MCP live tool) and/or (report.py section); block-comparison charts survive only as the static report artifact, which is the honest minimum.
+
+## Open questions (已裁决存档)
+
+Only what you must decide; everything else is decided above.
+
+1. TOOLCHAIN BUMP (hard gate on rung 0, must confirm before any work). dsh needs Node 22.19+/24 and pnpm 11.7 on the 4090 box, which runs Node 18 with no pnpm. I default to installing them nvm-scoped (not touching the system Node the harness venv/other tools may rely on). Confirm: OK to add an nvm-scoped Node 22/pnpm 11.7 for the dsh cockpit only? If system Node must stay untouched and nvm is unacceptable, dsh cannot run and we fall back to keeping board/ (state so and I re-plan).
+
+2. DELETE-WHILE-RC RISK. dsh is a 2-day-old developer preview that promises compatibility-breaking changes. The MCP seam insulates the wire (standard protocol), but the profile/Cordis-YAML config format may churn and need periodic re-sync. I default to: pin 0.1.1-rc.2, accept profile re-sync, and delete board/ at rung 4 once rungs 1-3 prove parity. Confirm, OR tell me to keep board/ alive (undeleted, unmaintained) until dsh cuts a stable tag — in which case rung 4 becomes "quarantine board/" not "delete".
+
+3. LLM-IN-FRONT-OF-INBOX. The MCP seam means dsh's LLM composes the submit_brief call (the runtime still re-validates _BRIEF_KEYS server-side, so this is not authority laundering). I default to accepting this — it is inherent to adopting an LLM agent harness as the cockpit. Only veto if you require that NO LLM ever sit between a human and the inbox; that would force seam #4 (custom no-LLM agent loop in dsh's monorepo), which I recommend against (large, couples to unstable internal types).
