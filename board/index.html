@@ -96,8 +96,8 @@
   <div class="main" id="main"><div class="empty">loading&#8230;</div></div>
 </div>
 <script>
-const S = {tab:"campaigns", store:null, stores:[], sig:"", ledger:null, rounds:null};
-const TABS = [["campaigns","Campaigns"],["heldout","Held-out blocks"],["ledger","Seed ledger"],["rounds","Rounds"]];
+const S = {tab:"campaigns", store:null, stores:[], session:null, sessions:[], sig:"", ledger:null, rounds:null};
+const TABS = [["campaigns","Campaigns"],["heldout","Held-out blocks"],["sessions","Sessions"],["ledger","Seed ledger"],["rounds","Rounds"]];
 const $ = (h)=>{const t=document.createElement("template");t.innerHTML=h.trim();return t.content.firstChild;};
 const pct = v => v==null?"&#8211;":(v*100).toFixed(1)+"%";
 const sgn = v => v==null?"&#8211;":(v>=0?"+":"")+(v*100).toFixed(1)+"pp";
@@ -176,6 +176,21 @@ function renderSide(){
         <div class="meta" style="color:var(--dim)">${esc(kinds)}</div>
       </div>`);
       e.onclick=()=>{S.store=s.name;renderAll();}; b.appendChild(e);
+    });
+  } else if(S.tab==="sessions"){
+    b.appendChild($(`<h3>Sessions (${S.sessions.length})</h3>`));
+    S.sessions.forEach(s=>{
+      const sel=S.session===s.name?"sel":"";
+      const kinds=Object.entries(s.kinds).map(([k,n])=>`${k}:${n}`).join(" ");
+      const e=$(`<div class="store ${sel}">
+        <div class="nm">${esc(s.name)}</div>
+        <div class="meta">
+          <span class="badge ${s.chain_ok?"ok":"no"}">${s.chain_ok?"chain ok":"chain broken"}</span>
+          ${s.skipped?`<span style="color:var(--warn)">&#9209; ${s.skipped}</span>`:""}
+        </div>
+        <div class="meta" style="color:var(--dim)">${esc(kinds)}</div>
+      </div>`);
+      e.onclick=()=>{S.session=s.name;renderAll();}; b.appendChild(e);
     });
   } else {
     b.appendChild($(`<div class="sub">${S.tab==="ledger"?"Seed-block burn map parsed from STATUS.md.":"Round feed parsed from progress.md."}</div>`));
@@ -353,6 +368,50 @@ function roundsView(){
   m.innerHTML=h;
 }
 
+function chainBadge(ok){return `<span class="badge ${ok?"ok":"no"}">${ok?"chain verified":"chain broken"}</span>`;}
+function sessionView(d){
+  const m=document.getElementById("main");
+  if(!d||d.error){m.innerHTML=`<div class="empty">${esc((d&&d.error)||"no session")}</div>`;return;}
+  const rows=d.rows||{};
+  const tasks=rows["task.plan_complete"]||[], errors=rows["runtime.task_error"]||[],
+        camps=rows["runtime.campaign_scheduled"]||[];
+  let h=`<div class="card"><h2>${esc(d.name)} ${chainBadge(d.chain_ok)}</h2>`;
+  if(d.skipped) h+=`<div class="warnbar">&#9209; ${d.skipped} row(s) mid-write, skipped this poll</div>`;
+  h+=`<div class="kv"><span><b>tasks</b> ${tasks.length}</span><span><b>errors</b> ${errors.length}</span>
+    <span><b>campaigns</b> ${camps.length}</span></div></div>`;
+  if(tasks.length){
+    h+=`<div class="card"><h2>Task timeline</h2>
+      <table><thead><tr><th>#</th><th>goal</th><th>result</th><th>replans</th><th>actuations</th><th>faults</th><th>nodes</th></tr></thead><tbody>`;
+    tasks.forEach((t,i)=>{
+      const nodes=Object.entries(t.nodes||{}).map(([nid,n])=>`${esc(nid)}${n.success?"&#10003;":"&#10007;"}`).join(" ");
+      const flt=(t.faults||[]).map(f=>f.kind).join(", ");
+      h+=`<tr><td>${i+1}</td><td style="text-align:left">${esc(t.goal||"&#8211;")}</td>
+        <td><span class="badge ${t.success?"ok":"no"}">${t.success?"success":"failed"}</span></td>
+        <td>${num(t.replans)}</td><td>${num(t.actuations)}</td>
+        <td title="${esc(flt)}">${(t.faults||[]).length}</td>
+        <td style="text-align:left">${nodes}</td></tr>`;
+    });
+    h+=`</tbody></table></div>`;
+  }
+  if(errors.length){
+    h+=`<div class="card"><h2>Task errors</h2>
+      <table><thead><tr><th>brief</th><th>task</th><th>error</th></tr></thead><tbody>`;
+    errors.forEach(e=>h+=`<tr><td style="text-align:left">${esc(e.brief)}</td><td>${esc(e.task)}</td>
+      <td style="text-align:left">${esc(e.error)}</td></tr>`);
+    h+=`</tbody></table></div>`;
+  }
+  if(camps.length){
+    h+=`<div class="card"><h2>Campaigns scheduled</h2>
+      <table><thead><tr><th>brief</th><th>campaign</th><th>prereg</th><th>skills</th></tr></thead><tbody>`;
+    camps.forEach(c=>h+=`<tr><td style="text-align:left">${esc(c.brief)}</td><td>${esc(c.campaign)}</td>
+      <td>${esc((c.prereg_sha||"").slice(0,10))}</td><td>${(c.skills||[]).length}</td></tr>`);
+    h+=`</tbody></table></div>`;
+  }
+  if(!tasks.length&&!errors.length&&!camps.length)
+    h+=`<div class="card sub">no notes yet in this session chain</div>`;
+  m.innerHTML=h;
+}
+
 async function renderMain(){
   const m=document.getElementById("main");
   if(S.tab==="campaigns"){
@@ -361,6 +420,9 @@ async function renderMain(){
   } else if(S.tab==="heldout"){
     if(!S.store){m.innerHTML=`<div class="empty">select a store &#8592;</div>`;return;}
     heldoutView(await api("/api/heldout?name="+encodeURIComponent(S.store)));
+  } else if(S.tab==="sessions"){
+    if(!S.session){m.innerHTML=`<div class="empty">select a session &#8592;</div>`;return;}
+    sessionView(await api("/api/session?name="+encodeURIComponent(S.session)));
   } else if(S.tab==="ledger"){
     if(!S.ledger) S.ledger=await api("/api/ledger"); ledgerView();
   } else if(S.tab==="rounds"){
@@ -373,13 +435,17 @@ async function poll(){
   try{
     const d=await api("/api/stores");
     document.getElementById("runs").textContent=d.runs_dir;
-    const sig=d.stores.map(s=>s.name+":"+s.mtime).join("|");
-    const changed=sig!==S.sig;
-    S.stores=d.stores; S.sig=sig;
+    S.stores=d.stores;
+    S.sessions=(await api("/api/sessions")).sessions;
+    // same mtime-signature diff as stores, extended to the runtime session chain
+    const sig=d.stores.map(s=>s.name+":"+s.mtime).join("|")
+      +"#"+S.sessions.map(s=>s.name+":"+s.mtime+":"+s.chain_ok).join("|");
+    const changed=sig!==S.sig; S.sig=sig;
     const dot=document.getElementById("livedot"), txt=document.getElementById("livetxt");
     dot.className="dot on"; txt.textContent="live";
     if(!S.store&&S.stores.length) S.store=S.stores[0].name;
-    if(changed){renderSide(); if(S.tab==="campaigns"||S.tab==="heldout") renderMain();}
+    if(!S.session&&S.sessions.length) S.session=S.sessions[0].name;
+    if(changed){renderSide(); if(["campaigns","heldout","sessions"].includes(S.tab)) renderMain();}
   }catch(e){
     document.getElementById("livedot").className="dot";
     document.getElementById("livetxt").textContent="offline";

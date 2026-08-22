@@ -82,14 +82,18 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code: int = 200) -> None:
         self._send(json.dumps(obj, default=str).encode(), "application/json", code)
 
-    def _safe_store(self, name: str) -> Path | None:
-        """Resolve a store name to a direct child of runs_dir, rejecting traversal."""
+    def _safe_child(self, name: str, is_kind) -> Path | None:
+        """Resolve a name to a direct child of runs_dir passing is_kind, rejecting
+        traversal. One audited guard for both stores and sessions."""
         if not name or "/" in name or "\\" in name or name.startswith("."):
             return None
         path = (self.runs_dir / name).resolve()
-        if path.parent != self.runs_dir.resolve() or not bs.is_store(path):
+        if path.parent != self.runs_dir.resolve() or not is_kind(path):
             return None
         return path
+
+    def _safe_store(self, name: str) -> Path | None:
+        return self._safe_child(name, bs.is_store)
 
     def do_GET(self) -> None:  # http.server dispatch API
         parsed = urlparse(self.path)
@@ -122,6 +126,13 @@ class Handler(BaseHTTPRequestHandler):
                 path = self._safe_store(name)
                 self._json(bs.heldout_blocks(self.runs_dir, name)) if path else self._json(
                     {"error": "unknown store"}, 404)
+            elif route == "/api/sessions":
+                self._json({"runs_dir": str(self.runs_dir),
+                            "sessions": bs.discover_sessions(self.runs_dir)})
+            elif route == "/api/session":
+                path = self._safe_child(name, bs.is_session)
+                self._json(bs.read_session(path)) if path else self._json(
+                    {"error": "unknown session"}, 404)
             elif route == "/api/ledger":
                 self._json({"ranges": bs.parse_ledger(_read_text(self.status_path))})
             elif route == "/api/rounds":

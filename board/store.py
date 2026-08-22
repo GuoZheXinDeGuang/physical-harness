@@ -18,6 +18,8 @@ import json
 import re
 from pathlib import Path
 
+from harness.events import SessionLog
+
 # --- store discovery / robust reads -----------------------------------------
 
 
@@ -271,6 +273,88 @@ def heldout_blocks(runs_dir: str | Path, store_name: str) -> dict:
                            "stage_attribution": rs.get("stage_attribution")})
     blocks.sort(key=lambda b: b["block"] if b["block"] is not None else 0)
     return {"store": store_name, "task": detail.get("prereg", {}).get("task"), "blocks": blocks}
+
+
+# --- runtime session chain --------------------------------------------------
+#
+# The resident runtime (scripts/harness_runtime.py) writes ONE long-lived
+# SessionLog under ``<session>/session-log/rows.jsonl`` -- a different on-disk
+# shape from a campaign store (chained rows carrying their data inline, no
+# content-addressed artifacts). Kept deliberately separate from is_store/
+# list_stores so a runtime session never renders as an empty campaign.
+
+
+def is_session(session_dir: str | Path) -> bool:
+    """A directory is a runtime session iff it carries session-log/rows.jsonl."""
+    return (Path(session_dir) / "session-log" / "rows.jsonl").exists()
+
+
+def _session_rows(log_dir: Path) -> tuple[dict[str, list[dict]], int]:
+    """Row ``data`` payloads grouped by kind, plus a skip count -- same partial-
+    tolerant line loop as _index_rows: the runtime appends rows.jsonl line by
+    line, so a live poll can catch a half-written trailing line. Skip it (and
+    count it) rather than crash; the next poll gets the whole row."""
+    by_kind: dict[str, list[dict]] = {}
+    skipped = 0
+    path = log_dir / "rows.jsonl"
+    if not path.exists():
+        return by_kind, skipped
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            skipped += 1
+            continue
+        if isinstance(row, dict) and "kind" in row and "data" in row:
+            by_kind.setdefault(row["kind"], []).append(row["data"])
+        else:
+            skipped += 1
+    return by_kind, skipped
+
+
+def _session_mtime(log_dir: Path) -> float:
+    """rows.jsonl mtime -- the LIVE signal; a new note appends to it."""
+    try:
+        return (log_dir / "rows.jsonl").stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def read_session(session_dir: str | Path) -> dict:
+    """One runtime session: note payloads grouped by kind, a mid-write skip
+    count, and whether the hash chain still verifies.
+
+    ``chain_ok`` reuses the writer's own SessionLog.load().verify() -- the one
+    audited chain check -- rather than reimplementing the hash fold. A truncated
+    trailing line (mid-write) makes load() choke, so it is caught and read as
+    "not currently verifiable" (False); the skip count disambiguates that from a
+    real tamper in the UI, and the next poll recovers.
+    """
+    session_dir = Path(session_dir)
+    log_dir = session_dir / "session-log"
+    by_kind, skipped = _session_rows(log_dir)
+    try:
+        chain_ok = SessionLog.load(log_dir).verify()
+    except (OSError, json.JSONDecodeError):
+        chain_ok = False
+    return {"name": session_dir.name, "mtime": _session_mtime(log_dir),
+            "chain_ok": chain_ok, "skipped": skipped,
+            "kinds": {k: len(v) for k, v in by_kind.items()}, "rows": by_kind}
+
+
+def discover_sessions(runs_dir: str | Path) -> list[dict]:
+    """Every runtime session under runs_dir, newest first -- summary cards (no
+    row payloads) for the sidebar. Sessions are tiny, so this reads each once."""
+    runs_dir = Path(runs_dir)
+    out = []
+    for p in sorted(runs_dir.iterdir()):
+        if p.is_dir() and is_session(p):
+            s = read_session(p)
+            out.append({k: s[k] for k in ("name", "mtime", "chain_ok", "kinds", "skipped")})
+    return sorted(out, key=lambda s: s["mtime"], reverse=True)
 
 
 # --- markdown feeds ---------------------------------------------------------
