@@ -34,6 +34,7 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest tests/
 | `scripts/watch_stack.py --scan` / `--seed N --governed` | GUI 看营救: 真 `governed_rollout` 加一扇渲染窗, 零逻辑复制; `--scan` 无头找"素跑失败、规则救回"的种子 |
 | `scripts/calibrate_stack.py --pass A` | Stack 基线离线标定(pass A 扫放置高度 / pass B 扫感知噪声), 标定块永不再当门禁 |
 | `scripts/round25_rerun.py` | 三臂对比(round 81): 确定性搜索 vs 天真挑法 vs qwen38 本地端点(端点不在则优雅跳过) |
+| `scripts/rsi_board.py` | **RSI 监控仪表盘**(round 89): TensorBoard 形态——本地服务端自动开浏览器, 自发现 `runs/` 全部 store, 4 秒轮询 live 看 campaign 长代际; 代际时间线/held-out 多块对比/阶段归因/种子账本/rounds 流; 一键导出自包含 HTML 报告(`/api/report` 或 `--report out.html`)。纯 stdlib 零依赖, 对 store 只读 |
 
 `runs/stack-g1`(round 79 长程 campaign)的收尾输出, 数字直接来自封存 artifacts:
 
@@ -44,7 +45,7 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest tests/
 held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 ```
 
-同一份 artifact 里: 对盲发孪生 +35.5pp(盲发基线 29.5%, p=8.4e-16, judgement established); 消融曲线零破坏全档(真值 +18.0 / sd=0.010 +13.5 / 0.020 +6.5 / 0.030 +3.5pp)。**作用域: 单区块(42000-42199)、单 bundle**; 第 2/3 区块留复现。
+同一份 artifact 里: 对盲发孪生 +35.5pp(盲发基线 29.5%, p=8.4e-16, judgement established); 消融曲线零破坏全档(真值 +18.0 / sd=0.010 +13.5 / 0.020 +6.5 / 0.030 +3.5pp)。**头条现为四区块**(rounds 85/91 复验): **+6.5 / +9.5 / +11.0 / +10.5pp, 75 修 0 破, n=800**, 判定四块全确立(42000/42200/42400 + place-g1 的处女块 47000)。
 
 ## 架构
 
@@ -84,20 +85,22 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 
 产出物是 `SkillRecord`: 前置条件 = 触发器, 效果 = 对父代配对增益, 失败模式 = broken 计数, 能力边界 = 特权声明 + 消融曲线。**集成判据 = provider + 过门禁的证据, 不是 demo。** phase 1 的 53 轮全过程(含 23 个被自己抓住的错误)在 [docs/report.html](docs/report.html) 与 [progress.md](progress.md)。
 
-## 现状(round 83 止)
+## 现状(round 91 止)
 
 **R 阶梯(robosuite 轨迁移):**
 
 - R0/R1 ✅(round 77): 4090 冷启动全绿, 跨机 parity 实测成立(demo 与 Mac 封存数字逐位一致); 三个证据洞补齐, demo 逐位不变。
-- R2 主体 ✅(round 78-79): 阶段机(StageSpec 进哈希)、Stack 标定、首个长程 campaign `runs/stack-g1` —— gen1 晋级 / gen2 噪声候选被正确拒绝 / 放置阶段零规则(修复原语天花板阶段级重现, = MSR place 原语进场位置)。**收尾未完**: held-out 第 2/3 区块 + 阶段归因产物。
-- R4 meta-RSI 未动; Isaac 具身 gated(触发条件: 导航技能电池或房间尺度场景)。
+- R2 ✅(round 78-79 主体, 85 收尾): 阶段机、Stack 标定、长程 campaign `runs/stack-g1` 三区块复现 + 阶段归因(受治理残余放置反超抓取 ~45-47/200 = MSR place 原语定量进场配额)。
+- R3 目标函数修复 ✅(round 88): 破案"修复价值随开火时机"——语义分裂(搜索评分带 reducer 而运行时不带)/峰值臂不可达/裁决盲修三件套齐修, 修好的搜索纯 dev 证据自选峰值臂, 追平天真挑法。
+- R4 meta-RSI 未动; Isaac 具身 gated; anygrasp rung 1 几何链路 sim 实证 ✅(round 89), rung 2/3 gated(license 指纹漂移, 用户行动项)。
 
 **M 阶梯(agentic OS 化):**
 
-- M0 ✅(round 80): zos 经 `sim.*` 工具消费 harness —— 胶水形态, 证明需求, 也证明胶水不行(首个真实回合就崩在两套调用约定的对齐税上)。
-- M1 ≈(round 81, =R3): qwen38/naive transport + 三臂对比 harness 落地; 实测 search +27.0pp vs naive +31.5pp(**单区块**, 44200-44399); qwen38 臂待 GPU 腾位补跑。
-- M2 ✅(round 82): graph.scene 两个真 provider、技能库跨进程回读修复、zos 证据顾问层(安全下界自检钉死)。余: `Session.evidence` 的 prompt/面板消费。
-- M3 首闭环 ✅(round 83): `task.planner` 缝 + 规划 workload, `task_plan.py --seed 90000` 真闭环收口(1 节点 177 步, grasp/place 两阶段全过, replans=0, 16 行账本链 verify 通过)。
+- M0 ✅(round 80): zos 经 `sim.*` 工具消费 harness。 M1 ≈(round 81): 三臂对比 harness 落地; qwen38 臂待 GPU。
+- M2 ✅(rounds 82/87): graph.scene 真 provider、zos 证据顾问层、`Session.evidence` 接进规划提示与授权面板(注记永不改裁决)。
+- M3 ✅(rounds 83/86): `task.planner` 缝 + 规划 workload; `clear_table` 双节点图真闭环(排序/跳过已完成/arg threading)。
+
+**修复库存(round 90):** `replace` 原语进场——首个放置形修复(释放前重放置), 对抓取程序严格增量(金哈希钉死); 双探针裁决: 放置失败对本体感受不可见(tell 1.9%)→放置治理必须特权; bring-up 转化 42.6%。首个特权 campaign `runs/place-g1`(round 91): gen1 候选被 dev 门禁正确拒绝(触发器选席谜题进 frontier), 抓取规则在处女块复验 +10.5pp 判定确立。
 
 **Phase 1/2 已收口的头条**(Lift, 多区块合并): 脚本策略 held-out 三区块 **+32.2pp**(193 修 / 0 破, n=600), 对盲发孪生 +27.0pp(p=3e-32); 克隆策略三区块 +13.2pp。方法的实测下界: 失败不可被选择性检测的策略长不出规则, 决定性的不是成功率。
 
