@@ -131,3 +131,32 @@ def _default_make_env(spec: EpisodeSpec):
         seed=spec.seed,  # the ONLY correct seeding channel; see module docstring
         **cfg["kwargs"],
     )
+
+
+def camera_make_env(spec: EpisodeSpec):
+    """Camera variant of `_default_make_env` for the grasp geometry chain.
+
+    Adds an offscreen agentview RGB-D sensor: the obs dict gains
+    `agentview_image` and `agentview_depth` (normalized [0, 1]; see grasp.py),
+    every other key unchanged. The privileged/RNG channels match
+    `_default_make_env` verbatim -- it stays untouched, parity is pinned on it,
+    and camera obs only ADD keys. This is a separate factory, not a provider:
+    the EnvProvider/PolicyDriver contracts are deliberately not touched.
+    """
+    import robosuite as suite
+
+    cfg = task_config(spec)
+    return suite.make(
+        cfg["env"],
+        robots=spec.robot,
+        has_renderer=False,
+        has_offscreen_renderer=True,
+        use_camera_obs=True,
+        camera_depths=True,
+        camera_names=["agentview"],
+        control_freq=CONTROL_FREQ,
+        horizon=spec.horizon,
+        initialization_noise={"magnitude": spec.arm_noise, "type": "gaussian"},
+        seed=spec.seed,
+        **cfg["kwargs"],
+    )
