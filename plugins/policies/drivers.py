@@ -147,6 +147,48 @@ class ScriptedDriver:
         return "scripted@v1"
 
 
+@dataclass(frozen=True, slots=True)
+class GraspPose:
+    """One geometric grasp, as the grasp backend returns it.
+
+    ``position`` is the world point the fingers close on -- the only field the
+    open-loop phase vocabulary consumes. ``yaw`` (closing-axis heading, radians)
+    and ``width`` (jaw opening, metres) are carried for logging and the frame
+    cross-check: the scripted OSC action leaves the three rotation channels at
+    zero, so on a 4-fold-symmetric cube the yaw is never applied to the wrist.
+    """
+
+    position: np.ndarray
+    yaw: float = 0.0
+    width: float = 0.0
+
+
+class GraspPoseDriver(ScriptedDriver):
+    """:class:`ScriptedDriver` retargeted onto a geometric grasp pose.
+
+    The four-phase open-loop mechanics are inherited verbatim -- same
+    ``FrozenPolicy.act``, same phase clock, same hand-back. The ONLY change is
+    the target SOURCE: :meth:`observe_once` locks onto a grasp position computed
+    once at t=0 from the camera cloud (``propose`` in grasp_geometric.py),
+    ignoring the privileged object percept obs would otherwise hand the scripted
+    driver. This is the first perception-driven grasp: no privileged object pose
+    in the control loop, only observed geometry.
+    """
+
+    def __init__(self, spec: EpisodeSpec, grasp: GraspPose) -> None:
+        super().__init__(spec)
+        self.grasp = grasp
+
+    def observe_once(self, obs) -> np.ndarray:
+        """Lock the target onto the geometric grasp position, not obs's percept."""
+        self.inner.target = np.asarray(self.grasp.position, dtype=float).copy()
+        return self.inner.target
+
+    @property
+    def identity(self) -> str:
+        return "grasp_pose@v1"
+
+
 class ClonedDriver:
     """A behaviour-cloned MLP running closed loop."""
 
