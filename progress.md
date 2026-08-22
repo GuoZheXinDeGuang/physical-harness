@@ -3078,3 +3078,43 @@ workflow 双仓并行(仓内串行防 git index 竞争), 5 修 + 2 对抗验证,
   不认 workflow 的成败位**(round 78 同形态, 第二次实证)。
 - config.canonical 改动意味着下一次 demo 重跑的 mount_plan_sha 会相对旧封存移动一次
   (旧 sha 烘着 root)——预期内的一次性迁移, 方向就是修复本身; runs/ 封存未动。
+
+## Round 88 - 2026-08-22 - 目标函数第二假设破案: 修复价值随开火时机, 而搜索活在另一套语义里
+
+### 做成了什么
+
+两段 workflow(探针→修复), 全程零新种子(诊断级复用烧过的 44000-44059 dev + 44200-44399
+held-out), 封存锚点逐位复现是每一步的前置闸门。
+
+1. **探针(5b78a05, scripts/probe_arm_time.py + runs/round88-armtime)**:
+   - P2 因果扫(同一 search 规则只变 arm_after): 43→54 修, 70→**63 修**, 95→**63 修**;
+     naive 规则挪到 43 只剩 56 修。四臂检测全冻结(119 发 0 破)。**+9 修复全由开火
+     时机买单, naive 封存的 +31.5pp 是晚布防买的, 不是 running_range 买的。**
+   - P1 dev 重评分: naive 规则在目标函数下得 **0.0 分**(主动错判非无差别)——搜索评分
+     应用 reducer 语义而 **governed_rollout 运行时按瞬时值评估、从不应用 reducer**
+     (governed.py 里 reducer 只出现在 canonical 哈希)。t=95 结构性不可达(布防集
+     {43,45,49}), 0.005 远在分位网格外, 榜首 3 家并列 1.0 无法裁决。
+2. **修复三件套(aa0b110)**:
+   - A 语义诚实: search 只枚举运行时兑现的 reducer(RUNTIME_REDUCERS=("value",)),
+     共享谓词 Trigger.crosses 让运行时循环与 fire_step 走同一条判定(fix-once);
+     reducer 字段保留供封存规则 canonical 兼容。对齐测试钉死: shadow-replay 的
+     fire_step == 真 governed 的 fired_at 每种子相等。
+   - B 峰值锚点布防: 候选臂 {eod,+2,+6} ∪ {peak-2,peak}(peak_divergence 泛型 argmax,
+     无硬编码常数——验证员专项搜过 95/0.005 字面量, 干净)。
+   - C 修复感知裁决(选择层 SearchProposer, scorer 仍是 scorer): 浮点精确并列的榜首
+     经 dev 受治理重放按 fixed 裁决, 上限 8 个(弃选记录), 残余并列回枚举序。
+3. **验证(runs/round88-fix, 诊断级)**: 修好的 search 纯 dev 证据自选
+   finger_gap<0.007392 **arm 95**(峰值≈97→臂{95,97}; 阈值是自家分位网格产物不是抄
+   0.005); 裁决重放: 峰值臂 17 修 vs 起始臂 14 修。held-out 诊断 **+31.5pp 63 修 0 破
+   = 追平 naive 锚点**(旧 search 54)。锚点 search@43=54/0/119 全程逐位复现。
+4. 测试 254→**259 通过 3 跳过**, ruff 清, 对抗验证 pass(唯一注记: commit message 说
+   "governed 未动"不够精确——实际有一行行为保持的 crosses 提取, parity 双路验证)。
+
+### 什么没成 / 注意
+
+- **campaign 生产选择器 propose_rule(campaign.py:263) 只继承了 A+B, 未接 C**——下次
+  campaign 前必须补(实施 agent 自己开了 chip task_6686c1d0), 进 frontier #2。
+- 目标函数还有未标定假设候补(fp_penalty=1.2, recall>0.5 门槛)——检测不饱和的任务上
+  才会咬人, 挂 frontier #3 不动工。
+- 方法论沉淀: **"运行时兑现不了的维度, 搜索就不许枚举"**——能力跟着运行时走, 不是
+  反过来。与 percept 哈希脱钩/默认值兜底/探针世界漂移同族, 这已是第四例。

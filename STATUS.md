@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 87 完成(frontier 机械修缮五件清仓: beam 泄漏/record 路径迁移/ruff pin + zos 证据消费/存量 lint)
+**Round:** 88 完成(目标函数第二假设破案+修复: 修复价值随开火时机, 语义分裂/峰值不可达/裁决盲修三件套)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -22,6 +22,7 @@
       stage_attribution 产物(残余失败放置反超抓取: ~45-47/200 = place 原语进场配额)。
 - [~] R3/M1(round 81): transport+对比 harness 落地; search +27.0 vs naive +31.5(单区块,
       earliness 修后天真挑法仍领先——"目标函数第二未标定假设"进 frontier)。
+      **round 88 破案并修复**: 修好的 search 纯 dev 证据自选峰值臂, 诊断 63 修追平 naive。
       qwen38 臂 → gate(用户裁定 2026-08-22: 先放一放; 腾 GPU 后 round25_rerun 补跑即可)。
 - [x] M2(round 82): graph.scene 真 provider + InMemorySkillGraph 回读修复 +
       zos 证据顾问层(安全下界自检钉死)。Session.evidence 的 prompt/面板消费 round 87 补齐。
@@ -50,10 +51,11 @@
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 1. 目标函数第二假设(round 88 探查中——round25-rerun 产物分析:
-两臂检测足迹全同 119 发 0 破, 差距全在开火时机下的条件修复率 63v54 修, 布防空间
-{起始,+2,+6} 结构性够不到 σ-峰值 t=95; P1 dev 重评分+P2 arm_after 因果扫待跑)
-2. anygrasp provider rung(侦察报告 docs/anygrasp-scout.md 就绪)。
+**frontier(现存, 按顺位):** 1. anygrasp provider rung(侦察报告 docs/anygrasp-scout.md
+就绪; 服务端/license/镜像/GPU 余量 2026-08-22 复核可用) 2. campaign 生产选择器
+propose_rule(campaign.py:263) 继承了 round 88 修复的 A+B(语义/峰值臂)但未接 C(修复感知
+裁决)——下次 campaign 前补(chip task_6686c1d0) 3. 目标函数第三假设候补: fp_penalty 1.2 与
+recall>0.5 门槛未标定(round 88 修复未触及, 检测不饱和的任务上才会咬人)。
 **待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
 
 ## 已达成（不要重新验证）
