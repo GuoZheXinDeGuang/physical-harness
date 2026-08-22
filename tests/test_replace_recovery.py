@@ -16,7 +16,7 @@ from plugins.embodiment_robosuite.percept import OnboardPercept
 from plugins.policies.drivers import StackScriptedDriver
 from plugins.rsi.governed import _is_place_recovery, _percept_object, _place_object
 from plugins.rsi.recovery import RecoveryActor
-from plugins.rsi.repertoire import names, strategy
+from plugins.rsi.repertoire import strategy
 
 
 # --- PARITY PIN --------------------------------------------------------------
