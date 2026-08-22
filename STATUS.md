@@ -62,11 +62,10 @@ _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在�
 (xy>0.025, dwell 1, arm 92)在失败席上 42.6% 转化——同一 replace 原语、同一 percept 通道。
 判别变量只有阈值/dwell/布防时刻三个; 且盲孪生(无条件 t=108)-19.5pp 证明原语在 campaign
 路径确实执行。拿 fired-未翻转席与探针 fired-转化席做配对轨迹对比即可裁决(种子已知,
-零新种子)。可能收获: 放置修复的"开火窗口"比抓取更窄→目标函数需要窗口感知 2. **anygrasp rung 2/3 → gate(用户
-行动项)**: license 指纹漂移——scout 当日实测 feature_id N32629936297910908604, 现
-`make feature-id` 返回 N17557579849878991565, 服务端 verify 拒绝启动; 需向 graspnet
-用新指纹重申 license, 或查明指纹漂移原因(疑网络接口/硬件枚举变化)。rung 1 几何链路
-已实证, rung 2 探针施工图在 round 89 workflow 记录里, license 恢复即可续
+零新种子)。可能收获: 放置修复的"开火窗口"比抓取更窄→目标函数需要窗口感知 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
+(round 93 施工中: 质心+PCA 顶抓 proposer 走 vendored client 同一输出契约与 fail-closed
+校验, rung 1 的米制点云链路直接复用; sim 探针 = 几何驱动 vs 脚本基线配对)。
+anygrasp 侦察与几何链路资产保留, license 若恢复可无缝换回(契约同形)
 3. campaign propose_rule 接修复感知裁决(chip task_6686c1d0 进行中, 外部会话)
 4. 目标函数第三假设候补: fp_penalty 1.2 与 recall>0.5 门槛未标定。
 **待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
