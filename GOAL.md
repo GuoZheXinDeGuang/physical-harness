@@ -84,3 +84,26 @@ zos 不是 OS, 是**驾驶舱**(HRI shell)。它的内脏逐步成为 harness �
 - M2: graph.scene 真 provider(zos World 桥) + zos 工具 precondition 改读 graph.skill。
 - M3: agentic 主循环成为 harness workload——task.planner 缝(VLM 分解产出 StageSpec 链,
   round 78 的阶段机就是这个接口), zos 退化为薄驾驶舱。
+
+## M4 + R4(2026-08-23 用户重锚, round 94 起): 稳定运行的系统层, RSI 进系统内部
+
+用户原话重申目标: "一个可以稳定运行的模块 agentic 系统的系统层, 并且可以通过 rsi 去
+提升系统的 harness 以及技能的能力"。M0-M3 交付了缝和闭环, 但系统层今天仍是
+**一堆可跑脚本**: task_plan.py 跑完即退, campaign 手动挂后台, RSI 在系统旁边而非
+系统里面。M4 把它变成常驻系统。
+
+**M4 验收(系统层常驻化):**
+1. 一条命令拉起常驻 harness 运行时: boot kernel → 挂载技能目录+实测证据 → 接受任务。
+2. 每个任务全程治理: planner → validate → governed rollout → 阶段评分 → 账本;
+   **单任务失败不倒系统**(fault 折回 replan 或如实记败, 循环继续)。
+3. 会话账本链跨任务连续、重启后可续可验(链头衔接, 不是新开一条)。
+4. **RSI 是系统内服务**: campaign 作为一类系统任务被调度(技能提升), 产出的
+   SkillRecord 立即进挂载目录供后续任务消费——闭环不出系统。
+5. board 可观测运行时会话(不只是封存 campaign)。
+6. zos 经同一任务缝提交 brief(吸收路径不变: adapter → 变薄 → 删除)。
+7. 稳定性实测: 注错 soak(连续 N 任务混入注入故障)零崩溃、账本零断链。
+
+**R4 验收(meta-RSI, RSI 提升 harness 本体):** 架构/目标函数级变更(如 round 88 三件套
+这类)由提案-评测电池-门禁的流程处理: 变更前后在固定 eval battery(demo parity +
+stack 三块复现 + 闭环 soak)上配对跑, 无回归才准入——把"人肉 round 纪律"升格为
+机器可执行的门禁。round 88/92 的目标函数修复系列就是 R4 的第一批人肉原型。
