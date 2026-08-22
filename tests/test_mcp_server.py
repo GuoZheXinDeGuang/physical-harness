@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from test_read_session import _session
-from test_rsi_board import _campaign, _mkstore, _paired
+from test_store import _campaign, _mkstore, _paired
 
 from board import mcp_server as ms
 from board import store as bs

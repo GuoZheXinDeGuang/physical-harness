@@ -34,7 +34,7 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest tests/
 | `scripts/watch_stack.py --scan` / `--seed N --governed` | GUI 看营救: 真 `governed_rollout` 加一扇渲染窗, 零逻辑复制; `--scan` 无头找"素跑失败、规则救回"的种子 |
 | `scripts/calibrate_stack.py --pass A` | Stack 基线离线标定(pass A 扫放置高度 / pass B 扫感知噪声), 标定块永不再当门禁 |
 | `scripts/round25_rerun.py` | 三臂对比(round 81): 确定性搜索 vs 天真挑法 vs qwen38 本地端点(端点不在则优雅跳过) |
-| `scripts/rsi_board.py` | **RSI 监控仪表盘**(round 89): TensorBoard 形态——本地服务端自动开浏览器, 自发现 `runs/` 全部 store, 4 秒轮询 live 看 campaign 长代际; 代际时间线/held-out 多块对比/阶段归因/种子账本/rounds 流; 一键导出自包含 HTML 报告(`/api/report` 或 `--report out.html`)。纯 stdlib 零依赖, 对 store 只读 |
+| `python -m board.report --out out.html` | **RSI 监控报告**(round 95 起): 自发现 `runs/` 全部 store, 生成自包含 HTML——代际时间线/held-out 多块对比/阶段归因/运行时会话链校验/种子账本/rounds 流, cron headless 导出。实时驾驶舱改由 dsh + `board/mcp_server.py`(MCP 七只只读工具 + submit_brief)承载, 手搓 web 仪表盘 round 95 退役。纯 stdlib 生成, 对 store 只读 |
 
 `runs/stack-g1`(round 79 长程 campaign)的收尾输出, 数字直接来自封存 artifacts:
 

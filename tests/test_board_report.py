@@ -2,22 +2,18 @@
 
 The builder is pure -- it takes a runs/ dir and reuses board.store's parse layer -- so
 it is exercised against hand-built fake stores (same on-disk shape CampaignStore
-writes). The CLI (--report) and the /api/report endpoint are smoked without the
-simulator: an ephemeral stdlib server on port 0.
+writes). The headless `python -m board.report --out` entry is smoked too; the old
+HTTP shell it replaced (scripts/rsi_board.py, /api/report) was deleted at rung 4.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import threading
-import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from board import report as br
 from board import store as bs
-from scripts import rsi_board
 
 
 def _digest(payload: dict, seq: int) -> str:
@@ -129,34 +125,8 @@ def test_cli_report_writes_file(tmp_path):
     runs.mkdir()
     _fake_runs(runs)
     out = tmp_path / "report.html"
-    rc = rsi_board.main(["--runs", str(runs), "--report", str(out), "--no-browser"])
+    rc = br.main(["--runs", str(runs), "--out", str(out)])
     assert rc == 0
     text = out.read_text()
     assert text.lstrip().startswith("<!doctype html")
     assert "RSI Report" in text and "stack-g1" in text
-
-
-def test_report_endpoint_returns_html(tmp_path):
-    runs = tmp_path / "runs"
-    runs.mkdir()
-    _fake_runs(runs)
-    rsi_board.Handler.runs_dir = runs.resolve()
-    rsi_board.Handler.status_path = tmp_path / "STATUS.md"      # absent -> empty ledger, still 200
-    rsi_board.Handler.progress_path = tmp_path / "progress.md"
-    rsi_board.Handler.live_threshold = 3600.0
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), rsi_board.Handler)
-    port = httpd.server_address[1]
-    t = threading.Thread(target=httpd.serve_forever, daemon=True)
-    t.start()
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/report", timeout=10) as resp:
-            assert resp.status == 200
-            assert "text/html" in resp.headers.get("Content-Type", "")
-            disp = resp.headers.get("Content-Disposition", "")
-            assert "attachment" in disp and "rsi-report-" in disp and disp.endswith('.html"')
-            body = resp.read().decode()
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
-    assert body.lstrip().startswith("<!doctype html")
-    assert "Executive summary" in body

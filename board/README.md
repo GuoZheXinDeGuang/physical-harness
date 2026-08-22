@@ -1,57 +1,36 @@
-# RSI Board — TensorBoard for the harness
+# RSI Board — the harness's read-only evidence layer
 
-Point it at a `runs/` directory; it serves a local web board that auto-discovers
-every campaign store, live-updates as new artifacts land, and renders comparable
-scalar timelines. Same model as TensorBoard: local HTTP server + browser, no
-build step, read-only over the sealed evidence in `runs/`.
+Point it at a `runs/` directory to read every campaign store, the runtime
+session chains, the seed ledger and the rounds feed — all read-only over the
+sealed evidence in `runs/`. The hand-rolled HTTP server + single-page front end
+retired at round 95; the live cockpit is now DeepSeek Harness (dsh) driving the
+MCP server below, and the exported deliverable is a self-contained HTML report.
 
-## Launch
+## Surfaces
 
-```bash
-python scripts/rsi_board.py --runs runs/ --port 6006
-```
-
-Opens `http://127.0.0.1:6006` and auto-opens a browser (`--no-browser` to skip).
-`--status` / `--progress` override the STATUS.md / progress.md paths (default:
-the files next to `runs/`). Ctrl-C to stop.
-
-Pure stdlib server (`http.server`) + vanilla-JS frontend with hand-rolled SVG
-charts — no dependencies, nothing vendored.
-
-## Views
-
-1. **Campaigns** — store list (auto-discovered, newest first) → per-campaign
-   generation timeline: gen, promoted/rejected, rule summary, dev
-   n/base/governed/Δ/fixed/broken/fires/p, judgement reason, plus scalar charts
-   across generations (fixed vs broken, dev Δ, base-vs-governed rate, p-value).
-   The campaign result shows the once-scored held-out block, the blind-twin
-   judgement gate, and the transfer-ablation curve. Diagnostic stores
-   (round25 3-arm, arm-time probe, round88 fix) render their own comparison
-   cards.
-2. **Held-out blocks** — a campaign's own scored block plus every sibling
-   `<name>-rescore-*` block on one axis (fixed / Δ per block), with grasp-vs-place
-   **stage-attribution** bars (per-stage success + first-failure counts) where a
-   stage overlay was scored.
-3. **Seed ledger** — burn map parsed from STATUS.md's block-budget section: a
-   proportional number line + chips coloured burned / reserved / planned, each
-   with its source line on hover.
-4. **Rounds** — collapsible feed parsed from progress.md's `## Round N` headers,
-   latest first.
-
-LIVE: the frontend polls `/api/stores` every 4 s (server reads filesystem mtimes
-each request) and re-renders when anything changes, so a campaign writing
-artifacts appears without a reload. Reads are robust to partial/mid-write JSON:
-an unparseable artifact or a half-written index line is skipped and counted, and
-the next poll picks it up whole.
+- **HTML report** — `python -m board.report --out out.html` renders the whole
+  `runs/` tree into one self-contained page: executive summary, per-campaign
+  generation timelines + scalar charts, held-out multi-block comparison with
+  grasp-vs-place stage attribution, a runtime-sessions section with a hash-chain
+  badge (verified / broken / not verifiable), the seed-ledger burn map, and the
+  rounds feed. Headless, for cron. `--status` / `--progress` override the
+  STATUS.md / progress.md paths (default: the files next to `runs/`).
+- **MCP server** — `board/mcp_server.py` is the stdio MCP server the dsh cockpit
+  connects to: seven read-only tools (`list_stores`, `store`, `heldout`,
+  `sessions`, `session`, `ledger`, `rounds`), each one call into `board.store`
+  returning the same dicts, plus `submit_brief`, which drops a brief into the
+  resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —
+  the tool never becomes the authority).
 
 ## Layout
 
 - `board/store.py` — pure parse layer (read-only), unit-tested against fake
-  stores in `tests/test_rsi_board.py`. Knows the CampaignStore shape: `index.jsonl`
+  stores in `tests/test_store.py`. Knows the CampaignStore shape: `index.jsonl`
   carries the artifact *kind*; payloads under `artifacts/<sha>.json` are
-  content-addressed.
-- `scripts/rsi_board.py` — thin stdlib HTTP server; every endpoint is one call
-  into `board.store`. Endpoints: `/api/stores`, `/api/store?name=`,
-  `/api/heldout?name=`, `/api/ledger`, `/api/rounds`.
-- `board/index.html` — the single-page frontend (dark console look, borrowed
-  from DeepSeek Harness's local-server GUI form).
+  content-addressed. Owns the `safe_child` traversal guard both surfaces reuse.
+- `board/report.py` — pure HTML/SVG report builder + the `--out` headless entry.
+- `board/mcp_server.py` — the MCP passthrough over `board.store` + `submit_brief`.
+
+Reads are robust to partial/mid-write JSON: an unparseable artifact or a
+half-written index line is skipped and counted, so a campaign still writing
+artifacts is read whole on the next call.
