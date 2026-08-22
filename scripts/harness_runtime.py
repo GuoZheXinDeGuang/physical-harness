@@ -51,13 +51,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
+from board.store import parse_ledger
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
@@ -77,6 +81,20 @@ POLICY_BY_TASK: dict[str, str] = {
 }
 _DEFAULT_POLICY = "plugins.policies:stack_scripted_provider"
 _PLANNER_REF = "plugins.task.planner_stack:provider"
+
+#: Server-side campaign allowlist keyed by campaign name -- the authority-
+#: laundering defense for RSI, symmetric with POLICY_BY_TASK. A brief names a
+#: campaign KEY, never a script path; the runtime spawns only these fixed,
+#: sim-only, CLI-shaped campaign scripts as a SUBPROCESS. In-process is
+#: forbidden: the resident kernel holds live state across N tasks, so forking it
+#: inherits a broken CUDA/GL context (rsi risk#1) and a second embodiment import
+#: trips the process-global REGISTRY duplicate (rsi risk#3) -- subprocess
+#: isolation kills both and keeps the resident loop responsive.
+CAMPAIGN_SCRIPTS: dict[str, Path] = {
+    "stack": REPO_ROOT / "scripts" / "stack_campaign.py",
+}
+#: The one prose seed-ledger the guard enforces (board.store.parse_ledger).
+STATUS_MD = REPO_ROOT / "STATUS.md"
 
 
 @dataclass(frozen=True)
@@ -150,6 +168,92 @@ def _run_task(brief: dict, log: SessionLog, skills_root: Path) -> dict:
                         max_replans=max_replans, max_actuations=max_actuations)
 
 
+def _burned_ranges(status_md: Path = STATUS_MD) -> list[tuple[int, int]]:
+    """Burned seed intervals from the one prose ledger (STATUS.md 区块预算)."""
+    return [(r["lo"], r["hi"]) for r in parse_ledger(status_md.read_text())
+            if r["state"] == "burned"]
+
+
+def _declared_ranges(brief: dict) -> list[tuple[int, int]]:
+    """dev∪heldout the brief declares it will burn, as inclusive [lo,hi] pairs."""
+    ranges = []
+    for key in ("dev", "heldout"):
+        for pair in brief.get(key, ()):
+            lo, hi = int(pair[0]), int(pair[1])
+            ranges.append((min(lo, hi), max(lo, hi)))
+    return ranges
+
+
+def _copy_skills(src: Path, dst: Path) -> list[str]:
+    """Fold a campaign's published skill records into the shared graph.skill root
+    (idempotent -- the filename stem IS the content digest, so a record already
+    in the root is skipped). Returns every digest now present from this run."""
+    copied = []
+    for f in (sorted(src.glob("*.json")) if src.is_dir() else ()):
+        if not (dst / f.name).exists():
+            shutil.copy2(f, dst / f.name)
+        copied.append(f.stem)
+    return copied
+
+
+def _prereg_sha(out: Path) -> str | None:
+    """The campaign's preregistration content hash, read back from its store
+    index (run_campaign puts it as row 0). None if the store wrote none."""
+    index = out / "index.jsonl"
+    if not index.exists():
+        return None
+    for line in index.read_text().splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("kind") == "preregistration":
+            return row.get("sha")
+    return None
+
+
+def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
+    """Schedule one preregistered RSI campaign as an in-system task: guard the
+    seed ledger, spawn the fixed campaign script as a SUBPROCESS, fold its
+    published skills into the shared root, and note it in the chain.
+
+    Cross-link is by the prereg content hash -- the only cross-link primitive
+    that exists. A later task's FRESH graph.skill mount re-globs the shared root
+    and sees the copied records for free (M4#4). Ledger-overlap and any nonzero
+    exit raise, so the caller's crash-safety wrap files the brief under failed/
+    with a runtime.task_error note -- one failure path, not two.
+    """
+    name = brief["campaign"]
+    script = CAMPAIGN_SCRIPTS.get(name)
+    if script is None:
+        raise ValueError(f"unknown campaign {name!r}")
+
+    # seed-ledger guard (non-negotiable invariant): the one prose ledger becomes
+    # one enforced check at the scheduling boundary. Reject BEFORE spawning if
+    # the declared dev∪heldout intersects any burned range (inclusive intervals).
+    burned = _burned_ranges()
+    for lo, hi in _declared_ranges(brief):
+        for blo, bhi in burned:
+            if lo <= bhi and blo <= hi:
+                raise ValueError(
+                    f"seed-ledger overlap: campaign {name!r} declares [{lo},{hi}] "
+                    f"which hits burned [{blo},{bhi}]")
+
+    out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
+    proc = subprocess.run(
+        [sys.executable, str(script), "--out", str(out)],
+        cwd=str(REPO_ROOT), env={**os.environ, "MUJOCO_GL": "egl"},
+        capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"campaign {name!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+
+    copied = _copy_skills(out / "skills", rt.skills_root)
+    rt.log.append("runtime.campaign_scheduled",
+                  {"brief": brief_id, "campaign": name, "out": str(out),
+                   "prereg_sha": _prereg_sha(out), "skills": copied})
+
+
 def _process(rt: Runtime, path: Path) -> None:
     """Claim one brief, run it, file it under done/ or failed/."""
     brief_id = path.name
@@ -166,9 +270,12 @@ def _process(rt: Runtime, path: Path) -> None:
         return
     try:
         kind = brief.get("kind", "task")
-        if kind != "task":  # rung 3 adds elif kind == "campaign"
+        if kind == "task":
+            _run_task(brief, rt.log, rt.skills_root)
+        elif kind == "campaign":
+            _run_campaign(brief, rt, brief_id)
+        else:
             raise ValueError(f"unknown brief kind {kind!r}")
-        _run_task(brief, rt.log, rt.skills_root)
     except Exception as exc:  # noqa: BLE001 -- escape hatch: crash-safety lives here
         rt.log.append("runtime.task_error",
                       {"brief": brief_id, "task": brief.get("task"),
