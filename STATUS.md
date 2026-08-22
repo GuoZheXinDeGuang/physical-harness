@@ -2,8 +2,8 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 93 完成(92: 谜题=rule_id 键碰撞, 假阴性实锤, 结构修复已推送; 93: 几何位姿
-抓取零特权闭环 60 席 100%)。进行中: place-g2 重战准备(92b Rearm) + M4 常驻系统层(94)
+**Round:** 93 完成 + 92 终章(place-g2 双代晋级: **放置天花板破, held-out +9.5pp 判定
+确立, 第一条放置规则/第一条特权规则/第一次续种进化**)。进行中: M4 常驻系统层(94)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -51,6 +51,8 @@
 **预留(round 90 预注册):** place campaign dev 46000-46999; held-out 47000-47199 /
 47200-47399 / 47400-47599(头条三块)。
 **已烧(round 91):** place-g1 dev 用 46000-46266(267 席); held-out #1 = 47000-47199。
+**已烧(round 92 终章):** place-g2 dev 46267-46999(733 全席); held-out = 47200-47399。
+47400-47599 留 place 链复现块 #2; 头条化第三块从 48000+ 取。
 
 **frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
 父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.
@@ -60,8 +62,9 @@ _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在�
 **frontier(现存, 按顺位):** 1. **M4 常驻系统层(round 94, 施工图 docs/m4-design.md)**:
 rungs 0-4+6(env try/finally, 常驻循环+inbox, 注错 soak, RSI 系统内任务+种子账本代码
 守卫, board 会话页, 评测电池种子); rung 5(zos 改投 brief)等 inbox 契约冻结
-1.5. **place-g2 重战**(92b Rearm 完成即点火; 去碰撞后 dev 对照净修+9, 晋级可期;
-rung 3 落地后可改经运行时投递 = 首个系统内 RSI 任务)
+1.5. **place 链复现**(held-out #2 = 47400-47599 经 rescore_heldout, #3 = 48000-48199;
+M4 rung 3 落地后经运行时投递 = 首个系统内 RSI 任务; 复现要盯 broken 率是否稳定——
+首次带破坏晋级 21修2破)
 2. 几何抓取多物体化 gate(触发: 进多物体场景; 单物体假设是最大集成风险, 先加聚类)
 3. campaign 铸 id 唯一化已在 worktree rung 3(等 chip 会话调和); 谜题的"目标函数
 窗口感知"假设已随根因证伪而撤销 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
