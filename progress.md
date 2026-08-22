@@ -3276,3 +3276,39 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
   但 broken>0 是新形态, 复现块要盯破坏率是否稳定。
 - worktree 的 campaign.py(铸 id+续种+裁决 C)仍未在主线——等 chip 会话落地后调和;
   place-g2 复现需从 worktree 起跑或先合并。
+
+## Round 94 - 2026-08-23 - M4 落地: 系统层成为常驻, RSI 搬进系统内部
+
+### 做成了什么
+
+1. **六 rung 全落地(6073509..34f0560 + 加固 8734ff1)**, 施工图 docs/m4-design.md 零大偏离
+   (两处"现实赢": governed 在 plugins/rsi 不在 harness/; 运行时只能住 scripts/——
+   test_kernel 的 AST 边界扫描禁止 harness/ import plugins, 实施 agent 用仓库自己的
+   边界测试纠正了设计文档的文件布局)。
+2. **常驻运行时(scripts/harness_runtime.py)**: load-or-fresh 会话链 + 每任务新内核挂
+   共享链 + inbox 原子认领(os.replace 投/rename 领) + 重启 requeue + 逃生舱记
+   runtime.task_error 且循环不死 + brief 只含选择器与预算(provider 服务端 allowlist,
+   注入键**响亮拒绝**而非静默忽略——加固轮把中和升级为拒绝并钉测试)。
+3. **注错 soak 实测(rung 2, 真 rollout)**: 50 brief × 6 故障类 + 中途 SIGKILL 重启——
+   40 done / 10 failed / 恰 5 条 task_error / 畸形件零注记 / **735 行链跨两次进程调用
+   verify=True**。M4#7 全指标成立。
+4. **RSI 系统内任务(rung 3)**: campaign brief → 种子账本代码级守卫(投 41000-41580
+   被拒并注记, 帐本第一次从散文变成机器可执行) → 子进程 campaign → SkillRecord 回流
+   共享目录 → 下一任务新挂载立即可见。stub 证代码, 真跑留档下一记录。
+5. **board Sessions 页(rung 4) + 评测电池(rung 6, R4 种子)**: /api/sessions 自动发现
+   一切带会话链的目录(连 campaign store 的链都进来了); eval_battery 实跑 PASS
+   (demo parity + 三块溯源 + soak, 47.6s)。
+6. **对抗终验自跑一切**: 七条验收 6 证 1 缺(M4#6 zos 投递按裁决延后独立会话),
+   355 测试 3 跳过, ruff 清。
+7. **洗礼**: 常驻运行时已在 runs/session-main 拉起(brief 投入→真任务跑完→done/,
+   board 链绿 plan_complete=1)。**系统层此刻正在运行。**
+
+### 什么没成 / 注意
+
+- M4#6(zos 改投 brief)未落: inbox 契约现已冻结, zos 侧改造(删 subprocess 机器换
+  os.replace 投递)排下一个 zos 会话。
+- M4#4 的真 campaign 经运行时跑仍欠: 首选 place 链复现块 47400 经 inbox 投递——但
+  复现要 worktree 的 prereg 三字段, 等 chip 会话调和合并后做, 一石二鸟。
+- R4 只有种子(电池可跑但无配对前后门禁), round 95 的活。
+- 终验注记的一处结构性残余: done/ 改名失败现在留 processing/ 等重启 requeue
+  (at-least-once 语义闭合)。
