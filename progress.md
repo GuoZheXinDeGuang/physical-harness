@@ -3148,3 +3148,36 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
   等 rung 2 的真推理对照过了才配开工。
 - 主仓库工作树此刻躺着外部 chip 会话(propose_rule 接裁决 C)的四个未提交文件——本记录
   显式 add, 不碰它们。
+
+## Round 90 (rungs 1-2) - 2026-08-22 夜 - replace 原语进场; 双探针裁决放置 campaign: GO 且必须特权
+
+### 做成了什么
+
+1. **replace 原语(be15819, worktree 施工后收编)**: 缺失的放置形修复落地——
+   Strategy("replace", lift10/over_b12/place20/release8/retreat10)。三重封锁逐一解除且
+   对抓取程序严格增量: 闭爪集 +over_b/place(镜像 _GRIP_CLOSED)、高度表合并
+   {**PHASE_HEIGHT,**STACK_PHASE_HEIGHT}(键不相交)、place_estimate 可选扩展(cubeB 独立
+   抽draw, 盐+5 区别于 cubeA 的+3, 独立性即修复通道)。retarget_place 关掉了 drivers.py
+   的 rung-3 TODO; place 恢复后 on_handback 恒复位 retreat(绝不重放置已就座方块)。
+   **regrasp 111 步重放金哈希前后一致**; 6 个封存策略 _is_place_recovery 全 False 程序化
+   钉死。实施 agent 纠侦察图两处错: 座高 0.045 已烘在 STACK_PHASE_HEIGHT['place']=0.05
+   里(再加即双计数抬高 4.5cm)、percept.py 真身在 embodiment 插件不在 rsi。
+2. **探针 A(critic_budget 裁决)**: 41581-41880 三百席 gen1 治理下重放→54 放置失败(18%);
+   可观测 tell(finger_gap 运输窗塌缩)仅 **1/54=1.9%**——放置失败是"握着方块放歪",
+   本体感受不可见。**critic_budget=1 必须**(将产生第一条特权晋级规则)。
+3. **探针 B(go/no-go)**: 54 失败席全开火诊断 bundle(特权 xy_residual>0.025 + replace)
+   → **23 转化 4 破, 净+19, 转化率 42.6%** vs 侦察天花板 ~50%(鲜 draw 命中减执行损耗,
+   关系吻合)。GO 判据(>0 转化)决定性通过。
+4. 对抗验证: parity 成立(程序化验证+金哈希), 探针诚实(种子圈定/封存只读/诊断不入
+   lineage/终局判定配对), 唯一红灯是一个 F401 未用 import(已修 e78b52d)。
+   worktree 301 通过, store 软链补跑 rescore/workload 通过。主线收编后推送 a7a3d66。
+
+### 什么没成 / 注意
+
+- **探针范围缺口(预注册必须携带)**: 诊断触发器在 over_b 起点布防=全开火侦察兵,
+  未测健康席上的附带破坏(4/54 已证 replace 能破坏本会成功的席)。campaign 必须搜出
+  判别性特权触发器, 配对 held-out 门禁做净效果仲裁——这正是门禁存在的意义。
+- 潜在耦合(未触发): governed 的 place 分支调 driver.retarget_place, 只有
+  StackScriptedDriver 实现——replace 目前 stack 专属, 无守卫; 换 driver 前要补。
+- 校准注记: 高度偏置只加在 descend/close, place 半程无 per-embodiment 修正
+  (Panda 偏置 0 无影响; Sawyer 上场前必补, round 61 教训)。

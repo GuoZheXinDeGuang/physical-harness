@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 89 rung 1 完成(anygrasp 几何链路 sim 实证可信); rung 2 被 license 指纹漂移挡死(见 frontier)
+**Round:** 90 rungs 1-2 完成(replace 原语落地+双探针裁决: GO, critic_budget=1); rung 3 预注册冻结施工中
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -45,16 +45,23 @@
 **已烧(round 81):** round25-rerun dev 44000-44059 + held-out 44200-44399。
 **已烧(round 85):** stack held-out #2/#3 = 42200-42399 / 42400-42599(三块配额用毕)。
 **已烧(round 86):** pickcan/pickmilk 探针 45000-45011。
+**已烧(round 90, 诊断级):** 41581-41880(放置探针 A/B; bring-up 蓄水池按侦察规划使用,
+永不作门禁/held-out); 41881-41999 留 smoke/后续 bring-up。
+**预留(round 90 预注册):** place campaign dev 46000-46999; held-out 47000-47199 /
+47200-47399 / 47400-47599(头条三块)。
 
 **frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
 父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 1. 放置阶段 campaign(round 90, 侦察完毕: 需先造 replace
-原语——修复库存六策略全是抓取形状且机制层三重封死; 预注册草案含 46000-46999 dev /
-47000-47599 三块 held-out / 实测先验 0.15; 冻结前双探针: 41000-41580 重放定
-critic_budget + 41581-41999 bring-up 证 >0 转化) 2. **anygrasp rung 2/3 → gate(用户
+**frontier(现存, 按顺位):** 1. 放置阶段 campaign(round 90 rungs 1-2 完成: replace 原语
+落地且对抓取程序严格增量[金哈希钉死]; 探针 A: 300 席 54 放置失败、可观测 tell 仅
+1/54=1.9% → **critic_budget=1 必须**[放置失败=握着方块放歪, 本体感受不可见]; 探针 B:
+54 发 23 转化 4 破[净+19], 42.6% 贴合侦察天花板 ~50% → **GO**; 预注册 dev 46000-46999 /
+held-out 47000-47199[+47200/47400 复现块], 先验 0.15/0.25, parent=stack-g1 gen1 续种,
+recovery_name=replace; 警戒: 诊断触发器是全开火侦察兵, campaign 必须搜出判别性特权
+触发器, 配对 held-out 门禁是净效果仲裁者) 2. **anygrasp rung 2/3 → gate(用户
 行动项)**: license 指纹漂移——scout 当日实测 feature_id N32629936297910908604, 现
 `make feature-id` 返回 N17557579849878991565, 服务端 verify 拒绝启动; 需向 graspnet
 用新指纹重申 license, 或查明指纹漂移原因(疑网络接口/硬件枚举变化)。rung 1 几何链路
