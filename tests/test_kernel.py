@@ -115,8 +115,20 @@ def test_a_patch_changes_the_plan_sha():
     profile = Profile("base", (Mount("graph.skill", "plugins.graphs:skill_graph_provider"),))
     a = resolve_plan(profile)
     b = resolve_plan(profile, patches=(Patch("p", override=(
-        Mount("graph.skill", "plugins.graphs:skill_graph_provider", {"root": "y"}),)),))
+        Mount("graph.skill", "plugins.graphs:skill_graph_provider", {"variant": "y"}),)),))
     assert a.sha() != b.sha()
+
+
+def test_output_root_does_not_move_the_plan_sha():
+    """round 78 tolerated this drift as a path artifact; the output root is now
+    excluded from the hash, so the SAME plan written to two different --out
+    directories is byte-identical."""
+    profile = Profile("base", (Mount("graph.skill", "plugins.graphs:skill_graph_provider"),))
+    a = resolve_plan(profile, patches=(Patch("p", override=(
+        Mount("graph.skill", "plugins.graphs:skill_graph_provider", {"root": "runs/a/skills"}),)),))
+    b = resolve_plan(profile, patches=(Patch("p", override=(
+        Mount("graph.skill", "plugins.graphs:skill_graph_provider", {"root": "runs/b/skills"}),)),))
+    assert a.sha() == b.sha()
 
 
 def test_mount_plan_canonical_covers_every_field():

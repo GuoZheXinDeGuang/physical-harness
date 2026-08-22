@@ -335,6 +335,31 @@ def test_mount_plan_sha_present_when_kernel_mounted_a_plan(tmp_path, monkeypatch
     assert skill["mount_plan_sha"] == plan.sha()
 
 
+def test_mount_plan_sha_is_path_portable(tmp_path, monkeypatch):
+    """The frontier item: a skill record's mount_plan_sha must not carry the
+    --out path. Two runs identical except for where skills persist publish
+    byte-identical mount_plan_sha, so the record travels between archives."""
+    from harness.config import Mount, Profile, resolve_plan
+
+    monkeypatch.setattr(campaign, "run_campaign",
+                        _fake_run_campaign_factory({}, second_generation_promoted=None))
+
+    def sha_for_out(out: Path) -> str:
+        kernel = Kernel(CAPABILITIES, log=SessionLog())
+        kernel.mount(resolve_plan(Profile("base", (
+            Mount("embodiment.env", "plugins.embodiment_robosuite:provider"),
+            Mount("policy.driver", "plugins.policies:provider"),
+            Mount("percept.model", "plugins.embodiment_robosuite.percept:provider"),
+            Mount("exec.rollouts", "harness.executor:provider"),
+            Mount("graph.skill", "plugins.graphs:skill_graph_provider",
+                  {"root": str(out / "skills")}),
+        ))))
+        workload.run(_prereg(), out / "store", kernel, workers=2, verbose=False)
+        return kernel.resolve("graph.skill", consumer="test").skills()[0]["mount_plan_sha"]
+
+    assert sha_for_out(tmp_path / "run-a") == sha_for_out(tmp_path / "run-b")
+
+
 def test_reused_store_root_does_not_resurface_a_prior_runs_promotions(tmp_path, monkeypatch):
     """CampaignStore is append-only; a second run into the same store_root must
     publish only ITS OWN promotions, not the first run's too."""

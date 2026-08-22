@@ -21,6 +21,20 @@ def sha_json(payload: Any) -> str:
     ).hexdigest()
 
 
+#: Mount params that name WHERE output is written, never WHAT is produced. The
+#: hash law is round 29's: anything that can move a conclusion enters the hash.
+#: An output directory cannot move a conclusion, so it is excluded from the
+#: canonical form the plan is content-hashed over -- this is the exact license,
+#: and it is what makes a skill record path-portable: the SAME campaign written
+#: to a different --out yields a byte-identical mount_plan_sha. The value still
+#: rides the session log's capability.provide row, so where skills landed stays
+#: auditable. Excluded by key here, not filtered downstream, so it never enters
+#: the sha from any mount at all (base_profile mounts graph.skill root-less; the
+#: campaign scripts patch the --out root in, and only that root is dropped -- the
+#: provider ref, which CAN move conclusions, stays in the hash).
+_STORAGE_PARAMS = frozenset({"root"})
+
+
 @dataclass(frozen=True, slots=True)
 class Mount:
     """Bind one capability to one provider factory reference plus its params."""
@@ -30,8 +44,9 @@ class Mount:
     params: Mapping[str, Any] = field(default_factory=dict)
 
     def canonical(self) -> dict:
+        params = {k: v for k, v in self.params.items() if k not in _STORAGE_PARAMS}
         return {"capability": self.capability, "provider": self.provider,
-                "params": dict(sorted(self.params.items()))}
+                "params": dict(sorted(params.items()))}
 
 
 @dataclass(frozen=True, slots=True)
