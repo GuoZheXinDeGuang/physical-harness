@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from board import report as br
 from board import store as bs
 
 _HTML = Path(__file__).resolve().parent.parent / "board" / "index.html"
@@ -40,11 +43,30 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+def _head_sha(repo: Path) -> str:
+    """git HEAD sha for the footer; empty string if git is unavailable (report still builds)."""
+    try:
+        out = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=5, check=False)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _build_report(runs: Path, status_path: Path, progress_path: Path,
+                  live_threshold_s: float) -> str:
+    """Assemble the full self-contained report HTML from the sealed runs/ tree."""
+    return br.build_report(
+        runs, status_text=_read_text(status_path), progress_text=_read_text(progress_path),
+        head_sha=_head_sha(runs.parent), live_threshold_s=live_threshold_s)
+
+
 class Handler(BaseHTTPRequestHandler):
     # Set on the class before serve() (see main).
     runs_dir: Path
     status_path: Path
     progress_path: Path
+    live_threshold: float = 3600.0
 
     def log_message(self, *args) -> None:
         pass  # quiet by default
@@ -77,6 +99,18 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if route in ("/", "/index.html"):
                 self._send(_read_text(_HTML).encode(), "text/html; charset=utf-8")
+            elif route == "/api/report":
+                html = _build_report(self.runs_dir, self.status_path, self.progress_path,
+                                     self.live_threshold)
+                body = html.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Disposition",
+                                 f'attachment; filename="rsi-report-{time.strftime("%Y-%m-%d")}.html"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(body)
             elif route == "/api/stores":
                 self._json({"runs_dir": str(self.runs_dir),
                             "stores": bs.list_stores(self.runs_dir)})
@@ -110,6 +144,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="STATUS.md for the seed ledger (default: <runs>/../STATUS.md)")
     parser.add_argument("--progress", type=Path, default=None,
                         help="progress.md for the rounds feed (default: <runs>/../progress.md)")
+    parser.add_argument("--report", type=Path, default=None,
+                        help="write the self-contained HTML report to this path and exit "
+                             "(headless, for cron/scripted use)")
+    parser.add_argument("--live-threshold", type=float, default=3600.0,
+                        help="seconds since last write to flag a store 'in progress' (default: 3600)")
     parser.add_argument("--no-browser", action="store_true", help="do not auto-open a browser")
     args = parser.parse_args(argv)
 
@@ -120,6 +159,13 @@ def main(argv: list[str] | None = None) -> int:
     Handler.runs_dir = runs
     Handler.status_path = (args.status or runs.parent / "STATUS.md").resolve()
     Handler.progress_path = (args.progress or runs.parent / "progress.md").resolve()
+    Handler.live_threshold = args.live_threshold
+
+    if args.report is not None:
+        html = _build_report(runs, Handler.status_path, Handler.progress_path, args.live_threshold)
+        args.report.write_text(html)
+        print(f"wrote report: {args.report.resolve()} ({len(html)} bytes)")
+        return 0
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"

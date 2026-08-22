@@ -21,6 +21,9 @@
   .brand .whale{color:var(--accent)}
   .brand small{color:var(--muted);font-weight:400}
   .runs{color:var(--dim);font-family:var(--mono);font-size:12px;margin-left:auto}
+  .export{padding:5px 11px;border:1px solid var(--accent);border-radius:6px;color:var(--accent);
+    font-size:12px;font-family:var(--mono);text-decoration:none;background:#16203a;white-space:nowrap}
+  .export:hover{background:var(--accent);color:#fff}
   .live{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);
     font-family:var(--mono)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
@@ -82,6 +85,7 @@
 <div class="top">
   <div class="brand"><span class="whale">&#128011;</span> RSI&nbsp;Board <small>tensorboard for the harness</small></div>
   <div class="runs" id="runs"></div>
+  <a class="export" href="/api/report" title="Download a self-contained HTML report (prints to PDF)">&#10515; Export report</a>
   <div class="live"><span class="dot" id="livedot"></span><span id="livetxt">connecting</span></div>
 </div>
 <div class="wrap">
