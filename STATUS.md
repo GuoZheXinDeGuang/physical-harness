@@ -2,8 +2,8 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 91 完成(place-g1 campaign 封存: gen1 放置候选被门禁正确拒绝; 抓取规则第四块
-复验 +10.5pp 判定确立; "91 发 0 翻转 vs 探针 42.6% 转化"谜题进 frontier #1)
+**Round:** 93 完成(92: 谜题=rule_id 键碰撞, 假阴性实锤, 结构修复已推送; 93: 几何位姿
+抓取零特权闭环 60 席 100%)。进行中: place-g2 重战准备(92b Rearm) + M4 常驻系统层(94)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -57,12 +57,14 @@
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 1. **place-g1 谜题三分诊(round 92 首选)**: campaign 候选
-(xy>0.0338, dwell 3, arm 108)在 dev 上 91 发 **0 修 0 破**(与父代逐席同结局), 而探针 B
-(xy>0.025, dwell 1, arm 92)在失败席上 42.6% 转化——同一 replace 原语、同一 percept 通道。
-判别变量只有阈值/dwell/布防时刻三个; 且盲孪生(无条件 t=108)-19.5pp 证明原语在 campaign
-路径确实执行。拿 fired-未翻转席与探针 fired-转化席做配对轨迹对比即可裁决(种子已知,
-零新种子)。可能收获: 放置修复的"开火窗口"比抓取更窄→目标函数需要窗口感知 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
+**frontier(现存, 按顺位):** 1. **M4 常驻系统层(round 94, 施工图 docs/m4-design.md)**:
+rungs 0-4+6(env try/finally, 常驻循环+inbox, 注错 soak, RSI 系统内任务+种子账本代码
+守卫, board 会话页, 评测电池种子); rung 5(zos 改投 brief)等 inbox 契约冻结
+1.5. **place-g2 重战**(92b Rearm 完成即点火; 去碰撞后 dev 对照净修+9, 晋级可期;
+rung 3 落地后可改经运行时投递 = 首个系统内 RSI 任务)
+2. 几何抓取多物体化 gate(触发: 进多物体场景; 单物体假设是最大集成风险, 先加聚类)
+3. campaign 铸 id 唯一化已在 worktree rung 3(等 chip 会话调和); 谜题的"目标函数
+窗口感知"假设已随根因证伪而撤销 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
 (round 93 施工中: 质心+PCA 顶抓 proposer 走 vendored client 同一输出契约与 fail-closed
 校验, rung 1 的米制点云链路直接复用; sim 探针 = 几何驱动 vs 脚本基线配对)。
 anygrasp 侦察与几何链路资产保留, license 若恢复可无缝换回(契约同形)
