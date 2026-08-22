@@ -2,8 +2,9 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 94 完成(**M4 落地: 常驻运行时在 runs/session-main 运行中**, soak 735 行链
-跨重启验证, 种子账本进代码, board Sessions 页)。7 验收 6 证 1 缺(#6 zos 投递延后)
+**Round:** 95 完成(**dsh 驾驶舱落地**: MCP 七读+submit_brief, 九行对等表全 VERIFIED,
+自建 board 退役; rung 5 随 zos 退役裁定取消)。**GOAL v4 主机底座宪章生效**,
+round 96 盘点+设计进行中(W1 焊死物/W6 测试分层/W2 装机规矩/W4 zos 遗产四路审计)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
