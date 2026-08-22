@@ -3312,3 +3312,32 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
 - R4 只有种子(电池可跑但无配对前后门禁), round 95 的活。
 - 终验注记的一处结构性残余: done/ 改名失败现在留 processing/ 等重启 requeue
   (at-least-once 语义闭合)。
+
+## Round 95 - 2026-08-23 - dsh 接管驾驶舱: 骑 MCP 缝零 vendor, 自建仪表盘对齐后退役
+
+### 做成了什么
+
+1. **rung 0(5305bc7, 编排层亲手)**: nvm 局部 node 22.23.2 + pnpm 11.7(系统 node 未动);
+   dsh@0.1.1-rc.2 真实服务 127.0.0.1:3080。版本斜坡实锤: 发布 rc 无 master 文档的
+   --patch 旗标, 配置行改走 $DSH_HOME/cordis.patch.yml 层。workflow 的 rung 0 agent
+   连挂两次(干活不交表), 编排层接手——"汇报失败非工作失败"第三、四例。
+2. **rung 1(ce3f7e5)**: board/mcp_server.py——七只只读 MCP 工具逐字节等价
+   board.store; safe_child 守卫上提共享; mcp==2.0.0 进 cockpit 可选依赖组。
+3. **rung 2(c94873f)**: 报告长出 Sessions 章(链徽章三态: verified/broken/not-verifiable
+   是三个可区分状态) + python -m board.report headless 出口。
+4. **rung 3(53e84bc)**: 原子投递上提 scripts/brief_drop.py(纯 temp+os.replace,
+   不复制键校验——运行时保持唯一权威); submit_brief 经它入 inbox。
+5. **rung 4(d8d282f)**: 自建 board 退役——index.html + rsi_board.py 删除, 九行对等表
+   进 commit body。终验亲手重驱动: 九面全 VERIFIED(七读 + 报告 + submit 写路),
+   不变量四项全验(MCP 零 store 写/注入键硬拒/遍历拒收/链徽章三态)。364 通过 3 跳过。
+6. **rung 5 按用户裁定取消**(GOAL v4 W4: zos 整体退役, 对接计划全取消), zos 零改动。
+7. 终验抓到**部署漂移**(活 dsh 仍挂 rung 0 echo 行——"验证要对着运行时"教训重演),
+   编排层已重部署重启, 配置与运行时对齐。
+
+### 什么没成 / 注意
+
+- **模型 key 缺口(用户行动项)**: dsh 默认 agent = deepseek-official/deepseek-v4-flash,
+  key 走 web 界面 Models 页或 DEEPSEEK_API_KEY; 未配前 LLM 无法组织 submit_brief,
+  MCP 工具注册与只读面不受影响。
+- dsh 是 2 天龄 developer preview, 明示会破坏兼容——版本锁死 0.1.1-rc.2, profile
+  接受随版本重同步(骑标准 MCP 缝就是为了把断面钉在协议上)。
