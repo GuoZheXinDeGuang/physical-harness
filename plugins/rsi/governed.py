@@ -245,182 +245,184 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     # the catalog before that sees an empty registry and records empty views.
     embodiment = _embodiment(spec)
     env = embodiment.make_env(spec)
-    critic_names = PrivilegePolicy(critic_budget=bundle.critic_budget if bundle else 0).critic_names()
-    action_names = PrivilegePolicy(critic_budget=bundle.action_budget if bundle else 0).critic_names()
-    obs = env.reset()
-    driver = make_driver(spec)
-    driver.observe_once(obs)
-    start_z = float(np.asarray(obs[embodiment.object_key(spec)])[2])
+    try:
+        critic_names = PrivilegePolicy(critic_budget=bundle.critic_budget if bundle else 0).critic_names()
+        action_names = PrivilegePolicy(critic_budget=bundle.action_budget if bundle else 0).critic_names()
+        obs = env.reset()
+        driver = make_driver(spec)
+        driver.observe_once(obs)
+        start_z = float(np.asarray(obs[embodiment.object_key(spec)])[2])
 
-    # --- R2 stage overlay: a SCORER over the policy's schedule, never a
-    # controller. Everything is gated behind `stages is not None` so the
-    # stageless path stays byte-identical (runs/demo, runs/demo-r1 anchors).
-    # The scorer view may read privileged features -- a scorer is not a critic,
-    # embodiment.success already reads ground truth -- so its reads are
-    # accounted PER STAGE and never merged into `history`, the chain, or
-    # assert_privilege_budget: those feed the zero-privilege search.
-    stages = spec.stages
-    if stages is not None:
-        scorer_names = PrivilegePolicy(critic_budget=1).critic_names()
-        bounds: list[int] = []
-        for s in stages:
-            bounds.append(s.budget + (bounds[-1] if bounds else 0))
-        stage_results: list[dict] = []
-        stage_idx = 0
-        stage_entered = 0
-
-        def _score_stage(exited_step: int | None) -> None:
-            """Score the current stage on the CURRENT obs and advance."""
-            nonlocal stage_idx, stage_entered
-            sv = project(obs, scorer_names, step=k, episode=f"s{spec.seed}")
-            stage_results.append({
-                "name": stages[stage_idx].name,
-                "entered_step": stage_entered, "exited_step": exited_step,
-                "success": stages[stage_idx].holds(sv), "reached": True,
-                "privilege_used": sv.privilege_used(),
-            })
-            stage_entered = k
-            stage_idx += 1
-
-    rules = list(bundle.rules) if bundle else []
-    # Keyed by CHAIN POSITION, not rule_id: nothing forbids two rules sharing an
-    # id before sealing, and keying by id silently merges their invocation budget
-    # and dwell accumulator -- round 92's appended place rule (id "g1", colliding
-    # with the parent grasp "g1") could never fire because the grasp rule reset
-    # the shared dwell every step and ate the shared invocation. Index-keying is
-    # behaviorally identical for every unique-id bundle (all sealed ones are).
-    consec = [0] * len(rules)
-    used = [0] * len(rules)
-    fires: list[dict] = []
-    history: dict[str, list[float]] = {}
-    chain = chain_start()
-    privilege_used = 0
-    recovery: RecoveryActor | None = None
-    t = 0            # env steps, for the horizon budget
-    k = 0            # POLICY-owned steps: the clock a trigger's arm_after counts in
-
-    while t < spec.horizon:
-        if recovery is not None and recovery.done:
-            driver.on_handback()
-            recovery = None
-        if recovery is not None:
-            action = recovery.act(obs)
-        elif driver.exhausted:
-            break
-        else:
-            action = driver.act(obs)
-
-        policy_owned = recovery is None
-        obs, _r, done, _info = env.step(action)
-        t += 1
-        if done:
-            break
-
-        # The critic governs the POLICY, so it neither observes nor fires while a
-        # scripted recovery owns control, and those steps stay out of the trace.
-        # Without this the search reads a mixture: round 16's second generation
-        # proposed a trigger armed at t=129, inside a recovery program, on a
-        # policy whose own clock is 100 steps long. Trigger `arm_after` therefore
-        # counts policy-owned steps, which is also the only clock that means the
-        # same thing across episodes of different length.
-        if not policy_owned:
-            continue
-
-        view = project(obs, critic_names, step=k, episode=f"s{spec.seed}")
-        logged = record_view(view)
-        for name, value in view.snapshot().items():
-            history.setdefault(name, []).append(value)
-        chain = chain_step(chain, logged.digest)
-        k += 1
-        # Stage boundaries live on the DRIVER's schedule clock: on_handback
-        # supersedes the interrupted phase, so that clock can jump several
-        # cumulative budgets in one hop -- hence a while, scoring every crossed
-        # stage on the current (post-recovery) obs, not only the first.
+        # --- R2 stage overlay: a SCORER over the policy's schedule, never a
+        # controller. Everything is gated behind `stages is not None` so the
+        # stageless path stays byte-identical (runs/demo, runs/demo-r1 anchors).
+        # The scorer view may read privileged features -- a scorer is not a critic,
+        # embodiment.success already reads ground truth -- so its reads are
+        # accounted PER STAGE and never merged into `history`, the chain, or
+        # assert_privilege_budget: those feed the zero-privilege search.
+        stages = spec.stages
         if stages is not None:
+            scorer_names = PrivilegePolicy(critic_budget=1).critic_names()
+            bounds: list[int] = []
+            for s in stages:
+                bounds.append(s.budget + (bounds[-1] if bounds else 0))
+            stage_results: list[dict] = []
+            stage_idx = 0
+            stage_entered = 0
+
+            def _score_stage(exited_step: int | None) -> None:
+                """Score the current stage on the CURRENT obs and advance."""
+                nonlocal stage_idx, stage_entered
+                sv = project(obs, scorer_names, step=k, episode=f"s{spec.seed}")
+                stage_results.append({
+                    "name": stages[stage_idx].name,
+                    "entered_step": stage_entered, "exited_step": exited_step,
+                    "success": stages[stage_idx].holds(sv), "reached": True,
+                    "privilege_used": sv.privilege_used(),
+                })
+                stage_entered = k
+                stage_idx += 1
+
+        rules = list(bundle.rules) if bundle else []
+        # Keyed by CHAIN POSITION, not rule_id: nothing forbids two rules sharing an
+        # id before sealing, and keying by id silently merges their invocation budget
+        # and dwell accumulator -- round 92's appended place rule (id "g1", colliding
+        # with the parent grasp "g1") could never fire because the grasp rule reset
+        # the shared dwell every step and ate the shared invocation. Index-keying is
+        # behaviorally identical for every unique-id bundle (all sealed ones are).
+        consec = [0] * len(rules)
+        used = [0] * len(rules)
+        fires: list[dict] = []
+        history: dict[str, list[float]] = {}
+        chain = chain_start()
+        privilege_used = 0
+        recovery: RecoveryActor | None = None
+        t = 0            # env steps, for the horizon budget
+        k = 0            # POLICY-owned steps: the clock a trigger's arm_after counts in
+
+        while t < spec.horizon:
+            if recovery is not None and recovery.done:
+                driver.on_handback()
+                recovery = None
+            if recovery is not None:
+                action = recovery.act(obs)
+            elif driver.exhausted:
+                break
+            else:
+                action = driver.act(obs)
+
+            policy_owned = recovery is None
+            obs, _r, done, _info = env.step(action)
+            t += 1
+            if done:
+                break
+
+            # The critic governs the POLICY, so it neither observes nor fires while a
+            # scripted recovery owns control, and those steps stay out of the trace.
+            # Without this the search reads a mixture: round 16's second generation
+            # proposed a trigger armed at t=129, inside a recovery program, on a
+            # policy whose own clock is 100 steps long. Trigger `arm_after` therefore
+            # counts policy-owned steps, which is also the only clock that means the
+            # same thing across episodes of different length.
+            if not policy_owned:
+                continue
+
+            view = project(obs, critic_names, step=k, episode=f"s{spec.seed}")
+            logged = record_view(view)
+            for name, value in view.snapshot().items():
+                history.setdefault(name, []).append(value)
+            chain = chain_step(chain, logged.digest)
+            k += 1
+            # Stage boundaries live on the DRIVER's schedule clock: on_handback
+            # supersedes the interrupted phase, so that clock can jump several
+            # cumulative budgets in one hop -- hence a while, scoring every crossed
+            # stage on the current (post-recovery) obs, not only the first.
+            if stages is not None:
+                pk = getattr(driver, "k", k)
+                while stage_idx < len(stages) and pk >= bounds[stage_idx]:
+                    _score_stage(exited_step=k)
+            if not rules:
+                continue
+
+            assert_view_reconstructable(view, logged)
+            triggered: Rule | None = None
+            triggered_idx = -1
+            for i, rule in enumerate(rules):
+                if used[i] >= rule.recovery.max_invocations:
+                    consec[i] = 0
+                    continue
+                trig = rule.trigger
+                if k - 1 < trig.arm_after:
+                    consec[i] = 0
+                    continue
+                # Instantaneous reading, value-only: the reducer is NOT applied here
+                # (search enumerates only what this loop honors, search.RUNTIME_REDUCERS).
+                # `crosses` is the one shared op/threshold predicate -- the same test
+                # Trigger.fire_step steps offline, so search scores what runtime fires.
+                hit = trig.crosses(view[trig.feature])
+                consec[i] = consec[i] + 1 if hit else 0
+                if triggered is None and consec[i] >= trig.dwell:
+                    triggered = rule
+                    triggered_idx = i
+            assert_privilege_budget(view, bundle.critic_budget, role="critic")
+            privilege_used = max(privilege_used, view.privilege_used())
+            if triggered is None:
+                continue
+
+            used[triggered_idx] += 1
+            fires.append({"rule_id": triggered.rule_id, "step": k - 1, "env_step": t - 1})
+            act_view = project(obs, action_names, step=k - 1, episode=f"s{spec.seed}")
+            assert_view_reconstructable(act_view, record_view(act_view))
+            assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
+            steps = triggered.recovery.steps()
+            draw = used[triggered_idx]
+            if _is_place_recovery(steps):
+                # Place-shaped repair: aim the actor at a fresh cubeB estimate (the
+                # place goal) and point the driver's target_b at the same estimate,
+                # so the phases it resumes after handback stay consistent with what
+                # the recovery placed against. The seat height is already carried by
+                # STACK_PHASE_HEIGHT['place'], so the estimate needs no z offset.
+                goal = _place_object(obs, spec, triggered.recovery.sensor_sd, draw)
+                driver.retarget_place(goal)
+            else:
+                goal = _percept_object(obs, spec, triggered.recovery.sensor_sd, draw)
+                driver.retarget(goal)
+            recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
+            consec = [0] * len(consec)
+
+        if stages is not None:
+            # The loop can exit with boundaries still uncrossed on the ledger: an
+            # exhaust break lands before the in-loop check, and a hand-back jump
+            # can even exhaust the driver outright. Settle crossed stages first,
+            # then score the in-progress stage on the final obs, then record the
+            # stages the policy never reached.
             pk = getattr(driver, "k", k)
             while stage_idx < len(stages) and pk >= bounds[stage_idx]:
                 _score_stage(exited_step=k)
-        if not rules:
-            continue
+            if stage_idx < len(stages) and pk > (bounds[stage_idx - 1] if stage_idx else 0):
+                _score_stage(exited_step=None)
+            for s in stages[stage_idx:]:
+                stage_results.append({"name": s.name, "entered_step": None, "exited_step": None,
+                                      "success": False, "reached": False, "privilege_used": 0})
 
-        assert_view_reconstructable(view, logged)
-        triggered: Rule | None = None
-        triggered_idx = -1
-        for i, rule in enumerate(rules):
-            if used[i] >= rule.recovery.max_invocations:
-                consec[i] = 0
-                continue
-            trig = rule.trigger
-            if k - 1 < trig.arm_after:
-                consec[i] = 0
-                continue
-            # Instantaneous reading, value-only: the reducer is NOT applied here
-            # (search enumerates only what this loop honors, search.RUNTIME_REDUCERS).
-            # `crosses` is the one shared op/threshold predicate -- the same test
-            # Trigger.fire_step steps offline, so search scores what runtime fires.
-            hit = trig.crosses(view[trig.feature])
-            consec[i] = consec[i] + 1 if hit else 0
-            if triggered is None and consec[i] >= trig.dwell:
-                triggered = rule
-                triggered_idx = i
-        assert_privilege_budget(view, bundle.critic_budget, role="critic")
-        privilege_used = max(privilege_used, view.privilege_used())
-        if triggered is None:
-            continue
-
-        used[triggered_idx] += 1
-        fires.append({"rule_id": triggered.rule_id, "step": k - 1, "env_step": t - 1})
-        act_view = project(obs, action_names, step=k - 1, episode=f"s{spec.seed}")
-        assert_view_reconstructable(act_view, record_view(act_view))
-        assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
-        steps = triggered.recovery.steps()
-        draw = used[triggered_idx]
-        if _is_place_recovery(steps):
-            # Place-shaped repair: aim the actor at a fresh cubeB estimate (the
-            # place goal) and point the driver's target_b at the same estimate,
-            # so the phases it resumes after handback stay consistent with what
-            # the recovery placed against. The seat height is already carried by
-            # STACK_PHASE_HEIGHT['place'], so the estimate needs no z offset.
-            goal = _place_object(obs, spec, triggered.recovery.sensor_sd, draw)
-            driver.retarget_place(goal)
+        # R2 round 79: terminal_label swaps the shared sub-goal for the embodiment's
+        # full-task terminal boolean. Scored here, while env is still alive, because
+        # some terminal predicates need the live handle (Stack's _check_success reads
+        # contact ground truth the obs dict cannot carry). No handle-less fallback:
+        # an embodiment asked for a terminal label it cannot produce fails loud rather
+        # than mislabelling silently. terminal_label False is the byte-identical
+        # legacy path.
+        if spec.terminal_label:
+            terminal = getattr(embodiment, "terminal_success", None)
+            if terminal is None:
+                raise ValueError(
+                    f"spec.terminal_label is set but embodiment {type(embodiment).__name__} "
+                    "has no terminal_success; refusing to fall back to the sub-goal (round 79)")
+            success = bool(terminal(obs, spec, start_z, env=env))
         else:
-            goal = _percept_object(obs, spec, triggered.recovery.sensor_sd, draw)
-            driver.retarget(goal)
-        recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
-        consec = [0] * len(consec)
-
-    if stages is not None:
-        # The loop can exit with boundaries still uncrossed on the ledger: an
-        # exhaust break lands before the in-loop check, and a hand-back jump
-        # can even exhaust the driver outright. Settle crossed stages first,
-        # then score the in-progress stage on the final obs, then record the
-        # stages the policy never reached.
-        pk = getattr(driver, "k", k)
-        while stage_idx < len(stages) and pk >= bounds[stage_idx]:
-            _score_stage(exited_step=k)
-        if stage_idx < len(stages) and pk > (bounds[stage_idx - 1] if stage_idx else 0):
-            _score_stage(exited_step=None)
-        for s in stages[stage_idx:]:
-            stage_results.append({"name": s.name, "entered_step": None, "exited_step": None,
-                                  "success": False, "reached": False, "privilege_used": 0})
-
-    # R2 round 79: terminal_label swaps the shared sub-goal for the embodiment's
-    # full-task terminal boolean. Scored here, while env is still alive, because
-    # some terminal predicates need the live handle (Stack's _check_success reads
-    # contact ground truth the obs dict cannot carry). No handle-less fallback:
-    # an embodiment asked for a terminal label it cannot produce fails loud rather
-    # than mislabelling silently. terminal_label False is the byte-identical
-    # legacy path.
-    if spec.terminal_label:
-        terminal = getattr(embodiment, "terminal_success", None)
-        if terminal is None:
-            raise ValueError(
-                f"spec.terminal_label is set but embodiment {type(embodiment).__name__} "
-                "has no terminal_success; refusing to fall back to the sub-goal (round 79)")
-        success = bool(terminal(obs, spec, start_z, env=env))
-    else:
-        success = embodiment.success(obs, spec, start_z)
-    env.close()
+            success = embodiment.success(obs, spec, start_z)
+    finally:
+        env.close()
     result = {
         "seed": spec.seed,
         "task": spec.task,
