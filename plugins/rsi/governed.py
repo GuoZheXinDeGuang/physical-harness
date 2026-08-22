@@ -283,8 +283,14 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             stage_idx += 1
 
     rules = list(bundle.rules) if bundle else []
-    consec = {r.rule_id: 0 for r in rules}
-    used = {r.rule_id: 0 for r in rules}
+    # Keyed by CHAIN POSITION, not rule_id: nothing forbids two rules sharing an
+    # id before sealing, and keying by id silently merges their invocation budget
+    # and dwell accumulator -- round 92's appended place rule (id "g1", colliding
+    # with the parent grasp "g1") could never fire because the grasp rule reset
+    # the shared dwell every step and ate the shared invocation. Index-keying is
+    # behaviorally identical for every unique-id bundle (all sealed ones are).
+    consec = [0] * len(rules)
+    used = [0] * len(rules)
     fires: list[dict] = []
     history: dict[str, list[float]] = {}
     chain = chain_start()
@@ -339,34 +345,36 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
 
         assert_view_reconstructable(view, logged)
         triggered: Rule | None = None
-        for rule in rules:
-            if used[rule.rule_id] >= rule.recovery.max_invocations:
-                consec[rule.rule_id] = 0
+        triggered_idx = -1
+        for i, rule in enumerate(rules):
+            if used[i] >= rule.recovery.max_invocations:
+                consec[i] = 0
                 continue
             trig = rule.trigger
             if k - 1 < trig.arm_after:
-                consec[rule.rule_id] = 0
+                consec[i] = 0
                 continue
             # Instantaneous reading, value-only: the reducer is NOT applied here
             # (search enumerates only what this loop honors, search.RUNTIME_REDUCERS).
             # `crosses` is the one shared op/threshold predicate -- the same test
             # Trigger.fire_step steps offline, so search scores what runtime fires.
             hit = trig.crosses(view[trig.feature])
-            consec[rule.rule_id] = consec[rule.rule_id] + 1 if hit else 0
-            if triggered is None and consec[rule.rule_id] >= trig.dwell:
+            consec[i] = consec[i] + 1 if hit else 0
+            if triggered is None and consec[i] >= trig.dwell:
                 triggered = rule
+                triggered_idx = i
         assert_privilege_budget(view, bundle.critic_budget, role="critic")
         privilege_used = max(privilege_used, view.privilege_used())
         if triggered is None:
             continue
 
-        used[triggered.rule_id] += 1
+        used[triggered_idx] += 1
         fires.append({"rule_id": triggered.rule_id, "step": k - 1, "env_step": t - 1})
         act_view = project(obs, action_names, step=k - 1, episode=f"s{spec.seed}")
         assert_view_reconstructable(act_view, record_view(act_view))
         assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
         steps = triggered.recovery.steps()
-        draw = used[triggered.rule_id]
+        draw = used[triggered_idx]
         if _is_place_recovery(steps):
             # Place-shaped repair: aim the actor at a fresh cubeB estimate (the
             # place goal) and point the driver's target_b at the same estimate,
@@ -379,8 +387,7 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
             goal = _percept_object(obs, spec, triggered.recovery.sensor_sd, draw)
             driver.retarget(goal)
         recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
-        for rid in consec:
-            consec[rid] = 0
+        consec = [0] * len(consec)
 
     if stages is not None:
         # The loop can exit with boundaries still uncrossed on the ledger: an

@@ -244,7 +244,7 @@ def run_window_probe(place_store: str | Path, parent_store: str | Path, out_dir:
     res_cand = rollout(candidate)
     res_decol = rollout(decollided)
 
-    succ = lambda r: {s: bool(r[s]["success"]) for s in seeds}  # noqa: E731
+    succ = lambda r: {s: bool(r[s]["success"]) for s in seeds}
     sp, sc, sd = succ(res_parent), succ(res_cand), succ(res_decol)
 
     # --- sealed candidate: attribute every fire and cross-tab against flips ----
