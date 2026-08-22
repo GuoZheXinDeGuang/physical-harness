@@ -1,0 +1,22 @@
+# dsh cockpit profile patch -- physical-harness (round 95 design, rung 0)
+#
+# one mcp-client row that launches our stdio echo MCP server. proves the
+# cockpit can register a harness MCP tool (mcp__physical-harness__echo) before
+# rung 1 stands up the real read-only board/mcp_server.py.
+#
+# how it is loaded: `dsh web` is a hardcoded shorthand for `--profile web`, so
+# it boots the `web` profile, NOT this one. we overlay this file onto that boot
+# with `dsh web --no-open --port 3080 --patch $DSH_HOME/profiles/physical-harness/cordis.patch.yml`
+# (--patch applies in argv order after the web profile's own layers). the
+# @deepseek-ai/dsh-mcp-client plugin ships with the CLI, so no per-profile
+# pnpm install is needed for this overlay.
+#
+# echo_server.py is referenced by absolute repo path (single source of truth);
+# it is stdlib-only so system python3 is enough. swap to the real server in rung 1.
+- id: mcp-physical-harness
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: physical-harness
+    transport: stdio
+    command: python3
+    args: ['/home/yusenzlabpc/Desktop/physical-harness/profiles/dsh/echo_server.py']
