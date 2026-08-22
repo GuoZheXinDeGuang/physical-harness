@@ -166,19 +166,39 @@ def run_beam_campaign(
                 b.discordance_yield = max((verdict.fixed + verdict.broken) / residual,
                                           prereg.min_discordance_yield)
             else:
+                # Roll the branch back to its last sealed state. At gen 1 the seed
+                # rule was baked into b.bundle before the gate ran, so without this
+                # a rejected seed stayed in the bundle and leaked into the surviving
+                # pool below. For gen>1 `parent` is already b.bundle, so this is a
+                # no-op there.
                 b.alive = False
+                b.bundle = parent
 
-    grown = [b for b in branches if b.bundle.rules]
+    # Only branches carrying a sealed rule compete: a rejected seed rolls back to
+    # an empty bundle above, so an empty bundle here means the branch has nothing
+    # to offer. The rest are still reported for audit (with no selection score and
+    # no path to held-out) so the rung's rejection evidence stays inspectable.
+    survivors = [b for b in branches if b.bundle.rules]
     if verbose:
         print(f"\n--- selection block (n={len(sel_specs)}), distinct from dev and held-out ---")
     scored = []
-    for b in grown:
+    for b in survivors:
         r = paired_gate(sel_specs, b.bundle, baseline=None, workers=workers)
         scored.append((b, r))
         if verbose:
             print(f"  {b.branch_id} (depth {b.depth}): {r.line()}")
+    sel = {b.branch_id: r for b, r in scored}
+    result = {
+        "preregistration_sha": prereg_sha, "beam_width": beam_width,
+        "branches": [{"id": b.branch_id, "depth": b.depth, "sha": b.bundle.sha(),
+                      "history": b.history,
+                      "selection": asdict(sel[b.branch_id]) if b.branch_id in sel else None}
+                     for b in branches],
+    }
     if not scored:
-        return {"preregistration_sha": prereg_sha, "branches": 0}
+        result["selected"] = None
+        store.put("beam_result", result)
+        return result
     best, best_r = max(scored, key=lambda t: t[1].delta)
     if verbose:
         print(f"\nselected {best.branch_id} (depth {best.depth}, "
@@ -193,13 +213,9 @@ def run_beam_campaign(
         for sd, r in curve:
             tag = "GROUND TRUTH (privileged)" if sd == 0.0 else "onboard sensor"
             print(f"  sensor_sd={sd:.3f}  {r.line()}  [{tag}]")
-    result = {
-        "preregistration_sha": prereg_sha, "beam_width": beam_width,
-        "branches": [{"id": b.branch_id, "depth": b.depth, "sha": b.bundle.sha(),
-                      "history": b.history, "selection": asdict(r)} for b, r in scored],
-        "selected": best.branch_id, "heldout": asdict(final),
-        "ablation": [(sd, asdict(r)) for sd, r in curve],
-    }
+    result["selected"] = best.branch_id
+    result["heldout"] = asdict(final)
+    result["ablation"] = [(sd, asdict(r)) for sd, r in curve]
     store.put("beam_result", result)
     return result
 

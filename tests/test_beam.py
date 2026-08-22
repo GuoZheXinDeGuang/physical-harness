@@ -77,6 +77,37 @@ def test_beam_without_judgement_reproduces_the_pre_change_rule(monkeypatch, tmp_
     assert all(b is None for b in baselines)
 
 
+def test_beam_rejected_seed_rule_does_not_leak_into_selection(monkeypatch, tmp_path):
+    """Round 77 rung 1: a gen-1 seed rule the gate REJECTS was left in the
+    branch's bundle -- only `alive` was cleared -- so the branch still entered
+    the surviving pool: it was scored on the selection block and eligible for
+    held-out. A rejected branch must roll back to its parent and take no part in
+    selection, while still being reported for audit."""
+    def reject_gate(specs, bundle, baseline=None, workers=10, executor=None):
+        # every arm says no: not significant, no net fix
+        return PairedResult(n=len(specs), base_rate=0.5, governed_rate=0.5,
+                            fixed=1, broken=1, fires=2, p_value=1.0,
+                            declared_privilege=0)
+
+    monkeypatch.setattr(beam, "paired_gate", reject_gate)
+    monkeypatch.setattr(beam, "ablation_curve", lambda *a, **k: [])
+    monkeypatch.setattr(beam, "_measure",
+                        lambda specs, bundle, workers, executor=None:
+                        [{"trace": {}, "success": False} for _ in specs])
+    monkeypatch.setattr(beam, "search_triggers",
+                        lambda *a, **k: [SimpleNamespace(trigger=Trigger(
+                            "observable.finger_gap", "lt", 0.0018, 1, 41, "value"))])
+    result = beam.run_beam_campaign(
+        _prereg(require_judgement=False),
+        CampaignStore(tmp_path / "store"),
+        beam_width=1, selection=(500, 501, 502, 503), workers=1, verbose=False)
+
+    entry = result["branches"][0]
+    assert entry["history"][0]["promoted"] is False       # the gate rejected the seed
+    assert entry["selection"] is None, "rejected branch was scored in the selection pool"
+    assert result["selected"] is None, "a rejected branch reached the selection winner"
+
+
 def test_beam_records_the_blind_gate_evidence(monkeypatch, tmp_path):
     on, _ = _run_stubbed(monkeypatch, tmp_path, require_judgement=True)
     off, _ = _run_stubbed(monkeypatch, tmp_path, require_judgement=False)
