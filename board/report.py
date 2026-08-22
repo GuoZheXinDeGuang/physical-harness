@@ -12,8 +12,11 @@ The document sections, in order (mirrors the morning read):
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import html
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -550,6 +553,94 @@ def _live_section(runs, stores, details, threshold_s, now):
             "morning glance</div>" + "".join(cards) + "</section>")
 
 
+# --- section: runtime sessions ----------------------------------------------
+
+def _chain_badge(chain_ok, skipped) -> str:
+    """The hash-chain integrity badge in THREE distinct states (invariant #5):
+
+    - mid-write (``skipped`` > 0): a row is still being appended, so the chain is
+      *not verifiable* this poll -- load() chokes on the truncated line and reads
+      as chain_ok False, but the skip count disambiguates it from a real tamper.
+    - verified (chain_ok True): the chain re-folds to what the file claims.
+    - broken (chain_ok False, nothing mid-write): an on-disk tamper was caught.
+    Mirrors read_session's contract; "not verifiable" must never read as "broken".
+    """
+    if skipped:
+        return '<span class="badge warn-badge">chain not verifiable</span>'
+    if chain_ok:
+        return '<span class="badge ok">chain verified</span>'
+    return '<span class="badge no">chain broken</span>'
+
+
+def _session_card(s) -> str:
+    """One runtime session snapshot: the chain badge plus the note tables ported
+    off index.html's sessions tab (task timeline, errors, scheduled campaigns) so
+    no view is lost when the board is retired (rung 4). ``s`` is a read_session dict."""
+    rows = s.get("rows") or {}
+    tasks = rows.get("task.plan_complete") or []
+    errors = rows.get("runtime.task_error") or []
+    camps = rows.get("runtime.campaign_scheduled") or []
+    last = time.strftime("%Y-%m-%d %H:%M", time.localtime(s.get("mtime", 0)))
+    h = [(f'<div class="card"><h2>{_esc(s.get("name"))} '
+          f'{_chain_badge(s.get("chain_ok"), s.get("skipped"))}</h2>')]
+    if s.get("skipped"):
+        h.append(f'<div class="warnbar">␉ {s["skipped"]} row(s) mid-write, '
+                 "not verifiable this poll</div>")
+    h.append(f'<div class="kv"><span><b>tasks</b> {len(tasks)}</span>'
+             f'<span><b>errors</b> {len(errors)}</span>'
+             f'<span><b>campaigns</b> {len(camps)}</span>'
+             f'<span><b>last write</b> {last}</span></div></div>')
+    if tasks:
+        trows = []
+        for i, t in enumerate(tasks):
+            nodes = " ".join(f'{_esc(nid)}{"✓" if n.get("success") else "✗"}'
+                             for nid, n in (t.get("nodes") or {}).items())
+            flt = ", ".join(str(f.get("kind")) for f in (t.get("faults") or []))
+            badge = "ok" if t.get("success") else "no"
+            trows.append(
+                f'<tr><td>{i + 1}</td><td style="text-align:left">{_esc(t.get("goal"))}</td>'
+                f'<td><span class="badge {badge}">{"success" if t.get("success") else "failed"}</span></td>'
+                f'<td>{_num(t.get("replans"))}</td><td>{_num(t.get("actuations"))}</td>'
+                f'<td title="{_esc(flt)}">{len(t.get("faults") or [])}</td>'
+                f'<td style="text-align:left">{nodes}</td></tr>')
+        h.append('<div class="card"><h2>Task timeline</h2>'
+                 '<table><thead><tr><th>#</th><th>goal</th><th>result</th><th>replans</th>'
+                 '<th>actuations</th><th>faults</th><th>nodes</th></tr></thead>'
+                 f'<tbody>{"".join(trows)}</tbody></table></div>')
+    if errors:
+        erows = "".join(
+            f'<tr><td style="text-align:left">{_esc(e.get("brief"))}</td>'
+            f'<td>{_esc(e.get("task"))}</td>'
+            f'<td style="text-align:left">{_esc(e.get("error"))}</td></tr>' for e in errors)
+        h.append('<div class="card"><h2>Task errors</h2>'
+                 '<table><thead><tr><th>brief</th><th>task</th><th>error</th></tr></thead>'
+                 f'<tbody>{erows}</tbody></table></div>')
+    if camps:
+        crows = "".join(
+            f'<tr><td style="text-align:left">{_esc(c.get("brief"))}</td>'
+            f'<td>{_esc(c.get("campaign"))}</td>'
+            f'<td>{_esc((c.get("prereg_sha") or "")[:10])}</td>'
+            f'<td>{len(c.get("skills") or [])}</td></tr>' for c in camps)
+        h.append('<div class="card"><h2>Campaigns scheduled</h2>'
+                 '<table><thead><tr><th>brief</th><th>campaign</th><th>prereg</th><th>skills</th>'
+                 f'</tr></thead><tbody>{crows}</tbody></table></div>')
+    return "".join(h)
+
+
+def _sessions_section(runs):
+    """Runtime-session snapshot: every session chain under runs/, newest first,
+    each with its integrity badge. Closes the recon gap -- the report carried no
+    runtime-chain view, so invariant #5 lived only in the board being retired."""
+    sessions = bs.discover_sessions(runs)
+    if not sessions:
+        return ('<section id="sessions"><h1 class="sec">Runtime sessions</h1>'
+                '<div class="card sub">no runtime session under runs/</div></section>')
+    cards = "".join(_session_card(bs.read_session(Path(runs) / s["name"])) for s in sessions)
+    return ('<section id="sessions"><h1 class="sec">Runtime sessions</h1>'
+            "<div class=\"sub secsub\">the resident runtime's session chain(s), newest first, "
+            'each with its hash-chain integrity badge (invariant #5)</div>' + cards + "</section>")
+
+
 # --- section: ledger + rounds -----------------------------------------------
 
 def _ledger_section(ranges):
@@ -658,6 +749,7 @@ th{color:var(--dim);font-weight:500;text-transform:uppercase;font-size:10px;lett
 .badge.ok{background:rgba(55,214,122,.15);color:var(--good)}
 .badge.no{background:rgba(240,97,109,.15);color:var(--bad)}
 .badge.live-badge{background:rgba(94,224,200,.15);color:var(--accent2)}
+.badge.warn-badge{background:rgba(230,177,58,.15);color:var(--warn)}
 .card.live{border-color:var(--accent2)}
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
 .chart{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}
@@ -717,6 +809,7 @@ def build_report(runs_dir, *, status_text="", progress_text="", head_sha="",
         + "</section>",
         _diagnostics_section(details),
         _live_section(runs, stores, details, live_threshold_s, now),
+        _sessions_section(runs),
         _ledger_section(bs.parse_ledger(status_text)),
         _rounds_section(bs.parse_rounds(progress_text)),
         _footer(runs, stores, head_sha, now),
@@ -726,3 +819,57 @@ def build_report(runs_dir, *, status_text="", progress_text="", head_sha="",
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
             f"<title>RSI Report {date}</title><style>{_CSS}</style></head>"
             f'<body>{"".join(body)}</body></html>')
+
+
+# --- headless entry ---------------------------------------------------------
+#
+# `python -m board.report --out PATH` so cron keeps generating the report after
+# scripts/rsi_board.py (which owned the only --report path) is deleted at rung 4.
+# Self-contained: gathers STATUS/progress text and the git HEAD itself, since the
+# rsi_board helpers that did so go away with it.
+
+def _read(path) -> str:
+    try:
+        return Path(path).read_text()
+    except OSError:
+        return ""
+
+
+def _head_sha(repo) -> str:
+    """git HEAD for the footer; empty if git is unavailable (report still builds)."""
+    try:
+        out = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=5, check=False)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description="render the runs/ tree into one self-contained HTML report")
+    parser.add_argument("--runs", type=Path, default=Path("runs"),
+                        help="campaign runs directory (default: runs)")
+    parser.add_argument("--out", type=Path, required=True,
+                        help="write the report HTML to this path")
+    parser.add_argument("--status", type=Path, default=None,
+                        help="STATUS.md for the seed ledger (default: <runs>/../STATUS.md)")
+    parser.add_argument("--progress", type=Path, default=None,
+                        help="progress.md for the rounds feed (default: <runs>/../progress.md)")
+    parser.add_argument("--live-threshold", type=float, default=3600.0,
+                        help="freshness window (s) for the live-campaign flag")
+    args = parser.parse_args(argv)
+    runs = args.runs.resolve()
+    if not runs.is_dir():
+        parser.error(f"runs directory not found: {runs}")
+    status = args.status or runs.parent / "STATUS.md"
+    progress = args.progress or runs.parent / "progress.md"
+    doc = build_report(runs, status_text=_read(status), progress_text=_read(progress),
+                       head_sha=_head_sha(runs.parent), live_threshold_s=args.live_threshold)
+    args.out.write_text(doc)
+    print(f"wrote report: {args.out.resolve()} ({len(doc)} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
