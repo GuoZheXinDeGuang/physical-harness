@@ -34,7 +34,7 @@ from governor.policy import make_driver
 from harness.percept import (
     PRIVILEGED_SENSOR_SD,
 )
-from harness.spec import EpisodeSpec
+from harness.spec import STACK_PHASE_HEIGHT, EpisodeSpec
 
 
 class _LegacyEmbodiment:
@@ -207,6 +207,23 @@ def _percept_object(obs, spec: EpisodeSpec, sensor_sd: float, draw: int) -> np.n
     return load_provider(ref).object_estimate(obs, spec, sensor_sd, draw)
 
 
+def _place_object(obs, spec: EpisodeSpec, sensor_sd: float, draw: int) -> np.ndarray:
+    """The PLACE goal for a place-shaped recovery: the provider's independent
+    cubeB estimate, drawn from a distinct stream so it does not repeat the noise
+    the policy already acted on. Only place-shaped strategies reach this."""
+    from harness.registry import load_provider
+
+    ref = spec.percept_provider or DEFAULT_PERCEPT_REF
+    return load_provider(ref).place_estimate(obs, spec, sensor_sd, draw)
+
+
+def _is_place_recovery(steps) -> bool:
+    """A recovery is place-shaped if any phase names the place vocabulary
+    (over_b/place/release/retreat). Grasp/servo strategies use none of these, so
+    this is False for every sealed strategy -- the grasp path stays byte-identical."""
+    return any(name in STACK_PHASE_HEIGHT for name, *_ in steps)
+
+
 def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     """Run one episode, optionally under a critic-recovery bundle.
 
@@ -348,10 +365,20 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         act_view = project(obs, action_names, step=k - 1, episode=f"s{spec.seed}")
         assert_view_reconstructable(act_view, record_view(act_view))
         assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
-        percept = _percept_object(obs, spec, triggered.recovery.sensor_sd, used[triggered.rule_id])
-        driver.retarget(percept)
-        recovery = RecoveryActor(triggered.recovery.steps(), percept,
-                                 height_offset=spec.grasp_height_offset)
+        steps = triggered.recovery.steps()
+        draw = used[triggered.rule_id]
+        if _is_place_recovery(steps):
+            # Place-shaped repair: aim the actor at a fresh cubeB estimate (the
+            # place goal) and point the driver's target_b at the same estimate,
+            # so the phases it resumes after handback stay consistent with what
+            # the recovery placed against. The seat height is already carried by
+            # STACK_PHASE_HEIGHT['place'], so the estimate needs no z offset.
+            goal = _place_object(obs, spec, triggered.recovery.sensor_sd, draw)
+            driver.retarget_place(goal)
+        else:
+            goal = _percept_object(obs, spec, triggered.recovery.sensor_sd, draw)
+            driver.retarget(goal)
+        recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
         for rid in consec:
             consec[rid] = 0
 

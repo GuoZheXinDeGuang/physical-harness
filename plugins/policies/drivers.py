@@ -226,6 +226,7 @@ class StackScriptedDriver:
         self.k = 0                      # policy-owned steps; recovery does not advance it
         self.target_a: np.ndarray | None = None
         self.target_b: np.ndarray | None = None
+        self._place_recovery = False    # armed by retarget_place, consumed by on_handback
 
     def observe_once(self, obs) -> np.ndarray:
         """One noisy percept of BOTH cubes: xy noised, z exact, two consecutive
@@ -253,11 +254,36 @@ class StackScriptedDriver:
         return np.array([*delta, 0.0, 0.0, 0.0, grip])
 
     def retarget(self, target: np.ndarray) -> None:
-        # Grasp-stage regrasp only; place-stage retarget of target_b is rung-3 work.
+        # Grasp-stage regrasp: retargets cubeA, resumes into the place half.
         self.target_a = target
 
+    def retarget_place(self, target: np.ndarray) -> None:
+        """A place-shaped recovery re-estimated cubeB (the rung-3 target_b
+        retarget deferred at :meth:`retarget`) and will perform the whole place
+        half itself. Point the resumed phases at the same fresh estimate, and arm
+        on_handback to resume PAST place so it does not re-place a seated cube."""
+        self.target_b = target
+        self._place_recovery = True
+
     def on_handback(self) -> None:
-        """Supersede the interrupted phase, as ScriptedDriver.on_handback does."""
+        """Resume after a recovery hands control back.
+
+        A grasp recovery re-grasped: supersede only the interrupted phase, as
+        ScriptedDriver does. A place recovery (replace) already ran
+        lift->over_b->place->release->retreat itself, so resuming into the
+        interrupted place phase would re-place an already-seated cube. Resume at
+        `retreat` instead -- past place, aimed at the fresh target_b -- mirroring
+        ClonedDriver's "resume where the terminal phase begins" mapping."""
+        if self._place_recovery:
+            self._place_recovery = False
+            acc = 0
+            for name, dur in STACK_SCHEDULE:
+                if name == "retreat":
+                    self.k = acc
+                    return
+                acc += dur
+            self.k = acc
+            return
         acc = 0
         for _name, dur in STACK_SCHEDULE:
             acc += dur

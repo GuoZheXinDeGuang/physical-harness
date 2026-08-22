@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from harness.spec import PHASE_HEIGHT
+from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT
+
+#: Grasp + place vocabulary, merged exactly as StackScriptedDriver._HEIGHT is
+#: (plugins/policies/drivers.py). The two key sets are disjoint, so this adds
+#: the place-phase heights (over_b/place/release/retreat) and leaves every
+#: grasp-phase height byte-identical -- a regrasp program resolves as before.
+_HEIGHT = {**PHASE_HEIGHT, **STACK_PHASE_HEIGHT}
 
 
 class RecoveryActor:
@@ -64,13 +70,17 @@ class RecoveryActor:
         seg = self._current()
         if isinstance(seg, list):
             name, dx, dy = seg.pop(0)
-            height = PHASE_HEIGHT[name]
+            height = _HEIGHT[name]
             if name in ("descend", "close"):
                 height += self.height_offset
             goal = np.array([self.target[0] + dx, self.target[1] + dy,
                              self.target[2] + height])
             delta = np.clip((goal - np.asarray(obs["robot0_eef_pos"])) * 8.0, -1, 1)
-            grip = 1.0 if name in ("close", "lift") else -1.0
+            # Mirrors StackScriptedDriver._GRIP_CLOSED: a place-phase program
+            # keeps the cube held through over_b/place and only opens on
+            # release/retreat. Old grasp programs contain none of the extra
+            # names, so their grip resolves exactly as before.
+            grip = 1.0 if name in ("close", "lift", "over_b", "place") else -1.0
             return np.array([*delta, 0.0, 0.0, 0.0, grip])
         return seg.act(obs)
 

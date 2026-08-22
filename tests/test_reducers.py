@@ -190,12 +190,14 @@ def test_recovery_steps_do_not_advance_the_policy_clock():
 # --- recovery repertoire ----------------------------------------------------
 
 def test_every_strategy_resolves_to_offset_steps():
-    from harness.spec import PHASE_HEIGHT
+    # The actor resolves heights from PHASE_HEIGHT merged with STACK_PHASE_HEIGHT
+    # (recovery._HEIGHT); a place-shaped strategy legitimately names the latter.
+    from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT
     from plugins.rsi.repertoire import REPERTOIRE
     for s in REPERTOIRE:
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:
-            assert name in PHASE_HEIGHT or name.startswith("servo_"), (
+            assert name in PHASE_HEIGHT or name in STACK_PHASE_HEIGHT or name.startswith("servo_"), (
                 f"{s.name} uses unknown step {name!r}"
             )
             assert dur > 0 and isinstance(dur, int)

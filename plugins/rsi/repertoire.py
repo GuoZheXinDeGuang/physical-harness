@@ -94,6 +94,20 @@ REPERTOIRE = REPERTOIRE + (
     ),
 )
 
+REPERTOIRE = REPERTOIRE + (
+    Strategy(
+        "replace",
+        (("lift", 10, 0.0, 0.0), ("over_b", 12, 0.0, 0.0), ("place", 20, 0.0, 0.0),
+         ("release", 8, 0.0, 0.0), ("retreat", 10, 0.0, 0.0)),
+        "The missing place-shaped repair: every other strategy is grasp-shaped and "
+        "ends in lift. This one assumes the cube is already held and the SEAT failed "
+        "-- lift clear, move over cubeB, place, release, retreat -- run against a FRESH "
+        "independent cubeB estimate (the place goal governed threads in). Independence "
+        "of the draw is the whole repair channel, exactly as it is for the regrasp: the "
+        "original placement acted on one noisy cubeB read, this acts on another.",
+    ),
+)
+
 BY_NAME = {s.name: s for s in REPERTOIRE}
 DEFAULT = "regrasp"
 

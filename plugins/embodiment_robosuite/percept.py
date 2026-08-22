@@ -25,6 +25,19 @@ class OnboardPercept:
         rng = np.random.RandomState((spec.seed * 104729 + 3 + draw * 7907) % (2**31 - 1))
         return true + np.array([rng.normal(0, sensor_sd), rng.normal(0, sensor_sd), 0.0])
 
+    def place_estimate(self, obs, spec, sensor_sd: float, draw: int) -> np.ndarray:
+        """OPTIONAL extension (not in the PerceptModel structural check, same as
+        EnvProvider.terminal_success): the placement target's estimate for a
+        place-shaped recovery. Same noise model and z-exact rule as
+        object_estimate, reading cubeB and a DISTINCT seed salt so the place
+        draw is independent of the grasp draw -- the independence that IS the
+        repair channel. Only place-shaped strategies (stack scenes) ever call it."""
+        true = np.asarray(obs["cubeB_pos"]).copy()
+        if sensor_sd <= PRIVILEGED_SENSOR_SD:
+            return true
+        rng = np.random.RandomState((spec.seed * 104729 + 5 + draw * 7907) % (2**31 - 1))
+        return true + np.array([rng.normal(0, sensor_sd), rng.normal(0, sensor_sd), 0.0])
+
 
 def provider() -> OnboardPercept:
     return OnboardPercept()
