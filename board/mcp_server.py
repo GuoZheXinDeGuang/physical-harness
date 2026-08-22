@@ -16,7 +16,9 @@ the one audited traversal guard, so a ``../`` name can never escape runs_dir.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,21 +26,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mcp.server import MCPServer
 
 from board import store as bs
+from scripts.brief_drop import drop
 
 
 class _Cfg:
-    """Server config: the runs/ tree and the two markdown feeds. Set once by
-    configure() (main, or a test); the tools read it. Defaults mirror rsi_board."""
+    """Server config: the runs/ tree, the two markdown feeds, and the resident
+    runtime's session inbox that submit_brief drops into. Set once by configure()
+    (main, or a test); the tools read it. Read defaults mirror rsi_board."""
 
     runs = Path("runs").resolve()
     status = runs.parent / "STATUS.md"
     progress = runs.parent / "progress.md"
+    inbox = runs / "session-main" / "inbox"
 
 
-def configure(runs, status=None, progress=None) -> None:
+def configure(runs, status=None, progress=None, inbox=None) -> None:
     _Cfg.runs = Path(runs).resolve()
     _Cfg.status = Path(status).resolve() if status else _Cfg.runs.parent / "STATUS.md"
     _Cfg.progress = Path(progress).resolve() if progress else _Cfg.runs.parent / "progress.md"
+    _Cfg.inbox = Path(inbox).resolve() if inbox else _Cfg.runs / "session-main" / "inbox"
 
 
 def _read(path: Path) -> str:
@@ -96,6 +102,25 @@ def rounds() -> list[dict]:
     return bs.parse_rounds(_read(_Cfg.progress))
 
 
+@mcp.tool()
+def submit_brief(brief: dict) -> dict:
+    """Drop a brief into the resident runtime's session inbox for it to claim.
+
+    A brief is a pure selector+budgets, e.g.
+    ``{"kind":"task","task":"stack","seed":90000}``. This tool does NO
+    validation and names NO provider: it only performs the shared atomic drop
+    (brief_drop.drop -- temp write + os.replace) so the runtime never claims a
+    half-written brief. The resident runtime re-validates ``_BRIEF_KEYS``
+    server-side on claim and stays the SOLE authority, so an injected extra key
+    rides through unchanged and hard-fails to failed/ there -- the MCP seam puts
+    the LLM in front of the inbox but not in front of the guard.
+    """
+    _Cfg.inbox.mkdir(parents=True, exist_ok=True)
+    name = f"brief-{uuid.uuid4().hex}.json"
+    drop(_Cfg.inbox, name, json.dumps(brief))
+    return {"submitted": name, "inbox": str(_Cfg.inbox)}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--runs", type=Path, default=Path("runs"),
@@ -104,11 +129,13 @@ def main(argv=None) -> int:
                         help="STATUS.md for the seed ledger (default: <runs>/../STATUS.md)")
     parser.add_argument("--progress", type=Path, default=None,
                         help="progress.md for the rounds feed (default: <runs>/../progress.md)")
+    parser.add_argument("--session", default="session-main",
+                        help="resident runtime session whose inbox submit_brief drops into")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
     if not runs.is_dir():
         parser.error(f"runs directory not found: {runs}")
-    configure(runs, args.status, args.progress)
+    configure(runs, args.status, args.progress, inbox=runs / args.session / "inbox")
     mcp.run(transport="stdio")
     return 0
 

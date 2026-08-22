@@ -61,6 +61,7 @@ VENV_PY = REPO / ".venv" / "bin" / "python"
 RUNTIME = REPO / "scripts" / "harness_runtime.py"
 
 from harness.events import SessionLog
+from scripts.brief_drop import drop as _atomic_drop
 
 # Seed -> class map. Stack classes need specific seeds (clean stack must pass,
 # node_failure must fail), so those two draw from an empirical scan of the
@@ -108,11 +109,10 @@ def _briefs() -> list[tuple[str, str, str]]:
 
 
 def _drop(inbox: Path, name: str, raw: str, mtime: float) -> None:
-    """Drop a brief the atomic way an external writer must (os.replace), then
-    stamp an explicit mtime so the runtime's mtime-sorted intake is deterministic."""
-    tmp = inbox / (name + ".tmp")
-    tmp.write_text(raw)
-    os.replace(tmp, inbox / name)
+    """Drop a brief the atomic way an external writer must (the shared
+    brief_drop.drop: temp write + os.replace), then stamp an explicit mtime so
+    the runtime's mtime-sorted intake is deterministic."""
+    _atomic_drop(inbox, name, raw)
     os.utime(inbox / name, (mtime, mtime))
 
 
