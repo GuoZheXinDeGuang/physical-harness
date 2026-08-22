@@ -59,12 +59,14 @@
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 1. **chip 会话调和合并**(campaign.py 双改动: 主检出的
+**frontier(现存, 按顺位):** 0. **GUI/CLI 改用 deepseek-harness(用户裁定 2026-08-23:
+不再自建, 开 workflow 完善重构; round 95 侦察+设计进行中——dsh 真仓库解剖、我方界面
+盘点、board 逐视图裁决)** 1. **chip 会话调和合并**(campaign.py 双改动: 主检出的
 外部四文件 + worktree round90-wt 的 prereg 三字段/续种/铸 id/裁决 C——place 链一切
 后续都卡在这) 2. **place 链复现**(held-out #2 = 47400-47599, #3 = 48000-48199;
 经运行时 inbox 投递 = M4#4 真跑证明, 一石二鸟; 盯 broken 率稳定性)
-3. M4#6: zos sim_test 改投 brief(inbox 契约已冻结, 独立 zos 会话)
-4. R4 配对前后门禁(评测电池已可跑, round 95) 5. 几何抓取多物体化 gate(聚类先行)
+3. M4#6: zos sim_test 改投 brief(inbox 契约已冻结; 与 dsh 采纳的驾驶舱边界一并设计)
+4. R4 配对前后门禁(评测电池已可跑) 5. 几何抓取多物体化 gate(聚类先行)
 6. qwen38 gate(腾 GPU 后 round25_rerun 补跑; VLM planner 接 task.planner 缝=换 mount) 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
 (round 93 施工中: 质心+PCA 顶抓 proposer 走 vendored client 同一输出契约与 fail-closed
 校验, rung 1 的米制点云链路直接复用; sim 探针 = 几何驱动 vs 脚本基线配对)。
