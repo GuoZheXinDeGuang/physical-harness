@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 88 完成(目标函数第二假设破案+修复: 修复价值随开火时机, 语义分裂/峰值不可达/裁决盲修三件套)
+**Round:** 89 rung 1 完成(anygrasp 几何链路 sim 实证可信); rung 2 被 license 指纹漂移挡死(见 frontier)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -51,11 +51,16 @@
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 1. anygrasp provider rung(侦察报告 docs/anygrasp-scout.md
-就绪; 服务端/license/镜像/GPU 余量 2026-08-22 复核可用) 2. campaign 生产选择器
-propose_rule(campaign.py:263) 继承了 round 88 修复的 A+B(语义/峰值臂)但未接 C(修复感知
-裁决)——下次 campaign 前补(chip task_6686c1d0) 3. 目标函数第三假设候补: fp_penalty 1.2 与
-recall>0.5 门槛未标定(round 88 修复未触及, 检测不饱和的任务上才会咬人)。
+**frontier(现存, 按顺位):** 1. 放置阶段 campaign(round 90, 侦察完毕: 需先造 replace
+原语——修复库存六策略全是抓取形状且机制层三重封死; 预注册草案含 46000-46999 dev /
+47000-47599 三块 held-out / 实测先验 0.15; 冻结前双探针: 41000-41580 重放定
+critic_budget + 41581-41999 bring-up 证 >0 转化) 2. **anygrasp rung 2/3 → gate(用户
+行动项)**: license 指纹漂移——scout 当日实测 feature_id N32629936297910908604, 现
+`make feature-id` 返回 N17557579849878991565, 服务端 verify 拒绝启动; 需向 graspnet
+用新指纹重申 license, 或查明指纹漂移原因(疑网络接口/硬件枚举变化)。rung 1 几何链路
+已实证, rung 2 探针施工图在 round 89 workflow 记录里, license 恢复即可续
+3. campaign propose_rule 接修复感知裁决(chip task_6686c1d0 进行中, 外部会话)
+4. 目标函数第三假设候补: fp_penalty 1.2 与 recall>0.5 门槛未标定。
 **待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
 
 ## 已达成（不要重新验证）

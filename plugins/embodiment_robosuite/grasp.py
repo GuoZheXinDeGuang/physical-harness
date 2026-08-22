@@ -14,7 +14,7 @@ each returns "reasonable" garbage if skipped):
 2. robosuite's default IMAGE_CONVENTION is "opengl", so obs row 0 is the image
    BOTTOM; the optical pinhole model wants row 0 = TOP, so depth is flipped
    `[::-1]` before backprojection. (Verified: without the flip the table plane
-   comes out tilted with ~19cm z-spread instead of flat at its known height.)
+   comes out tilted with ~72cm z-spread instead of flat at its known height.)
 3. MuJoCo's camera frame is -z forward / +y up; `get_camera_extrinsic_matrix`
    already folds the MuJoCo->OpenCV axis correction (diag(1,-1,-1)) into the
    pose it returns, so it IS the optical->world transform -- no extra flip.

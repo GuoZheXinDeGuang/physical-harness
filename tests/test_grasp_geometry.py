@@ -262,7 +262,7 @@ def test_scene_cloud_matches_privileged_ground_truth():
         assert err < 0.03, f"cube centroid {centroid} vs gt {cube_pos}: {err:.4f} m off"
 
         # metric check: the table plane is flat at its known height. A wrong
-        # depth scale or a wrong image flip fails this (flip error -> ~0.19 m
+        # depth scale or a wrong image flip fails this (flip error -> ~0.72 m
         # z-spread instead of a few mm), which the near-center cube alone cannot.
         table_z = float(env.model.mujoco_arena.table_offset[2])
         table_geoms = [
