@@ -2,7 +2,7 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 86 完成(规划图第二节点: clear_table 双节点闭环真跑通, pick 技能 object 参数化)
+**Round:** 87 完成(frontier 机械修缮五件清仓: beam 泄漏/record 路径迁移/ruff pin + zos 证据消费/存量 lint)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -24,7 +24,7 @@
       earliness 修后天真挑法仍领先——"目标函数第二未标定假设"进 frontier)。
       qwen38 臂 → gate(用户裁定 2026-08-22: 先放一放; 腾 GPU 后 round25_rerun 补跑即可)。
 - [x] M2(round 82): graph.scene 真 provider + InMemorySkillGraph 回读修复 +
-      zos 证据顾问层(安全下界自检钉死)。剩 Session.evidence 的 prompt/面板消费。
+      zos 证据顾问层(安全下界自检钉死)。Session.evidence 的 prompt/面板消费 round 87 补齐。
 - [x] M3 第一闭环(round 83): task.planner 缝 + 确定性 StackPlanner + 规划 workload,
       scripts/task_plan.py 真跑通(两层裁决成立: 规划图=控制器/阶段链=评分器)。
 - [x] M3 第二步(round 86): pick 技能 object 参数化 + clear_table 双节点图真闭环
@@ -45,9 +45,15 @@
 **已烧(round 85):** stack held-out #2/#3 = 42200-42399 / 42400-42599(三块配额用毕)。
 **已烧(round 86):** pickcan/pickmilk 探针 45000-45011。
 
-**frontier(round 77 新发现, 按顺位):** 1. beam gen-1 泄漏(被拒分支 seed 规则不回滚仍参选,
-既有洞, rung 1 红绿验证时发现) 2. skill record 不可路径迁移(--out 路径经 mount params
-漏进 mount_plan_sha) 3. ruff pin(venv 0.16.4 比 round 76 宽, 已 chore 清零但未 pin)。
+**frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
+父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.
+_STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
+收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
+3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
+**frontier(现存, 按顺位):** 1. 目标函数第二假设(round 88 探查中——round25-rerun 产物分析:
+两臂检测足迹全同 119 发 0 破, 差距全在开火时机下的条件修复率 63v54 修, 布防空间
+{起始,+2,+6} 结构性够不到 σ-峰值 t=95; P1 dev 重评分+P2 arm_after 因果扫待跑)
+2. anygrasp provider rung(侦察报告 docs/anygrasp-scout.md 就绪)。
 **待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
 
 ## 已达成（不要重新验证）

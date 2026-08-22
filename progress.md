@@ -3041,3 +3041,40 @@ M3 规划闭环), harness 13 commit + zos 6 commit 全部实时推送, 测试 17
 
 stack+pick 混合图的按 task 派发 policy provider / object enum 校验 / covered_by
 node-key / per-attempt seed 变化——各自的触发条件记在施工图。
+
+## Round 87 - 2026-08-22 - frontier 机械修缮五件清仓; 工作落地与汇报失败是两回事
+
+### 做成了什么
+
+workflow 双仓并行(仓内串行防 git index 竞争), 5 修 + 2 对抗验证, 终验编排层亲手重跑。
+
+1. **beam gen-1 泄漏回滚(05b06a3)**: 根因是 gen1 的 seed 规则在门禁跑之前就烘进
+   b.bundle(gen>1 的 child 是独立 bundle, 拒绝时从不落挂), 拒绝只清 alive 不清 bundle,
+   被拒分支带着规则进 grown、被选择块评分、可能被选中上 held-out。修复: 拒绝时
+   b.bundle = parent(gen1 归还空根, gen>1 无操作), 幸存池只收有封存规则的分支;
+   审计报告与选择池解耦(所有分支永远列出, 被拒分支 selection=None, 无 best/held-out
+   通路)。RED 实证: stash 修复后新测试在"被拒分支被评分"处失败, 即泄漏本体。
+2. **record 路径迁移修复(7625082)**: --out 经 graph.skill 的 root 参数→Mount.canonical
+   →plan sha→mount_plan_sha 一条通道漏进哈希。修在全部 campaign 必经的收口点:
+   config._STORAGE_PARAMS 豁免 root, round 29 法则("能移动结论的才进哈希——输出目录
+   不能")原文写在豁免现场; provider ref(能移动结论)留在哈希里, root 值仍走 session log
+   capability.provide 行保持可审计。round 78 的"路径伪影容忍"收紧成钉:
+   非 root 参数仍移动 sha + root 不移动 sha + 端到端两次 --out 不同字节同 sha, 三测钉死。
+   agent 有理有据地偏离了施工图的 at-source 倾向(源头形态会把 provider ref 一起豁免,
+   反而违反法则)——workflow 实施层第二次当场纠正施工图假设(round 82 回读 bug 同款)。
+3. **ruff==0.16.4 双仓 pin(f2a52a7 / zos 198c046)**: harness 无锁文件径直 pin;
+   zos 补装同版并清零 22 条存量 lint, 长提示串用隐式拼接保证字节不变, 零行为改动。
+4. **zos 证据消费补齐(d8a597e, M2 remainder 清账)**: 量测证据接到规划提示与授权面板
+   两个消费点。顾问天花板铁律成立: gate.py/skills.py 对基线零 diff(对抗验证员读全量
+   diff 确认), 14 个触及模块 __main__ 自检全过。
+5. 终验(新鲜进程, 编排层亲手): harness **249 通过 3 跳过** + ruff 清, zos **59 通过**
+   + ruff 清。两个对抗验证 agent 均 pass, 唯一非阻塞注记 = _STORAGE_PARAMS 按键名
+   全局生效的天花板(注释已声明, 今日仅 graph.skill 用 root)。
+
+### 什么没成 / 注意
+
+- zos 修复链的收尾 agent 干完活、commit 落地之后, StructuredOutput 重试烧穿——workflow
+  报"失败"但仓库状态完好。**工作落地与汇报成功是两回事, 只认 git log 与新鲜测试,
+  不认 workflow 的成败位**(round 78 同形态, 第二次实证)。
+- config.canonical 改动意味着下一次 demo 重跑的 mount_plan_sha 会相对旧封存移动一次
+  (旧 sha 烘着 root)——预期内的一次性迁移, 方向就是修复本身; runs/ 封存未动。
