@@ -2,8 +2,8 @@
 
 **Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 93 完成 + 92 终章(place-g2 双代晋级: **放置天花板破, held-out +9.5pp 判定
-确立, 第一条放置规则/第一条特权规则/第一次续种进化**)。进行中: M4 常驻系统层(94)
+**Round:** 94 完成(**M4 落地: 常驻运行时在 runs/session-main 运行中**, soak 735 行链
+跨重启验证, 种子账本进代码, board Sessions 页)。7 验收 6 证 1 缺(#6 zos 投递延后)
 **Updated:** 2026-08-22
 
 ## PHASE 3 状态
@@ -59,15 +59,13 @@
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 1. **M4 常驻系统层(round 94, 施工图 docs/m4-design.md)**:
-rungs 0-4+6(env try/finally, 常驻循环+inbox, 注错 soak, RSI 系统内任务+种子账本代码
-守卫, board 会话页, 评测电池种子); rung 5(zos 改投 brief)等 inbox 契约冻结
-1.5. **place 链复现**(held-out #2 = 47400-47599 经 rescore_heldout, #3 = 48000-48199;
-M4 rung 3 落地后经运行时投递 = 首个系统内 RSI 任务; 复现要盯 broken 率是否稳定——
-首次带破坏晋级 21修2破)
-2. 几何抓取多物体化 gate(触发: 进多物体场景; 单物体假设是最大集成风险, 先加聚类)
-3. campaign 铸 id 唯一化已在 worktree rung 3(等 chip 会话调和); 谜题的"目标函数
-窗口感知"假设已随根因证伪而撤销 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
+**frontier(现存, 按顺位):** 1. **chip 会话调和合并**(campaign.py 双改动: 主检出的
+外部四文件 + worktree round90-wt 的 prereg 三字段/续种/铸 id/裁决 C——place 链一切
+后续都卡在这) 2. **place 链复现**(held-out #2 = 47400-47599, #3 = 48000-48199;
+经运行时 inbox 投递 = M4#4 真跑证明, 一石二鸟; 盯 broken 率稳定性)
+3. M4#6: zos sim_test 改投 brief(inbox 契约已冻结, 独立 zos 会话)
+4. R4 配对前后门禁(评测电池已可跑, round 95) 5. 几何抓取多物体化 gate(聚类先行)
+6. qwen38 gate(腾 GPU 后 round25_rerun 补跑; VLM planner 接 task.planner 缝=换 mount) 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
 (round 93 施工中: 质心+PCA 顶抓 proposer 走 vendored client 同一输出契约与 fail-closed
 校验, rung 1 的米制点云链路直接复用; sim 探针 = 几何驱动 vs 脚本基线配对)。
 anygrasp 侦察与几何链路资产保留, license 若恢复可无缝换回(契约同形)
