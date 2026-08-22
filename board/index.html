@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSI Board</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#111725; --panel2:#0e1420; --line:#1e2838;
+    --ink:#e6edf7; --muted:#8896ab; --dim:#5c6b82;
+    --accent:#4d6bfe; --accent2:#5ee0c8; --good:#37d67a; --bad:#f0616d; --warn:#e6b13a;
+    --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+  a{color:var(--accent)}
+  .top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .brand{font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .brand .whale{color:var(--accent)}
+  .brand small{color:var(--muted);font-weight:400}
+  .runs{color:var(--dim);font-family:var(--mono);font-size:12px;margin-left:auto}
+  .live{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);
+    font-family:var(--mono)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  .dot.on{background:var(--good);box-shadow:0 0 8px var(--good);animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  .wrap{display:flex;min-height:calc(100vh - 45px)}
+  .side{width:290px;flex:0 0 290px;background:var(--panel2);border-right:1px solid var(--line);
+    padding:12px;overflow:auto}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{padding:5px 10px;border:1px solid var(--line);border-radius:6px;cursor:pointer;
+    color:var(--muted);font-size:12px;background:var(--panel)}
+  .tab.active{color:var(--ink);border-color:var(--accent);background:#16203a}
+  .side h3{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);margin:14px 0 8px}
+  .store{padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;
+    cursor:pointer;background:var(--panel)}
+  .store:hover{border-color:var(--accent)}
+  .store.sel{border-color:var(--accent);background:#16203a}
+  .store .nm{font-family:var(--mono);font-size:13px}
+  .store .meta{color:var(--muted);font-size:11px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+  .main{flex:1;padding:18px 22px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:16px}
+  .card h4{margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .sub{color:var(--muted);font-size:12px;font-family:var(--mono)}
+  .kv{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-family:var(--mono);font-size:12px}
+  .kv b{color:var(--muted);font-weight:400}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--dim);font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.4px}
+  .badge{padding:1px 7px;border-radius:10px;font-size:11px}
+  .badge.ok{background:rgba(55,214,122,.15);color:var(--good)}
+  .badge.no{background:rgba(240,97,109,.15);color:var(--bad)}
+  .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .chart{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}
+  .chart .t{font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono)}
+  svg{display:block;width:100%;overflow:visible}
+  .round{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--panel)}
+  .round summary{cursor:pointer;padding:9px 12px;font-family:var(--mono);font-size:13px;list-style:none}
+  .round summary::-webkit-details-marker{display:none}
+  .round .rn{color:var(--accent)}
+  .round .rd{color:var(--dim);font-size:11px}
+  .round pre{white-space:pre-wrap;word-break:break-word;padding:0 14px 12px;margin:0;
+    color:var(--muted);font-size:12px;line-height:1.5;font-family:var(--mono)}
+  .ledger-line{position:relative;height:26px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;margin:10px 0 16px;overflow:hidden}
+  .seg{position:absolute;top:0;bottom:0;opacity:.85}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:8px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line);
+    border-radius:6px;font-family:var(--mono);font-size:12px;margin:0 8px 8px 0}
+  .chip i{width:9px;height:9px;border-radius:2px}
+  .empty{color:var(--dim);padding:40px;text-align:center;font-family:var(--mono)}
+  .warnbar{background:rgba(230,177,58,.12);border:1px solid var(--warn);color:var(--warn);
+    padding:6px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><span class="whale">&#128011;</span> RSI&nbsp;Board <small>tensorboard for the harness</small></div>
+  <div class="runs" id="runs"></div>
+  <div class="live"><span class="dot" id="livedot"></span><span id="livetxt">connecting</span></div>
+</div>
+<div class="wrap">
+  <div class="side">
+    <div class="tabs" id="tabs"></div>
+    <div id="sidebody"></div>
+  </div>
+  <div class="main" id="main"><div class="empty">loading&#8230;</div></div>
+</div>
+<script>
+const S = {tab:"campaigns", store:null, stores:[], sig:"", ledger:null, rounds:null};
+const TABS = [["campaigns","Campaigns"],["heldout","Held-out blocks"],["ledger","Seed ledger"],["rounds","Rounds"]];
+const $ = (h)=>{const t=document.createElement("template");t.innerHTML=h.trim();return t.content.firstChild;};
+const pct = v => v==null?"&#8211;":(v*100).toFixed(1)+"%";
+const sgn = v => v==null?"&#8211;":(v>=0?"+":"")+(v*100).toFixed(1)+"pp";
+const num = v => v==null?"&#8211;":(""+v);
+const esc = s => (s==null?"":(""+s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+async function api(p){const r=await fetch(p);return r.json();}
+
+// ---- hand-rolled SVG charts ----
+const PAL=["#4d6bfe","#5ee0c8","#e6b13a","#f0616d","#a78bfa","#37d67a"];
+function bars(items,{h=120,fmt=num,colors=PAL}={}){
+  const w=Math.max(items.length*46,120), pad=22, bh=h-pad, m=Math.max(...items.map(i=>i.v||0),1e-9);
+  let s=`<svg viewBox="0 0 ${w} ${h}">`;
+  items.forEach((it,i)=>{
+    const bw=30, x=i*46+8, bar=Math.max((it.v/m)*bh,1), y=bh-bar;
+    const c=it.color||colors[i%colors.length];
+    s+=`<rect x="${x}" y="${y}" width="${bw}" height="${bar}" rx="3" fill="${c}"><title>${esc(it.label)}: ${fmt(it.v)}</title></rect>`;
+    s+=`<text x="${x+bw/2}" y="${bh+12}" fill="#8896ab" font-size="10" text-anchor="middle" font-family="monospace">${esc(it.label)}</text>`;
+    s+=`<text x="${x+bw/2}" y="${y-3}" fill="#e6edf7" font-size="10" text-anchor="middle" font-family="monospace">${fmt(it.v)}</text>`;
+  });
+  return s+"</svg>";
+}
+function line(pts,{h=120,fmt=v=>v.toFixed(3),color="#4d6bfe"}={}){
+  if(!pts.length) return "";
+  const w=Math.max(pts.length*54,140), pad=24, bh=h-pad;
+  const ys=pts.map(p=>p.v), mn=Math.min(...ys), mx=Math.max(...ys), rng=(mx-mn)||1;
+  const X=i=>i*54+24, Y=v=>bh-((v-mn)/rng)*(bh-8)-4;
+  let s=`<svg viewBox="0 0 ${w} ${h}">`;
+  let d=pts.map((p,i)=>`${i?"L":"M"}${X(i)},${Y(p.v)}`).join(" ");
+  s+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="2"/>`;
+  pts.forEach((p,i)=>{
+    s+=`<circle cx="${X(i)}" cy="${Y(p.v)}" r="3.5" fill="${color}"><title>${esc(p.label)}: ${fmt(p.v)}</title></circle>`;
+    s+=`<text x="${X(i)}" y="${bh+12}" fill="#8896ab" font-size="10" text-anchor="middle" font-family="monospace">${esc(p.label)}</text>`;
+    s+=`<text x="${X(i)}" y="${Y(p.v)-7}" fill="#e6edf7" font-size="9.5" text-anchor="middle" font-family="monospace">${fmt(p.v)}</text>`;
+  });
+  return s+"</svg>";
+}
+function groupedBars(groups,series,{h=150,fmt=num}={}){
+  // groups:[{label}], series:[{name,color,vals:[..]}]
+  const gw=Math.max(series.length*22+26,70), w=Math.max(groups.length*gw,140), pad=26, bh=h-pad;
+  const m=Math.max(...series.flatMap(s=>s.vals.map(v=>v||0)),1e-9);
+  let s=`<svg viewBox="0 0 ${w} ${h}">`;
+  groups.forEach((g,gi)=>{
+    series.forEach((se,si)=>{
+      const bw=18,x=gi*gw+13+si*22,v=se.vals[gi]||0,bar=Math.max((v/m)*bh,1),y=bh-bar;
+      s+=`<rect x="${x}" y="${y}" width="${bw}" height="${bar}" rx="2" fill="${se.color}"><title>${esc(g.label)} ${esc(se.name)}: ${fmt(v)}</title></rect>`;
+      s+=`<text x="${x+bw/2}" y="${y-3}" fill="#e6edf7" font-size="9" text-anchor="middle" font-family="monospace">${fmt(v)}</text>`;
+    });
+    s+=`<text x="${gi*gw+gw/2}" y="${bh+13}" fill="#8896ab" font-size="10" text-anchor="middle" font-family="monospace">${esc(g.label)}</text>`;
+  });
+  return s+"</svg>";
+}
+function legend(series){return `<div class="legend">`+series.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")+`</div>`;}
+function chart(title,svg){return `<div class="chart"><div class="t">${esc(title)}</div>${svg}</div>`;}
+
+// ---- rendering ----
+function renderTabs(){
+  const t=document.getElementById("tabs"); t.innerHTML="";
+  TABS.forEach(([k,lbl])=>{const e=$(`<div class="tab ${S.tab===k?"active":""}">${lbl}</div>`);
+    e.onclick=()=>{S.tab=k;renderAll();}; t.appendChild(e);});
+}
+function renderSide(){
+  const b=document.getElementById("sidebody"); b.innerHTML="";
+  if(S.tab==="campaigns"||S.tab==="heldout"){
+    b.appendChild($(`<h3>Stores (${S.stores.length})</h3>`));
+    S.stores.forEach(s=>{
+      const sel=S.store===s.name?"sel":"";
+      const kinds=Object.entries(s.kinds).map(([k,n])=>`${k}:${n}`).join(" ");
+      const e=$(`<div class="store ${sel}">
+        <div class="nm">${esc(s.name)}</div>
+        <div class="meta">
+          <span>${esc(s.task||"&#8211;")}</span>
+          <span>gen ${s.promoted}/${s.generations}</span>
+          ${s.heldout!=null?`<span>held+${s.heldout}</span>`:""}
+          ${s.skipped?`<span style="color:var(--warn)">&#9209; ${s.skipped}</span>`:""}
+        </div>
+        <div class="meta" style="color:var(--dim)">${esc(kinds)}</div>
+      </div>`);
+      e.onclick=()=>{S.store=s.name;renderAll();}; b.appendChild(e);
+    });
+  } else {
+    b.appendChild($(`<div class="sub">${S.tab==="ledger"?"Seed-block burn map parsed from STATUS.md.":"Round feed parsed from progress.md."}</div>`));
+  }
+}
+function scalarPanel(g){
+  const c=[];
+  c.push(chart("dev fixed / broken",groupedBars(g.map(x=>({label:"g"+x.generation})),
+    [{name:"fixed",color:"#37d67a",vals:g.map(x=>x.dev_gate.fixed)},
+     {name:"broken",color:"#f0616d",vals:g.map(x=>x.dev_gate.broken)}])));
+  c.push(chart("dev delta (governed - base)",line(g.map(x=>({label:"g"+x.generation,v:x.dev_delta||0})),{fmt:v=>(v*100).toFixed(1)+"pp"})));
+  c.push(chart("dev rate: base vs governed",groupedBars(g.map(x=>({label:"g"+x.generation})),
+    [{name:"base",color:"#5c6b82",vals:g.map(x=>x.dev_gate.base_rate)},
+     {name:"governed",color:"#4d6bfe",vals:g.map(x=>x.dev_gate.governed_rate)}],{fmt:v=>(v*100).toFixed(0)+"%"})));
+  c.push(chart("dev p-value",bars(g.map(x=>({label:"g"+x.generation,v:x.dev_gate.p_value,color:x.dev_gate.p_value<0.05?"#37d67a":"#f0616d"})),{fmt:v=>v<1e-3?v.toExponential(1):v.toFixed(3)})));
+  return `<div class="charts">${legend([{name:"fixed",color:"#37d67a"},{name:"broken",color:"#f0616d"}])+c.join("")}</div>`;
+}
+function genTable(g){
+  let r=`<table><thead><tr><th>gen</th><th>status</th><th>rule</th><th>n</th><th>base</th><th>gov</th><th>&#916;</th><th>fixed</th><th>broken</th><th>fires</th><th>p</th></tr></thead><tbody>`;
+  g.forEach(x=>{const d=x.dev_gate;
+    r+=`<tr><td>g${x.generation}</td>
+      <td><span class="badge ${x.promoted?"ok":"no"}">${x.promoted?"promoted":"rejected"}</span></td>
+      <td title="${esc(x.reason)}">${esc(x.rule.trigger_str)}${x.rule.recovery?` &rarr; ${esc(x.rule.recovery)}`:""}</td>
+      <td>${num(d.n)}</td><td>${pct(d.base_rate)}</td><td>${pct(d.governed_rate)}</td>
+      <td>${sgn(x.dev_delta)}</td><td>${num(d.fixed)}</td><td>${num(d.broken)}</td><td>${num(d.fires)}</td>
+      <td>${d.p_value<1e-3?d.p_value.toExponential(1):(d.p_value||0).toFixed(4)}</td></tr>`;});
+  return r+"</tbody></table>";
+}
+function ablationChart(a){
+  if(!a||!a.length) return "";
+  return chart("held-out transfer ablation (governed rate vs sensor sd)",
+    line(a.map(x=>({label:"sd"+x.sd+(x.declared_privilege?"*":""),v:x.governed_rate})),{fmt:v=>(v*100).toFixed(0)+"%",color:"#5ee0c8"}))
+    +`<div class="sub">* sd=0 is the privileged ground-truth percept; the drop across sd is the transfer gap.</div>`;
+}
+function campaignView(d){
+  const m=document.getElementById("main");
+  if(d.error){m.innerHTML=`<div class="empty">${esc(d.error)}</div>`;return;}
+  const p=d.prereg, res=d.result, g=d.generations||[];
+  let h=`<div class="card"><h2>${esc(d.name)}</h2>`;
+  if(d.skipped) h+=`<div class="warnbar">&#9209; ${d.skipped} artifact(s) mid-write, skipped this poll</div>`;
+  if(p) h+=`<div class="kv"><span><b>task</b> ${esc(p.task)}</span><span><b>policy</b> ${esc(p.policy)}</span>
+    <span><b>dev</b> ${p.dev_n}</span><span><b>held-out</b> ${p.heldout_n}${p.heldout_block?` [${p.heldout_block[0]}&#8211;${p.heldout_block[1]})`:""}</span>
+    <span><b>stages</b> ${p.stages}</span><span><b>terminal</b> ${p.terminal_label}</span>
+    <span><b>&#945;</b> ${p.alpha}</span><span><b>min_fixed</b> ${p.min_fixed}</span></div>`;
+  h+=`</div>`;
+  if(g.length){
+    h+=`<div class="card"><h2>Generation timeline</h2>${genTable(g)}<h4>scalars across generations</h4>${scalarPanel(g)}</div>`;
+  }
+  if(res){
+    const hd=res.heldout||{}, vb=res.heldout_vs_blind||{};
+    h+=`<div class="card"><h2>Campaign result</h2>
+      <div class="kv"><span><b>promoted</b> ${res.promoted}/${res.generations}</span>
+      <span><b>rules</b> ${esc((res.rules||[]).join(", "))}</span></div>
+      <h4>held-out (scored once)</h4>
+      <div class="kv"><span><b>n</b> ${num(hd.n)}</span><span><b>base</b> ${pct(hd.base_rate)}</span>
+      <span><b>governed</b> ${pct(hd.governed_rate)}</span><span><b>&#916;</b> ${sgn(res.heldout_delta)}</span>
+      <span><b>fixed</b> ${num(hd.fixed)}</span><span><b>broken</b> ${num(hd.broken)}</span>
+      <span><b>fires</b> ${num(hd.fires)}</span><span><b>p</b> ${hd.p_value!=null?hd.p_value.toExponential(1):"&#8211;"}</span></div>
+      ${vb.fixed!=null?`<h4>vs blind twin (is the win judgement?)</h4><div class="kv"><span><b>fixed</b> ${vb.fixed}</span><span><b>broken</b> ${vb.broken}</span><span><b>p</b> ${vb.p_value!=null?vb.p_value.toExponential(1):"&#8211;"}</span></div>`:""}
+      <h4>charts</h4><div class="charts">${ablationChart(res.ablation)}</div></div>`;
+  }
+  if(d.round25) h+=diagRound25(d.round25);
+  if(d.probe) h+=diagProbe(d.probe);
+  if(d.round88_fix) h+=diagFix(d.round88_fix);
+  if(!g.length&&!res&&!d.round25&&!d.probe&&!d.round88_fix)
+    h+=`<div class="card sub">kinds present: ${esc(JSON.stringify(d.kinds))}</div>`;
+  m.innerHTML=h;
+}
+function diagRound25(r){
+  const names=Object.keys(r.arms);
+  const svg=groupedBars(names.map(n=>({label:n})),
+    [{name:"fixed",color:"#37d67a",vals:names.map(n=>r.arms[n].heldout.fixed)},
+     {name:"fires",color:"#4d6bfe",vals:names.map(n=>r.arms[n].heldout.fires)}]);
+  let rows=names.map(n=>`<tr><td>${esc(n)}</td><td style="text-align:left">${esc(r.arms[n].trigger_str)}</td>
+    <td>${r.arms[n].heldout.fixed}</td><td>${r.arms[n].heldout.broken}</td><td>${r.arms[n].heldout.fires}</td></tr>`).join("");
+  return `<div class="card"><h2>Arm comparison (round25 rerun)</h2>
+    <div class="sub">held-out block [${r.heldout_block}] &#183; same detection, different repair yield</div>
+    <table><thead><tr><th>arm</th><th>rule</th><th>fixed</th><th>broken</th><th>fires</th></tr></thead><tbody>${rows}</tbody></table>
+    <h4>fixed vs fires by arm</h4>${legend([{name:"fixed",color:"#37d67a"},{name:"fires",color:"#4d6bfe"}])}<div class="charts">${chart("",svg)}</div></div>`;
+}
+function diagProbe(p){
+  const a=(p.p2&&p.p2.arms)||{};
+  const keys=Object.keys(a);
+  const svg=keys.length?groupedBars(keys.map(k=>({label:k.replace("search_","s").replace("naive_","n").replace("arm","@")})),
+    [{name:"fixed",color:"#37d67a",vals:keys.map(k=>a[k].fixed)}]):"";
+  return `<div class="card"><h2>Arm-time probe <span class="badge no">${esc(p.grade)}</span></h2>
+    <div class="sub">is the search objective blind to fire-time repair yield?</div>
+    ${p.p1?`<div class="kv"><span><b>tie@top</b> ${p.p1.tie_count_at_top}</span>
+      <span><b>naive arm reachable</b> ${p.p1.arm_set&&p.p1.arm_set.naive_arm_reachable}</span>
+      <span><b>naive thr in grid</b> ${p.p1.grid_check&&p.p1.grid_check.in_grid}</span></div>`:""}
+    ${svg?`<h4>repair yield (fixed) by fire time</h4><div class="charts">${chart("fixed per arm",svg)}</div>`:""}</div>`;
+}
+function diagFix(f){
+  return `<div class="card"><h2>Round88 fix <span class="badge no">${esc(f.grade)}</span></h2>
+    <div class="kv"><span><b>dev rate</b> ${pct(f.dev_rate)}</span><span><b>top score</b> ${num(f.top_score)}</span>
+    <span><b>anchors</b> ${esc(JSON.stringify(f.anchors))}</span></div></div>`;
+}
+
+function heldoutView(hb){
+  const m=document.getElementById("main");
+  if(!hb||!hb.blocks||!hb.blocks.length){m.innerHTML=`<div class="empty">no held-out blocks for this store</div>`;return;}
+  const B=hb.blocks;
+  let h=`<div class="card"><h2>Held-out blocks &#183; ${esc(hb.store)}</h2>
+    <div class="sub">task ${esc(hb.task)} &#183; ${B.length} block(s), one point each &#8212; the headline needs three</div>
+    <table><thead><tr><th>block</th><th>source</th><th>n</th><th>base</th><th>gov</th><th>&#916;</th><th>fixed</th><th>broken</th><th>p</th><th>judged</th></tr></thead><tbody>`;
+  B.forEach(b=>{const p=b.paired||{};
+    h+=`<tr><td>${num(b.block)}</td><td style="text-align:left">${esc(b.source)}</td><td>${num(p.n)}</td>
+      <td>${pct(p.base_rate)}</td><td>${pct(p.governed_rate)}</td><td>${sgn(b.delta)}</td>
+      <td>${num(p.fixed)}</td><td>${num(p.broken)}</td><td>${p.p_value!=null?p.p_value.toExponential(1):"&#8211;"}</td>
+      <td>${b.judgement==null?"&#8211;":(b.judgement?"&#10003;":"&#10007;")}</td></tr>`;});
+  h+=`</tbody></table><h4>fixed &amp; delta across blocks</h4>
+    ${legend([{name:"fixed",color:"#37d67a"},{name:"delta pp",color:"#5ee0c8"}])}
+    <div class="charts">
+      ${chart("fixed per block",bars(B.map(b=>({label:num(b.block),v:(b.paired||{}).fixed||0})),{fmt:num,colors:["#37d67a"]}))}
+      ${chart("delta per block (pp)",bars(B.map(b=>({label:num(b.block),v:(b.delta||0)*100})),{fmt:v=>v.toFixed(1),colors:["#5ee0c8"]}))}
+    </div></div>`;
+
+  const staged=B.filter(b=>b.stage_attribution);
+  if(staged.length){
+    const stages=staged[0].stage_attribution.stage_order;
+    // per-stage success bars, grouped by block
+    h+=`<div class="card"><h2>Stage attribution</h2>
+      <div class="sub">where the residual failures land &#8212; grasp vs place</div>
+      <h4>per-stage success (reached &rarr; success)</h4>
+      ${legend(staged.map((b,i)=>({name:num(b.block),color:PAL[i%PAL.length]})))}
+      <div class="charts">`;
+    stages.forEach(st=>{
+      h+=chart(st+" success",groupedBars([{label:st}],
+        staged.map((b,i)=>({name:num(b.block),color:PAL[i%PAL.length],
+          vals:[b.stage_attribution.per_stage[st].success/Math.max(b.stage_attribution.per_stage[st].reached,1)]})),
+        {fmt:v=>(v*100).toFixed(0)+"%"}));
+    });
+    h+=`</div><h4>first-failure attribution (count by first failed stage)</h4>
+      ${legend(staged.map((b,i)=>({name:num(b.block),color:PAL[i%PAL.length]})))}
+      <div class="charts">`;
+    const ffkeys=Object.keys(staged[0].stage_attribution.first_failure);
+    h+=chart("first failure by stage",groupedBars(ffkeys.map(k=>({label:k})),
+      staged.map((b,i)=>({name:num(b.block),color:PAL[i%PAL.length],
+        vals:ffkeys.map(k=>b.stage_attribution.first_failure[k])})),{fmt:num}));
+    h+=`</div></div>`;
+  } else {
+    h+=`<div class="card sub">no stage attribution on these blocks (campaign ran without a stage overlay)</div>`;
+  }
+  m.innerHTML=h;
+}
+
+function ledgerView(){
+  const m=document.getElementById("main"), R=(S.ledger&&S.ledger.ranges)||[];
+  if(!R.length){m.innerHTML=`<div class="empty">no seed ledger found in STATUS.md</div>`;return;}
+  const lo=Math.min(...R.map(r=>r.lo)), hi=Math.max(...R.map(r=>r.hi)), span=(hi-lo)||1;
+  const col={burned:"#f0616d",reserved:"#e6b13a",planned:"#4d6bfe"};
+  // draw planned first, burned/reserved layered on top
+  const order=["planned","reserved","burned"];
+  let segs="";
+  order.forEach(st=>R.filter(r=>r.state===st).forEach(r=>{
+    const x=((r.lo-lo)/span)*100, w=Math.max(((r.hi-r.lo)/span)*100,0.4);
+    segs+=`<div class="seg" style="left:${x}%;width:${w}%;background:${col[st]}" title="${esc(r.line)}"></div>`;
+  }));
+  let chips="";
+  R.forEach(r=>chips+=`<span class="chip" title="${esc(r.line)}"><i style="background:${col[r.state]}"></i>${r.lo}&#8211;${r.hi} <span style="color:var(--dim)">${r.state}</span></span>`);
+  m.innerHTML=`<div class="card"><h2>Seed-ledger burn map</h2>
+    <div class="sub">parsed from STATUS.md &#183; range ${lo}&#8211;${hi} &#183; hover for source line</div>
+    <div class="legend"><span><i style="background:${col.burned}"></i>burned</span>
+      <span><i style="background:${col.reserved}"></i>reserved</span>
+      <span><i style="background:${col.planned}"></i>planned</span></div>
+    <div class="ledger-line">${segs}</div>${chips}</div>`;
+}
+function roundsView(){
+  const m=document.getElementById("main"), R=(S.rounds&&S.rounds.rounds)||[];
+  if(!R.length){m.innerHTML=`<div class="empty">no rounds found in progress.md</div>`;return;}
+  let h=`<div class="card"><h2>Rounds feed <span class="sub">(${R.length}, latest first)</span></h2></div>`;
+  R.forEach((r,i)=>{h+=`<details class="round" ${i===0?"open":""}>
+    <summary><span class="rn">Round ${r.round}</span> <span class="rd">${esc(r.date)}</span> &#183; ${esc(r.title)}</summary>
+    <pre>${esc(r.body)}</pre></details>`;});
+  m.innerHTML=h;
+}
+
+async function renderMain(){
+  const m=document.getElementById("main");
+  if(S.tab==="campaigns"){
+    if(!S.store){m.innerHTML=`<div class="empty">select a store &#8592;</div>`;return;}
+    campaignView(await api("/api/store?name="+encodeURIComponent(S.store)));
+  } else if(S.tab==="heldout"){
+    if(!S.store){m.innerHTML=`<div class="empty">select a store &#8592;</div>`;return;}
+    heldoutView(await api("/api/heldout?name="+encodeURIComponent(S.store)));
+  } else if(S.tab==="ledger"){
+    if(!S.ledger) S.ledger=await api("/api/ledger"); ledgerView();
+  } else if(S.tab==="rounds"){
+    if(!S.rounds) S.rounds=await api("/api/rounds"); roundsView();
+  }
+}
+function renderAll(){renderTabs();renderSide();renderMain();}
+
+async function poll(){
+  try{
+    const d=await api("/api/stores");
+    document.getElementById("runs").textContent=d.runs_dir;
+    const sig=d.stores.map(s=>s.name+":"+s.mtime).join("|");
+    const changed=sig!==S.sig;
+    S.stores=d.stores; S.sig=sig;
+    const dot=document.getElementById("livedot"), txt=document.getElementById("livetxt");
+    dot.className="dot on"; txt.textContent="live";
+    if(!S.store&&S.stores.length) S.store=S.stores[0].name;
+    if(changed){renderSide(); if(S.tab==="campaigns"||S.tab==="heldout") renderMain();}
+  }catch(e){
+    document.getElementById("livedot").className="dot";
+    document.getElementById("livetxt").textContent="offline";
+  }
+}
+(async function(){renderTabs();await poll();renderAll();setInterval(poll,4000);})();
+</script>
+</body>
+</html>

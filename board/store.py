@@ -1,0 +1,333 @@
+"""Read-only parse layer over RSI campaign stores + STATUS/progress markdown.
+
+Pure functions, no server, no writes -- runs/ is sealed evidence. The store
+shape is the one `plugins.rsi.campaign.CampaignStore` writes: an
+``index.jsonl`` of ``{seq, kind, sha, time}`` rows plus content-addressed
+``artifacts/<sha>.json`` payloads. The *kind* lives in the index, never in the
+payload, so the index is the discriminator (see CampaignStore.put).
+
+Robust to partial/mid-write JSON: a campaign writing artifacts tonight can be
+polled while a file is half-flushed. Unreadable index rows and unreadable
+artifacts are skipped and counted, so a LIVE poll landing mid-write simply
+retries on the next tick rather than crashing.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+# --- store discovery / robust reads -----------------------------------------
+
+
+def is_store(store_dir: str | Path) -> bool:
+    """A directory is a campaign store iff it carries an index.jsonl."""
+    return (Path(store_dir) / "index.jsonl").exists()
+
+
+def _index_rows(store_dir: Path) -> list[dict]:
+    """Index rows in seq order, skipping any line that is not valid JSON.
+
+    A campaign appends to index.jsonl line-by-line; a poll can catch a
+    half-written trailing line. Skip it -- the next poll gets the whole row.
+    """
+    rows: list[dict] = []
+    index_path = store_dir / "index.jsonl"
+    if not index_path.exists():
+        return rows
+    for line in index_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and "kind" in row and "sha" in row:
+            rows.append(row)
+    return rows
+
+
+def read_store_artifacts(store_dir: str | Path) -> tuple[dict[str, list[dict]], int]:
+    """Every readable artifact grouped by kind, in index order, plus a skip count.
+
+    The skip count is artifacts referenced by the index whose JSON did not parse
+    or whose file is missing -- i.e. mid-write. Callers surface it so the UI can
+    show "1 artifact still being written" instead of pretending it is absent.
+    """
+    store_dir = Path(store_dir)
+    by_kind: dict[str, list[dict]] = {}
+    skipped = 0
+    for row in _index_rows(store_dir):
+        path = store_dir / "artifacts" / f"{row['sha']}.json"
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            skipped += 1
+            continue
+        by_kind.setdefault(row["kind"], []).append(payload)
+    return by_kind, skipped
+
+
+def store_mtime(store_dir: str | Path) -> float:
+    """Newest mtime across index.jsonl and the artifacts dir -- the LIVE signal.
+
+    A new generation both appends to the index and drops a new artifact file, so
+    either mtime moving means "something changed"; the frontend polls this.
+    """
+    store_dir = Path(store_dir)
+    times = [0.0]
+    for p in (store_dir / "index.jsonl", store_dir / "artifacts"):
+        try:
+            times.append(p.stat().st_mtime)
+        except OSError:
+            pass
+    return max(times)
+
+
+# --- payload shaping --------------------------------------------------------
+
+
+def _delta(paired: dict) -> float | None:
+    """governed_rate - base_rate: the effect a paired gate measured. None if the
+    dict is not a paired result (defensive against a mid-write partial)."""
+    if not isinstance(paired, dict):
+        return None
+    g, b = paired.get("governed_rate"), paired.get("base_rate")
+    if g is None or b is None:
+        return None
+    return g - b
+
+
+def trigger_str(trig: dict) -> str:
+    """A one-line human summary of a Trigger payload, e.g.
+    ``observable.finger_gap value lt 0.001 @arm58``. Mirrors the fields the
+    campaign's Trigger.describe() carries without importing the plugin."""
+    if not isinstance(trig, dict):
+        return str(trig)
+    thr = trig.get("threshold")
+    thr_s = f"{thr:.4g}" if isinstance(thr, (int, float)) else str(thr)
+    return (f"{trig.get('feature')} {trig.get('reducer')} {trig.get('op')} "
+            f"{thr_s} @arm{trig.get('arm_after')} dwell{trig.get('dwell')}")
+
+
+def _rule_view(rule: dict) -> dict:
+    """{trigger_str, recovery} from a rule payload ({trigger, recovery, rule_id})."""
+    if not isinstance(rule, dict):
+        return {"rule_id": None, "trigger_str": str(rule), "recovery": None}
+    rec = rule.get("recovery") or {}
+    return {"rule_id": rule.get("rule_id"),
+            "trigger_str": trigger_str(rule.get("trigger", {})),
+            "recovery": rec.get("name") or rec.get("strategy")}
+
+
+def _ablation(entries: list) -> list[dict]:
+    """[[sd, paired], ...] -> [{sd, governed_rate, base_rate, delta, privileged}]."""
+    out = []
+    for entry in entries or []:
+        try:
+            sd, paired = entry
+        except (ValueError, TypeError):
+            continue
+        out.append({"sd": sd, "governed_rate": paired.get("governed_rate"),
+                    "base_rate": paired.get("base_rate"), "delta": _delta(paired),
+                    "declared_privilege": paired.get("declared_privilege")})
+    return out
+
+
+def store_detail(store_dir: str | Path) -> dict:
+    """Full structured view of one store: whichever of the known artifact kinds
+    are present. Unknown kinds are still surfaced (name + count) so a new probe
+    type is visible before this parser learns to shape it."""
+    store_dir = Path(store_dir)
+    by_kind, skipped = read_store_artifacts(store_dir)
+    detail: dict = {"name": store_dir.name, "skipped": skipped,
+                    "kinds": {k: len(v) for k, v in by_kind.items()}}
+
+    prereg = (by_kind.get("preregistration") or [None])[0]
+    if prereg:
+        heldout = prereg.get("heldout") or []
+        dev = prereg.get("dev") or []
+        detail["prereg"] = {
+            "dev_n": len(dev), "heldout_n": len(heldout),
+            "task": prereg.get("task"), "policy": prereg.get("policy"),
+            "stages": bool(prereg.get("stages")),
+            "terminal_label": prereg.get("terminal_label"),
+            "alpha": prereg.get("alpha"), "min_fixed": prereg.get("min_fixed"),
+            "percept_noise": prereg.get("percept_noise"),
+            "heldout_block": [min(heldout), max(heldout) + 1] if heldout else None,
+        }
+
+    gens = []
+    for g in by_kind.get("generation", []):
+        dg, bg = g.get("dev_gate", {}), g.get("blind_gate", {})
+        gens.append({
+            "generation": g.get("generation"), "promoted": g.get("promoted"),
+            "reason": g.get("reason"), "rule": _rule_view(g.get("rule", {})),
+            "dev_gate": dg, "dev_delta": _delta(dg),
+            "blind_gate": bg, "blind_delta": _delta(bg),
+        })
+    if gens:
+        detail["generations"] = sorted(gens, key=lambda x: x["generation"] or 0)
+
+    result = (by_kind.get("campaign_result") or [None])[0]
+    if result:
+        detail["result"] = {
+            "generations": result.get("generations"),
+            "promoted": result.get("promoted"), "rules": result.get("rules"),
+            "heldout": result.get("heldout"),
+            "heldout_delta": _delta(result.get("heldout", {})),
+            "heldout_vs_blind": result.get("heldout_vs_blind"),
+            "ablation": _ablation(result.get("ablation", [])),
+        }
+
+    rescores = []
+    for r in by_kind.get("heldout_rescore", []):
+        paired = r.get("paired", {})
+        rescores.append({
+            "block": r.get("block"), "n": r.get("n"),
+            "paired": paired, "delta": _delta(paired),
+            "vs_blind": r.get("vs_blind"), "judgement": r.get("judgement"),
+            "stage_attribution": r.get("stage_attribution"),
+        })
+    if rescores:
+        detail["rescores"] = rescores
+
+    r25 = (by_kind.get("round25_rerun") or [None])[0]
+    if r25:
+        arms = {}
+        for name, arm in (r25.get("arms") or {}).items():
+            arms[name] = {"trigger_str": trigger_str((arm.get("rule") or {}).get("trigger", {})),
+                          "heldout": arm.get("heldout")}
+        detail["round25"] = {"dev_block": r25.get("dev_block"),
+                             "heldout_block": r25.get("heldout_block"), "arms": arms}
+
+    probe = (by_kind.get("arm_time_probe") or [None])[0]
+    if probe:
+        detail["probe"] = {"grade": probe.get("grade"), "p1": probe.get("p1"),
+                          "p2": probe.get("p2")}
+
+    fix = (by_kind.get("round88_fix") or [None])[0]
+    if fix:
+        detail["round88_fix"] = {"grade": fix.get("grade"), "dev_rate": fix.get("dev_rate"),
+                                "top_score": fix.get("top_score"), "anchors": fix.get("anchors"),
+                                "heldout": fix.get("heldout")}
+    return detail
+
+
+def store_summary(store_dir: str | Path) -> dict:
+    """Cheap card for the store list: counts, task, promoted/total generations,
+    mtime. Reads the artifacts once (stores are tiny), so the list is honest
+    about mid-write skips too."""
+    store_dir = Path(store_dir)
+    by_kind, skipped = read_store_artifacts(store_dir)
+    prereg = (by_kind.get("preregistration") or [None])[0]
+    result = (by_kind.get("campaign_result") or [None])[0]
+    gens = by_kind.get("generation", [])
+    return {
+        "name": store_dir.name,
+        "mtime": store_mtime(store_dir),
+        "kinds": {k: len(v) for k, v in by_kind.items()},
+        "task": prereg.get("task") if prereg else None,
+        "generations": len(gens),
+        "promoted": sum(1 for g in gens if g.get("promoted")),
+        "heldout": (result or {}).get("heldout", {}).get("fixed") if result else None,
+        "skipped": skipped,
+    }
+
+
+def list_stores(runs_dir: str | Path) -> list[dict]:
+    """Every store under runs_dir, newest first -- auto-discovery, TensorBoard-style."""
+    runs_dir = Path(runs_dir)
+    stores = [store_summary(p) for p in sorted(runs_dir.iterdir()) if p.is_dir() and is_store(p)]
+    return sorted(stores, key=lambda s: s["mtime"], reverse=True)
+
+
+def heldout_blocks(runs_dir: str | Path, store_name: str) -> dict:
+    """The multi-block held-out comparison for a campaign: its own scored block
+    plus every sibling ``<name>-rescore-*`` store's rescored block. Each block
+    carries the paired numbers and (when the campaign ran a stage overlay) the
+    grasp/place stage attribution. This is view #2 -- stack-g1's three blocks."""
+    runs_dir = Path(runs_dir)
+    detail = store_detail(runs_dir / store_name)
+    blocks = []
+    result = detail.get("result")
+    if result and result.get("heldout"):
+        h = result["heldout"]
+        prereg = detail.get("prereg", {})
+        first = (prereg.get("heldout_block") or [None])[0]
+        blocks.append({"source": store_name, "block": first, "paired": h,
+                       "delta": result.get("heldout_delta"),
+                       "vs_blind": result.get("heldout_vs_blind"),
+                       "stage_attribution": None})
+    for p in sorted(runs_dir.iterdir()):
+        if not (p.is_dir() and is_store(p) and p.name.startswith(f"{store_name}-rescore")):
+            continue
+        for rs in store_detail(p).get("rescores", []):
+            blocks.append({"source": p.name, "block": rs["block"], "paired": rs["paired"],
+                           "delta": rs["delta"], "vs_blind": rs.get("vs_blind"),
+                           "judgement": rs.get("judgement"),
+                           "stage_attribution": rs.get("stage_attribution")})
+    blocks.sort(key=lambda b: b["block"] if b["block"] is not None else 0)
+    return {"store": store_name, "task": detail.get("prereg", {}).get("task"), "blocks": blocks}
+
+
+# --- markdown feeds ---------------------------------------------------------
+
+_RANGE = re.compile(r"(\d{4,5})-(\d{4,5})")
+_STATE_ORDER = {"planned": 0, "reserved": 1, "burned": 2}
+
+
+def parse_ledger(text: str) -> list[dict]:
+    """Seed-block burn map from STATUS.md's ``区块预算`` section.
+
+    The ledger is prose, not a table, so this is a best-effort extraction: pull
+    every ``NNNN-NNNN`` range from the budget section, classify each by the
+    keyword in its sentence (已烧 -> burned, 留/预留/后续/需要时 -> reserved,
+    else planned), and keep the strongest state when a range recurs (a held-out
+    block first planned then later burned reads as burned). The source line is
+    carried for a tooltip so a fuzzy classification is always auditable.
+    """
+    lines = text.splitlines()
+    start = next((i for i, ln in enumerate(lines) if "区块预算" in ln), None)
+    if start is None:
+        return []
+    seg: list[str] = []
+    for ln in lines[start:]:
+        if "frontier" in ln and seg:
+            break
+        seg.append(ln)
+    found: dict[tuple[int, int], dict] = {}
+    for ln in seg:
+        burned = "已烧" in ln
+        reserved = any(k in ln for k in ("预留", "留后续", "需要时", "留复现", "留后"))
+        for m in _RANGE.finditer(ln):
+            lo, hi = int(m.group(1)), int(m.group(2))
+            if hi <= lo:
+                continue
+            state = "burned" if burned else "reserved" if reserved else "planned"
+            key = (lo, hi)
+            prev = found.get(key)
+            if prev is None or _STATE_ORDER[state] > _STATE_ORDER[prev["state"]]:
+                found[key] = {"lo": lo, "hi": hi, "state": state,
+                              "line": re.sub(r"\*\*|`", "", ln).strip()}
+    return sorted(found.values(), key=lambda r: r["lo"])
+
+
+_ROUND = re.compile(r"^##\s*Round\s+(\d+)\s*-\s*([\d-]+)\s*-\s*(.*)$")
+
+
+def parse_rounds(text: str) -> list[dict]:
+    """progress.md ``## Round N - DATE - TITLE`` sections, latest first, each with
+    its body text for a collapsible rounds feed."""
+    lines = text.splitlines()
+    heads = [(i, m) for i, ln in enumerate(lines) if (m := _ROUND.match(ln))]
+    rounds = []
+    for idx, (i, m) in enumerate(heads):
+        end = heads[idx + 1][0] if idx + 1 < len(heads) else len(lines)
+        body = "\n".join(lines[i + 1:end]).strip()
+        rounds.append({"round": int(m.group(1)), "date": m.group(2),
+                       "title": m.group(3).strip(), "body": body})
+    rounds.sort(key=lambda r: r["round"], reverse=True)
+    return rounds
