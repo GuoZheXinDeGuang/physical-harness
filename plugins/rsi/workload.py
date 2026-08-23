@@ -101,14 +101,24 @@ def run(
 ) -> dict[str, Any]:
     """Run one RSI campaign through the kernel and publish its promoted skills.
 
-    Resolves the three capabilities this workload consumes -- `embodiment.env`,
-    `policy.driver`, `graph.skill` -- as consumer "rsi" so the kernel's audit
-    trail records the dependency, then stamps the preregistration with the
-    resolved env/policy provider refs before running the campaign. Those refs
-    travel on the spec as strings, never as the provider objects themselves,
-    because a live hook does not survive multiprocessing spawn while a
-    "module:factory" string pickles, content-hashes and audits cleanly
-    (harness/registry.py; ARCHITECTURE.md's "L0 迁移方式").
+    Resolves every capability this workload consumes -- `embodiment.env`,
+    `policy.driver`, `percept.model`, `exec.rollouts`, `graph.skill` and
+    `reasoner.proposer` -- as consumer "rsi" so the kernel's audit trail records
+    the dependency, then stamps the preregistration with the resolved env/policy
+    provider refs before running the campaign. Those refs travel on the spec as
+    strings, never as the provider objects themselves, because a live hook does
+    not survive multiprocessing spawn while a "module:factory" string pickles,
+    content-hashes and audits cleanly (harness/registry.py; ARCHITECTURE.md's
+    "L0 迁移方式").
+
+    The mounted `reasoner.proposer` drives `run_campaign`'s per-generation
+    proposal ONLY when it declares a model `identity` (an LLM card, e.g.
+    `plugins.model_qwen`): that identity is content, so `run_campaign` stamps it
+    into the seal. The deterministic reference (`plugins.reasoner`) declares
+    none and falls through to `run_campaign`'s byte-identical internal proposer
+    -- passing the generic search seam instead would drop `propose_rule`'s
+    campaign-internal tie-break audit and its prereg-aware recovery/rule_id, so
+    a sealed campaign would silently regress (tests/test_reasoner_seam.py).
 
     After the campaign returns, every rule it promoted is published as a
     `SkillRecord` to the resolved `graph.skill` provider. Returns
@@ -119,6 +129,7 @@ def run(
     kernel.resolve("percept.model", consumer=CONSUMER)
     executor = kernel.resolve("exec.rollouts", consumer=CONSUMER)
     skill_graph = kernel.resolve("graph.skill", consumer=CONSUMER)
+    reasoner = kernel.resolve("reasoner.proposer", consumer=CONSUMER)
 
     # Workers rebuild providers from the bare ref string, which cannot carry
     # Mount params. Refusing here beats silently running a different provider
@@ -138,8 +149,12 @@ def run(
     )
     store = CampaignStore(Path(store_root))
     start_seq = store.size()
+    # Drive the mounted reasoner only when it declares a model identity (see the
+    # docstring); the deterministic reference falls through to run_campaign's
+    # byte-identical internal proposer.
+    reasoner_arg = reasoner if getattr(reasoner, "identity", None) is not None else None
     result = campaign.run_campaign(prereg2, store, workers=workers, verbose=verbose,
-                                   executor=executor)
+                                   executor=executor, reasoner=reasoner_arg)
 
     mount_plan_sha = _mount_plan_sha(kernel)
     heldout = result.get("heldout") or {}

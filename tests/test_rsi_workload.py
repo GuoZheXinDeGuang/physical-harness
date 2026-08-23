@@ -20,6 +20,7 @@ import pytest
 from harness.config import sha_json
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
+from harness.fakes import FakeReasoner
 from harness.kernel import Kernel
 from plugins.graphs import InMemorySkillGraph
 from plugins.rsi import campaign, workload
@@ -81,6 +82,9 @@ def _kernel_with_fakes() -> Kernel:
     k.provide("percept.model", _FakePercept(), ref="tests.fakes:percept")
     k.provide("exec.rollouts", _FakeExecutor(), ref="tests.fakes:executor")
     k.provide("graph.skill", InMemorySkillGraph(), ref="plugins.graphs:skill_graph_provider")
+    # The deterministic reference (no model identity): workload.run resolves it
+    # for the audit trail and falls through to run_campaign's internal proposer.
+    k.provide("reasoner.proposer", FakeReasoner(), ref="harness.fakes:reasoner_provider")
     return k
 
 
@@ -115,7 +119,8 @@ def _fake_run_campaign_factory(captured: dict, *, second_generation_promoted: bo
     produce two skills). `heldout_vs_blind=_OMIT` drops the key from the
     result, mirroring a require_judgement=False campaign.
     """
-    def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None):
+    def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None,
+                          reasoner=None):
         captured["prereg"] = prereg
         captured["store"] = store
         # Mirror the real run_campaign: the sealed prereg payload is _hash_payload
@@ -183,7 +188,7 @@ def test_kernel_resolutions_are_accounted_under_consumer_rsi(tmp_path, monkeypat
     resolved = {r.capability: r.consumer for r in kernel.resolutions()}
     assert resolved == {"embodiment.env": "rsi", "policy.driver": "rsi",
                         "percept.model": "rsi", "exec.rollouts": "rsi",
-                        "graph.skill": "rsi"}
+                        "graph.skill": "rsi", "reasoner.proposer": "rsi"}
     assert not any(r.privileged for r in kernel.resolutions())
 
 
@@ -279,7 +284,8 @@ def test_returned_digests_match_graph_skills(tmp_path, monkeypatch):
 def test_no_promoted_generations_publishes_nothing(tmp_path, monkeypatch):
     kernel = _kernel_with_fakes()
 
-    def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None):
+    def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None,
+                          reasoner=None):
         prereg_sha = store.put("preregistration", dataclasses.asdict(prereg))
         store.put("generation", {
             "preregistration_sha": prereg_sha, "generation": 1,
@@ -326,6 +332,7 @@ def test_mount_plan_sha_present_when_kernel_mounted_a_plan(tmp_path, monkeypatch
         Mount("percept.model", "plugins.embodiment_robosuite.percept:provider"),
         Mount("exec.rollouts", "harness.executor:provider"),
         Mount("graph.skill", "plugins.graphs:skill_graph_provider"),
+        Mount("reasoner.proposer", "plugins.reasoner:provider", {"top_k": 3}),
     )))
     kernel.mount(plan)
 
@@ -355,6 +362,7 @@ def test_mount_plan_sha_is_path_portable(tmp_path, monkeypatch):
             Mount("exec.rollouts", "harness.executor:provider"),
             Mount("graph.skill", "plugins.graphs:skill_graph_provider",
                   {"root": str(out / "skills")}),
+            Mount("reasoner.proposer", "plugins.reasoner:provider", {"top_k": 3}),
         ))))
         workload.run(_prereg(), out / "store", kernel, workers=2, verbose=False)
         return kernel.resolve("graph.skill", consumer="test").skills()[0]["mount_plan_sha"]
@@ -616,6 +624,7 @@ def test_campaign_completion_enters_the_session_chain(tmp_path, monkeypatch):
     kernel.provide("percept.model", _FakePercept(), ref="tests.fakes:percept")
     kernel.provide("exec.rollouts", _FakeExecutor(), ref="tests.fakes:executor")
     kernel.provide("graph.skill", InMemorySkillGraph(), ref="plugins.graphs:skill_graph_provider")
+    kernel.provide("reasoner.proposer", FakeReasoner(), ref="harness.fakes:reasoner_provider")
     captured: dict = {}
     monkeypatch.setattr(campaign, "run_campaign",
                         _fake_run_campaign_factory(captured, second_generation_promoted=False))

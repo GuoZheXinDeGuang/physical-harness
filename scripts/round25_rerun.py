@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Round 81 (M1): rerun round 25's search vs LLM comparison on a fresh block.
 
-Single-generation A/B/C, standalone by design: run_campaign still hardwires the
-deterministic propose_rule, and wiring reasoner.proposer into the campaign loop
-is M2/M3 work. This script reuses the campaign's own pieces -- _specs, gate._run,
-paired_gate, Bundle, CampaignStore -- so every number comes off the exact code
-path the sealed campaigns used, while touching none of it.
+Single-generation A/B/C, standalone by design: run_campaign now drives ONE
+mounted reasoner.proposer per campaign (round 96, wired into production via
+plugins.rsi.workload.run), but this script compares THREE proposers -- search,
+naive_mock, qwen38 -- side by side on one shared dev rollout, which a
+single-reasoner campaign loop cannot do. It reuses the campaign's own pieces --
+_specs, gate._run, paired_gate, Bundle, CampaignStore -- so every number comes
+off the exact code path the sealed campaigns used, while touching none of it.
 
 Three arms, one shared dev rollout, one held-out paired gate each:
   search      the deterministic reference proposer (round 26's calibration in)

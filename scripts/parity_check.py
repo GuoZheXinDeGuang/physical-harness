@@ -19,6 +19,18 @@ Reruns the archived campaign through the kernel path into
 ``runs/campaign-pj-scripted-parity`` (or ``--rerun-dir``), prints one
 PASS/FAIL line per compared field group, and exits nonzero on any mismatch.
 
+SCOPE -- what full-rerun parity does and does NOT prove. This check is a fresh
+re-PROPOSAL, so it is only valid for campaigns sealed under the CURRENT search
+version. The proposal half has changed LEGITIMATELY since some seals were made
+-- the repair-aware tie-break landed in round 88 (``break_tie_by_repair``), and
+the reasoner seam went live in round 96 -- so an older seal re-run today can pick
+a different-but-equal-scoring trigger and fail this bit-for-bit check with no
+adapter having drifted. It is the wrong instrument for those seals. The
+SEALED-parity instrument is the RESCORE path (``scripts/rescore_heldout.py``):
+it rebuilds the sealed bundle and re-scores held-out blocks WITHOUT re-proposing,
+so it is invariant to proposer-version drift. Use this full rerun only for
+campaigns sealed under today's search version; use rescore to re-verify the rest.
+
 This module is deliberately split into pure comparison/reconstruction
 functions (unit-tested against small hand-built store fixtures, no simulator
 involved) and `run_parity_check`, the impure driver that actually mounts a

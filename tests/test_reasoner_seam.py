@@ -117,6 +117,105 @@ def test_default_reasoner_is_byte_identical_to_the_old_direct_call(tmp_path, mon
     assert a["rules"] == b["rules"] and a["promoted"] == b["promoted"]
 
 
+# --- (2b) the wired production path: rsi_run resolves+drives the mount ---------
+#
+# T3 completes what R7 left half-wired: plugins.rsi.workload.run (rsi_run) now
+# RESOLVES reasoner.proposer through the kernel and passes it to run_campaign, so
+# a mounted card is actually consulted in production and the base's audit trail
+# records the dependency. These two tests pin both halves end to end on a tiny
+# fake campaign: parity when the deterministic reference is mounted, and the seam
+# going LIVE when an identity-bearing card is mounted.
+
+class _Env:
+    def make_env(self, spec):
+        raise AssertionError("make_env must not run: gate._run is faked")
+
+    def tasks(self):
+        return ("lift",)
+
+    def object_key(self, spec):
+        return "cube_pos"
+
+    def success(self, obs, spec, start_z):
+        return False
+
+
+class _Policy:
+    def make_driver(self, spec):
+        raise AssertionError("make_driver must not run: gate._run is faked")
+
+
+class _Percept:
+    def object_estimate(self, obs, spec, sensor_sd, draw):
+        return None
+
+
+def _workload_kernel(reasoner_obj, reasoner_ref):
+    from harness.definitions import CAPABILITIES
+    from harness.kernel import Kernel
+    from plugins.graphs import InMemorySkillGraph
+
+    k = Kernel(CAPABILITIES)
+    k.provide("embodiment.env", _Env(), ref="tests.fakes:env")
+    k.provide("policy.driver", _Policy(), ref="tests.fakes:policy")
+    k.provide("percept.model", _Percept(), ref="tests.fakes:percept")
+    k.provide("exec.rollouts", _SerialExecutor(), ref="tests.fakes:executor")
+    k.provide("graph.skill", InMemorySkillGraph(), ref="plugins.graphs:skill_graph_provider")
+    k.provide("reasoner.proposer", reasoner_obj, ref=reasoner_ref)
+    return k
+
+
+def _store_artifacts(root):
+    import json
+    rows = [json.loads(line) for line in (Path(root) / "index.jsonl").open()]
+    return [(r["kind"], r["sha"]) for r in rows]
+
+
+def test_rsi_run_with_the_default_reasoner_card_is_byte_identical(tmp_path, monkeypatch):
+    """rsi_run with the DETERMINISTIC reference mounted (plugins.reasoner, no model
+    identity) must produce byte-identical store artifacts to run_campaign's
+    internal default -- i.e. wiring reasoner.proposer into the production path
+    moved no sealed artifact. Tiny fake campaign, no simulator."""
+    import dataclasses
+
+    from plugins.reasoner import provider as reasoner_provider
+    from plugins.rsi import workload
+
+    monkeypatch.setattr(gate, "_run", _fake_run)
+
+    kernel = _workload_kernel(reasoner_provider(top_k=3), "plugins.reasoner:provider")
+    workload.run(_prereg(), tmp_path / "wired", kernel, workers=1, verbose=False)
+
+    # the "before the wiring" baseline: run_campaign's internal default, driven
+    # with the SAME provider refs rsi_run stamps onto the preregistration.
+    stamped = dataclasses.replace(
+        _prereg(),
+        env_provider=kernel.provider_ref("embodiment.env"),
+        policy_provider=kernel.provider_ref("policy.driver"),
+        percept_provider=kernel.provider_ref("percept.model"))
+    run_campaign(stamped, CampaignStore(tmp_path / "base"), workers=1,
+                 verbose=False, executor=_SerialExecutor())  # reasoner=None default
+
+    assert _store_artifacts(tmp_path / "wired") == _store_artifacts(tmp_path / "base"), \
+        "wiring reasoner.proposer into rsi_run moved a sealed store artifact"
+
+
+def test_rsi_run_drives_a_mounted_reasoner_that_declares_an_identity(tmp_path, monkeypatch):
+    """The finding the verifier caught: no production path resolved
+    reasoner.proposer, so an LLM card (plugins.model_qwen) could never be
+    consulted. rsi_run now drives it -- and its identity lands in the seal."""
+    monkeypatch.setattr(gate, "_run", _fake_run)
+    from plugins.rsi import workload
+
+    reasoner = _RecordingReasoner("qwen38(model=x)")
+    kernel = _workload_kernel(reasoner, "plugins.model_qwen:provider")
+    out = workload.run(_prereg(), tmp_path / "c", kernel, workers=1, verbose=False)
+
+    assert reasoner.briefs, "the mounted reasoner was never consulted through rsi_run"
+    prereg_art = CampaignStore(tmp_path / "c").read(out["result"]["preregistration_sha"])
+    assert prereg_art["reasoner"] == "qwen38(model=x)"
+
+
 # --- (3) model identity is content: it moves the prereg sha; None folds out ---
 
 def test_reasoner_identity_moves_the_prereg_hash():
