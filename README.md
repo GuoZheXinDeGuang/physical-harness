@@ -105,7 +105,7 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 
 **修复库存 + 放置链(rounds 90-96):** `replace` 原语进场——首个放置形修复(释放前重放置), 对抓取程序严格增量(金哈希钉死); 双探针裁决: 放置失败对本体感受不可见(tell 1.9%)→放置治理必须特权。`runs/place-g1`(round 91) gen1 的 dev 拒绝 **round 92 破案为假阴性**: campaign 给新规则铸名与父代同名, `governed_rollout` 的调用预算按 rule_id 做键致两规则静默合并——结构修复改按链位置做键(对唯一 id 的封存 bundle 逐位不变, 决定论/影子重放作证)。重战 `runs/place-g2`(round 92 终章)首次续种进化长出两代放置链(gen1/gen2 皆晋级, 第一条特权晋级规则); round 96 复现两块后**放置链三块判定全确立**, 与抓取链并列第二个报告级技能。
 
-**几何位姿抓取 ✅(round 93):** 质心+PCA 顶抓, 走 vendored client 同一 transport 缝, 控制回路**零特权读**——首个零特权感知抓取闭环。60 席(90200-90259): 几何臂 100% / 位置误差均值 0.9cm, 与无噪声基线打平。诚实边界: 单物体假设(平面滤波+固定工作箱), 多物体前需加聚类。
+**几何位姿抓取 ✅(round 93)→ 成卡(round 97):** 质心+PCA 顶抓, 走 vendored client 同一 transport 缝, 控制回路**零特权读**——首个零特权感知抓取闭环。60 席(90200-90259): 几何臂 100% / 位置误差均值 0.9cm, 与无噪声基线打平。诚实边界: 单物体假设(平面滤波+固定工作箱), 多物体前需加聚类。round 97 打包成技能卡 `plugins/skill_geometric_grasp`: `lift_geometric` 任务绑定(policy = GraspPoseDriver-on-Lift 工厂, planner 从零单节点), 带 gen-1 验货 `[claim]`(dev/held-out 48200-48899 预登记于 STATUS), 体检 GREEN; 底座零改动, 相机取云在 make_driver 里现开一间(治理环的冻结策略热路径不动)。
 
 **主机底座(M4 + GOAL v4 宪章, rounds 94-96):** 项目升为"机器人 agent 的主机底座"——底座只焊死执行层(跑任务)与进化层(RSI 攒证据), 其余(技能/模型/软件包/机器人/界面)皆是随插随拔的卡。两层结构与 mode 机制见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
@@ -174,12 +174,19 @@ schema 全貌(各段皆可选, 装了才折叠进并集; 跨卡同名一律响�
 
 **从零写 planner 的契约**(不借他卡时): `planner` ref 指向一个零参工厂
 `provider() -> TaskPlanner`, 其 `plan(brief: Mapping) -> Mapping` 读
-`brief["task"]` 返回纯 JSON 计划 `{"goal": str, "nodes": [{"skill", "args",
-"after", "oracle"}, ...]}`(节点按 `after` 排依赖, `oracle` 必须在你声明的
-oracles 集合里); `catalogue` 是 `{技能名: {参数名: type}}` 的词表(`type` 对象,
-所以走 ref 不走 JSON), `oracles` 是谓词名集合——两者被 fail-first 验证器用来在
-执行前拒掉坏计划。契约即 `harness/contracts.py:TaskPlanner`, 样例即
-`plugins/skill_toy/planner.py`(23 行, 连同确定性冒烟一起被体检 Tier B 覆盖)。
+`brief["task"]` 返回纯 JSON 计划 `{"goal": str, "nodes": [{"id", "skill",
+"args", "after"}, ...], "verify": [{"after", "predicate"}, ...]}`。每个节点带
+**恰好**四个键 `id/skill/args/after`(`plugins.task.validate` 的 `_NODE_KEYS`
+逐字校验): `id` 唯一非空, `after` 只列**更早**节点的 id(拓扑序=列表序=执行序),
+`skill` 必在你声明的 catalogue 里, `args` 逐键按 catalogue 的类型校验。验收谓词不在
+节点上, 而在**单独的** `verify` 列表: 每条 `{"after": <节点 id>, "predicate":
+<谓词名>}`, `predicate` 必在你声明的 oracles 集合里, 且 `verify` 不可为空(无验收
+的计划是空谈)。`catalogue` 是 `{技能名: {参数名: type}}` 的词表(`type` 对象, 所以
+走 ref 不走 JSON), `oracles` 是谓词名集合——两者被 fail-first 验证器
+(`validate_plan`)在执行前拒掉坏计划。契约即 `harness/contracts.py:TaskPlanner`,
+样例即 `plugins/skill_toy/planner.py`(23 行, 借基座 `stack` 技能的执行绑定)与
+`plugins/skill_geometric_grasp/planner.py`(单节点 `grasp`, 自持词表; 执行走验货
+campaign 而非通用 task 环, 故其 `grasp` 是卡词表而非 SKILL_SPECS 执行绑定)。
 
 **2. 体检(装机第一关, mode-agnostic):**
 

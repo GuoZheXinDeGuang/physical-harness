@@ -13,7 +13,10 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
+import numpy as np
+
 import plugins.policies.drivers as _policy
+from harness.registry import load_provider
 
 #: Sawyer adaptation of the scripted policy, measured in round 60: the arm
 #: converges slower than Panda's under the same OSC gains (double the
@@ -74,3 +77,36 @@ class StackPolicies:
 def stack_scripted_provider() -> StackPolicies:
     """The eight-phase scripted stack policy (grasp cubeA, seat it on cubeB)."""
     return StackPolicies()
+
+
+#: Where a geometric grasp pose comes from: a ref, not an import. The grasp math
+#: (camera cloud -> top-down PCA pose) belongs to the embodiment card; reaching it
+#: by string keeps this card from importing a sibling (tests/test_boundaries.py),
+#: the same sanctioned crossing episode specs use for env/policy provider refs.
+GEOMETRIC_GRASP_REF = "plugins.embodiment_robosuite.grasp_geometric:geometric_grasp_provider"
+
+
+class LiftGeometricPolicies:
+    """`harness.contracts.PolicyFactory`: the first perception-driven grasp, carded.
+
+    ``make_driver`` computes one geometric grasp for the spec (resolved by ref, so
+    no sibling import), then returns a :class:`GraspPoseDriver` locked onto it --
+    the four-phase open-loop vocabulary driven toward an OBSERVED grasp, with no
+    privileged object pose ever in the control loop (round 93). The grasp source
+    is a ref, not a mount param, because refs are the only thing that survives the
+    spawn to a rollout worker (same rule as env/policy provider refs).
+    """
+
+    def __init__(self, grasp_ref: str = GEOMETRIC_GRASP_REF) -> None:
+        self.grasp_ref = grasp_ref
+
+    def make_driver(self, spec: Any) -> Any:
+        pose = load_provider(self.grasp_ref).grasp_pose(spec)
+        grasp = _policy.GraspPose(position=np.asarray(pose["position"], dtype=float),
+                                  yaw=float(pose["yaw"]), width=float(pose["width"]))
+        return _policy.GraspPoseDriver(spec, grasp)
+
+
+def lift_geometric_provider() -> LiftGeometricPolicies:
+    """The geometric-grasp policy for the ``lift_geometric`` task binding."""
+    return LiftGeometricPolicies()

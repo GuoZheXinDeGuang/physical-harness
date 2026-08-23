@@ -121,6 +121,26 @@ def test_second_campaign_is_idempotent_on_shared_skills(tmp_path, monkeypatch):
     assert [n["data"]["skills"] for n in notes] == [[_STUB_DIGEST], [_STUB_DIGEST]]
 
 
+def test_acceptance_campaign_cmd_threads_the_claim_card_dir():
+    """A [campaigns] entry pointing at the parameterized acceptance_campaign is
+    runnable via submit_brief: the runtime threads --claim <owning card dir>,
+    resolved from the manifest that declares the campaign name (round 97)."""
+    out = Path("/tmp/x")
+    script = runtime.REPO_ROOT / "scripts" / "acceptance_campaign.py"
+    cmd = runtime._campaign_cmd("lift_geometric", script, out)
+    assert "--claim" in cmd
+    assert cmd[cmd.index("--claim") + 1].endswith("plugins/skill_geometric_grasp")
+    assert cmd[cmd.index("--out") + 1] == str(out)
+
+
+def test_self_contained_campaign_cmd_has_no_claim():
+    """A self-contained campaign script (stack_campaign) takes only --out; the
+    runtime must not slip a --claim it does not accept."""
+    script = runtime.REPO_ROOT / "scripts" / "stack_campaign.py"
+    cmd = runtime._campaign_cmd("stack", script, Path("/tmp/x"))
+    assert "--claim" not in cmd
+
+
 def test_burned_range_brief_is_rejected_without_spawning(tmp_path, monkeypatch):
     # Point the real "stack" key at the stub too: if the guard WRONGLY passed,
     # the stub would run and write a campaign_scheduled note instead -- the

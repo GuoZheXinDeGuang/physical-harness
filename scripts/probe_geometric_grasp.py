@@ -57,40 +57,28 @@ import numpy as np
 
 from harness.spec import EpisodeSpec
 from plugins.embodiment_robosuite.grasp_client import GraspInferenceError
-from plugins.embodiment_robosuite.grasp_geometric import propose, segment_object
+from plugins.embodiment_robosuite.grasp_geometric import (
+    WS_HALF_EXTENT,
+    WS_HEIGHT,
+    debias_topdown_pose,
+    propose,
+    segment_object,
+    workspace_bounds,
+)
 from plugins.policies.drivers import GraspPose, GraspPoseDriver, ScriptedDriver
 from plugins.rsi.campaign import CampaignStore
 from plugins.rsi.gate import exact_mcnemar
 
-#: Fixed workspace box around the table CENTRE (arena geometry, never the cube
-#: pose): the plane-only cloud also holds the robot arm, so the grasp cloud is
-#: the object segment inside this box. Half-extent in xy, height above the table.
-#: ponytail: constants tuned for the Lift tabletop; widen if a scene puts objects
-#: outside a 40cm box or taller than 15cm.
-WS_HALF_EXTENT = 0.20
-WS_HEIGHT = 0.15
 #: A proposed grasp within this of the privileged cube centre is "on the object"
 #: (cube half-width ~2cm + margin); a failure there is execution, not proposal.
 #: ponytail: fixed metres; scale by object size if non-cube objects show up.
 PROPOSAL_ERR_THRESH = 0.03
 
 
-# --- pure: workspace geometry & the cloud -> executable grasp pose ------------
-def workspace_bounds(
-    table_offset: np.ndarray,
-    table_z: float,
-    *,
-    half_extent: float = WS_HALF_EXTENT,
-    height: float = WS_HEIGHT,
-) -> np.ndarray:
-    """Fixed (2, 3) [min; max] box around the table centre -- no object pose."""
-    cx, cy = float(table_offset[0]), float(table_offset[1])
-    return np.array(
-        [[cx - half_extent, cy - half_extent, table_z],
-         [cx + half_extent, cy + half_extent, table_z + height]]
-    )
-
-
+# --- pure: the cloud -> executable grasp pose --------------------------------
+# workspace_bounds + the de-bias now live in the embodiment card (carded round
+# 97, so a plugin provider can reach them too); imported above and wrapped here
+# so this script's public surface is unchanged.
 def grasp_pose_from_cloud(
     world_points: np.ndarray,
     table_z: float,
@@ -98,23 +86,15 @@ def grasp_pose_from_cloud(
 ) -> GraspPose:
     """World cloud -> ONE executable :class:`GraspPose`, observed geometry only.
 
-    Segment the object off the table plane (within ``bounds``), take
-    ``propose``'s validated top-down pose (fail-closed through the vendored
-    client), then de-bias the depth: the shell centroid z is ~1cm high on a
-    single view, so the grasp z is set to the object centre height halfway
-    between the known table plane and the observed top surface. xy/yaw/width are
-    the proposal's own. Raises GraspInferenceError on a degenerate cloud (empty
-    segment or too sparse to fit) -- the caller treats that as a proposal miss.
+    Segment the object off the table plane (within ``bounds``), take ``propose``'s
+    validated top-down pose (fail-closed through the vendored client), then
+    de-bias the depth (``debias_topdown_pose``). Raises GraspInferenceError on a
+    degenerate cloud (empty segment or too sparse to fit) -- the caller treats
+    that as a proposal miss.
     """
     obj = segment_object(world_points, table_z, margin=0.01, bounds=bounds)
-    result = propose(obj)
-    best = int(np.argmax(result.scores))
-    pose = result.grasps[best]
-    top_z = float(obj[:, 2].max())
-    position = np.array([pose[0, 3], pose[1, 3], 0.5 * (table_z + top_z)])
-    closing = pose[:3, 0]
-    yaw = float(np.arctan2(closing[1], closing[0]))
-    return GraspPose(position=position, yaw=yaw, width=float(result.widths[best]))
+    position, yaw, width = debias_topdown_pose(propose(obj), obj, table_z)
+    return GraspPose(position=position, yaw=yaw, width=width)
 
 
 # --- pure: per-failure classification & summary ------------------------------

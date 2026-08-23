@@ -62,6 +62,8 @@ manifest 自注册(卡=目录, base sha 逐位不变)、体检+验货(含 task_b
 **已烧(round 96 夜)**: place-g2 复现块 #2 = 47400-47599(+11.0pp 24修2破 判定确立),
 #3 = 48000-48199(+10.5pp 23修2破 判定确立)。**放置链头条三块转正:
 +9.5/+11.0/+10.5pp, 68 修 6 破 n=600, 判定三块全确立; broken 率逐块稳定 2/2/2。**
+**预留(round 97 预登记):** 几何抓取卡(plugins/skill_geometric_grasp)lift_geometric 验货 campaign dev 48200-48699(500 席)/ held-out 48700-48899(200 席)——gen-1 modest campaign, alloc_seeds 领的最低未烧区间(floor 48200), unstamped prereg sha 73672d3e90b4。
+真跑烧段留给"几何抓取卡走进化态运行时"那一 rung(运行时重叠守卫只对已烧执法, 预留块可复算)。
 
 **frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
 父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.

@@ -58,6 +58,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -281,6 +282,40 @@ def _prereg_sha(out: Path) -> str | None:
     return None
 
 
+def _campaign_card_dir(name: str) -> Path | None:
+    """The card dir whose manifest declares campaign ``name`` (its [claim] lives
+    there). Re-scans the manifests rather than threading a fourth field through
+    the Runtime -- the scan is already how discover() knows the owner, and a
+    campaign spawn is not hot."""
+    for mf in sorted((REPO_ROOT / "plugins").glob("*/manifest.toml")):
+        if name in tomllib.loads(mf.read_text()).get("campaigns", {}):
+            return mf.parent
+    return None
+
+
+def _campaign_cmd(name: str, script: Path, out: Path) -> list[str]:
+    """The subprocess argv for a campaign script.
+
+    Self-contained campaign scripts (stack_campaign.py) take only ``--out``; the
+    parameterized ``acceptance_campaign.py`` also needs ``--claim <card dir>`` --
+    it reads the [claim] table off that card's manifest. So a skill card's
+    [campaigns] entry pointing at acceptance_campaign.py is runnable via
+    submit_brief, not only by hand (GOAL v4.1 GUI 同源: 验货 IS an evolution-mode
+    campaign brief through the runtime).
+    ponytail: branch on the script basename; a per-script arg schema in the
+    manifest would generalize only once a third campaign CLI shape appears.
+    """
+    cmd = [sys.executable, str(script), "--out", str(out)]
+    if script.name == "acceptance_campaign.py":
+        card = _campaign_card_dir(name)
+        if card is None:
+            raise ValueError(
+                f"acceptance campaign {name!r} needs a --claim card dir, but no "
+                "installed manifest declares this campaign name")
+        cmd += ["--claim", str(card)]
+    return cmd
+
+
 def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     """Schedule one preregistered RSI campaign as an in-system task: guard the
     seed ledger, spawn the fixed campaign script as a SUBPROCESS, fold its
@@ -313,7 +348,7 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
 
     out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
     proc = subprocess.run(
-        [sys.executable, str(script), "--out", str(out)],
+        _campaign_cmd(name, script, out),
         cwd=str(REPO_ROOT), env={**os.environ, "MUJOCO_GL": "egl"},
         capture_output=True, text=True, check=False)
     if proc.returncode != 0:

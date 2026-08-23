@@ -226,3 +226,115 @@ def propose(
         monotonic_fn=lambda: 0.0,  # local compute; the wall-clock deadline is moot
     )
     return client.infer(object_points=pts, scene_bounds=scene_bounds, frame=frame)
+
+
+# ── camera cloud -> one executable grasp pose (round 93 rung 2, carded round 97) ──
+# These lived in scripts/probe_geometric_grasp.py, where a script could freely
+# reach both this embodiment and the policies driver. A CARD's provider cannot
+# (plugins never import each other -- tests/test_boundaries.py), so the geometry
+# lands in its proper home beside ``propose``/``segment_object``, and the probe +
+# the policies factory both reach it from here. Nothing privileged: the pose is
+# fit from the observed cloud, the arena height, and a fixed workspace box.
+
+#: Fixed workspace box around the table CENTRE (arena geometry, never the object
+#: pose): the plane-only cloud also holds the robot arm, so the grasp cloud is the
+#: object segment inside this box. Half-extent in xy, height above the table.
+#: ponytail: constants tuned for the Lift tabletop; widen if a scene puts objects
+#: outside a 40cm box or taller than 15cm.
+WS_HALF_EXTENT = 0.20
+WS_HEIGHT = 0.15
+
+
+def workspace_bounds(
+    table_offset: np.ndarray,
+    table_z: float,
+    *,
+    half_extent: float = WS_HALF_EXTENT,
+    height: float = WS_HEIGHT,
+) -> np.ndarray:
+    """Fixed (2, 3) [min; max] box around the table centre -- no object pose."""
+    cx, cy = float(table_offset[0]), float(table_offset[1])
+    return np.array(
+        [[cx - half_extent, cy - half_extent, table_z],
+         [cx + half_extent, cy + half_extent, table_z + height]]
+    )
+
+
+def debias_topdown_pose(
+    result: GraspInferenceResult, obj_points: np.ndarray, table_z: float,
+) -> tuple[np.ndarray, float, float]:
+    """Best validated top-down pose -> ``(position, yaw, width)``, depth de-biased.
+
+    Keeps the proposal's (excellent) xy/yaw/width but replaces the shell-centroid
+    z: on a single camera view the far and bottom faces are occluded, so the
+    cloud's centroid z sits ~1cm high -- fatal to the open-loop descend that
+    closes at a fixed height. The grasp z becomes the object centre height
+    inferred from OBSERVED geometry only: halfway between the known table plane
+    and the observed top surface. No privileged object pose enters. Single home
+    for the de-bias formula so the probe and the card cannot drift apart.
+    """
+    best = int(np.argmax(result.scores))
+    pose = result.grasps[best]
+    top_z = float(obj_points[:, 2].max())
+    position = np.array([pose[0, 3], pose[1, 3], 0.5 * (table_z + top_z)])
+    closing = pose[:3, 0]
+    yaw = float(np.arctan2(closing[1], closing[0]))
+    return position, yaw, float(result.widths[best])
+
+
+def geometric_grasp_pose(
+    spec: Any, *, half_extent: float = WS_HALF_EXTENT, height: float = WS_HEIGHT,
+) -> dict[str, Any]:
+    """One geometric grasp for ``spec``, as plain JSON-able data (no GraspPose --
+    that type lives in the policies card, which this card must not import).
+
+    Spins up a fresh camera env, lifts the agentview cloud into world frame,
+    segments the object off the table inside the fixed workspace box, fits the
+    top-down PCA pose through the vendored fail-closed client, and de-biases the
+    depth. Zero privilege: only the observed cloud + the arena height. Raises
+    ``GraspInferenceError`` on a degenerate cloud (the caller treats that as a
+    proposal miss). ``{"position": [x, y, z], "yaw": rad, "width": m}``.
+
+    ponytail: this spawns its OWN camera env per call -- the governed rollout's
+    env carries no camera, and threading one through the frozen-policy hot path
+    is base surgery pinned by parity. Same seed -> same scene, so the pose is
+    valid for the rollout's env. Upgrade path: a camera-capable EnvProvider seam
+    if the double spawn ever dominates a campaign's wall time.
+    """
+    from plugins.embodiment_robosuite.env import camera_make_env
+    from plugins.embodiment_robosuite.grasp import scene_cloud
+
+    env = camera_make_env(spec)
+    try:
+        obs = env.reset()
+        cloud = scene_cloud(obs, env.sim)
+        homog = np.c_[cloud.points, np.ones(len(cloud.points))]
+        world = (cloud.world_from_cam @ homog.T).T[:, :3]
+        table_offset = env.model.mujoco_arena.table_offset
+        table_z = float(table_offset[2])
+        bounds = workspace_bounds(table_offset, table_z,
+                                  half_extent=half_extent, height=height)
+        obj = segment_object(world, table_z, margin=0.01, bounds=bounds)
+        result = propose(obj)  # raises GraspInferenceError on a degenerate cloud
+        position, yaw, width = debias_topdown_pose(result, obj, table_z)
+        return {"position": [float(v) for v in position],
+                "yaw": float(yaw), "width": float(width)}
+    finally:
+        env.close()
+
+
+class GeometricGrasper:
+    """Resolvable-by-ref grasp source: ``grasp_pose(spec) -> dict``.
+
+    The policies card's geometric PolicyFactory reaches this through
+    ``harness.registry.load_provider`` (a ref string, the sanctioned cross-card
+    crossing), so it computes a zero-privilege grasp without importing this
+    embodiment card.
+    """
+
+    def grasp_pose(self, spec: Any) -> dict[str, Any]:
+        return geometric_grasp_pose(spec)
+
+
+def geometric_grasp_provider() -> GeometricGrasper:
+    return GeometricGrasper()

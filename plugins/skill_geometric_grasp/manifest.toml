@@ -1,0 +1,40 @@
+# The geometric-grasp skill card (round 97). Dropping this dir is the whole
+# install: the runtime accepts {"kind":"task","task":"lift_geometric"} because
+# discover() folds this binding into the union at boot -- no base edit. needs_sim
+# because the policy computes its grasp from a camera env; third_party is the
+# simulator surface the sim-absent 体检 gates on (and no other card may import).
+actuation = "sim"
+needs_sim = true
+third_party = ["robosuite", "mujoco"]
+
+# A new task name -> the zero-privilege geometric grasp policy. policy is the
+# GraspPoseDriver-on-Lift factory (plugins/policies), reached by ref; planner /
+# catalogue / oracles are this card's own from-scratch single-node vocabulary.
+[task_bindings.lift_geometric]
+policy = "plugins.policies:lift_geometric_provider"
+planner = "plugins.skill_geometric_grasp.planner:provider"
+catalogue = "plugins.skill_geometric_grasp.planner:CATALOGUE"
+oracles = "plugins.skill_geometric_grasp.planner:ORACLES"
+
+# The 验货 script a campaign brief for this card may spawn (server-side
+# allowlist). The parameterized acceptance_campaign reads the [claim] below; the
+# runtime threads --claim <this card dir> when it spawns it (harness_runtime).
+[campaigns]
+lift_geometric = "scripts/acceptance_campaign.py"
+
+# The acceptance claim: the re-runnable half. acceptance_campaign rebuilds a
+# Preregistration byte-for-byte from these fields (task/policy-label/stages +
+# dev/held-out seed blocks, gen-1 modest campaign), so 验货 is the campaign
+# machine acting as inspector, not a second implementation. task = "lift" is the
+# embodiment task the episodes run on; the geometric grasp IS the lift task under
+# lift_geometric_provider. Seeds preregistered (reserved) in STATUS.md 区块预算;
+# the runtime overlap-guard enforces burned. [claim.sealed] lands after the real
+# run burns them (a following rung: 几何抓取卡走进化态运行时).
+[claim]
+task = "lift"
+policy = "plugins.policies:lift_geometric_provider"
+policy_label = "geometric"
+dev = [48200, 48700]
+heldout = [48700, 48900]
+stages = "plugins.embodiment_robosuite.env:pick_stages"
+max_generations = 1

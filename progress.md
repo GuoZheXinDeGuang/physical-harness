@@ -3604,3 +3604,61 @@ b026831c 逐位重建), R7 的 reasoner 新字段对旧封存正确哈希折叠�
 
 gh repo archive(用户) / qwen 活跑(GPU gated) / 真机 actuation:real 卡(未来, 需求书
 已备) / 新技能卡的活验货(下一 round: 几何抓取卡走进化态运行时)。
+
+## Round 97 R1 - 2026-08-23 - 几何抓取成卡: lift_geometric 绑定 + gen-1 验货 claim + 种子预登记
+
+### 做成了什么
+
+照 README 写一张卡说明书, 把 round 93 的几何位姿抓取(质心+PCA 顶抓, 控制回路零特权)
+打包成技能卡 `plugins/skill_geometric_grasp`——底座一行没改, 丢进 plugins/ 即令
+`{"kind":"task","task":"lift_geometric"}` 被接受。
+
+1. **GraspPoseDriver-on-Lift 工厂(plugins/policies)**: 新 `LiftGeometricPolicies` /
+   `lift_geometric_provider` 守 PolicyFactory 契约。`make_driver(spec)` 按 ref 解析
+   一个几何抓取源(不 import 兄弟卡, 走 registry 字符串这条既有跨卡缝), 拿到零特权位姿,
+   锁进 `GraspPoseDriver`。抓取几何(相机取云→顶抓 PCA→深度去偏)从 scripts 探针搬回
+   正确的家 `plugins/embodiment_robosuite/grasp_geometric.py`(`workspace_bounds` /
+   `debias_topdown_pose` / `geometric_grasp_pose` / `geometric_grasp_provider`)——探针
+   曾把它停在 scripts 只为绕开插件边界; 现在卡的 provider 也够得着, 去偏公式单点存放,
+   探针公开面逐字节不变(其测试零改)。诚实边界: `make_driver` 现开一间相机 env 算位姿
+   (治理环的冻结策略热路径被 parity 钉死, 不动), 同种子同景, 双开销注为 ponytail 上限。
+
+2. **从零单节点 planner(卡自持)**: `LiftGeometricPlanner` 出单 `grasp` 节点, 词表
+   + oracle(`lifted`)卡自持, 形状按真验证器(`plugins.task.validate`)——节点恰四键
+   `id/skill/args/after` + 独立 `verify` 列表。这是符号层; 几何抓取的实测执行路径是验货
+   campaign(进化态 governed_rollout 跑 lift, 挂 lift_geometric_provider), 不是通用
+   task 环, 故 `grasp` 是卡词表而非 SKILL_SPECS 执行绑定(那是后续需要时的活)。
+
+3. **manifest + gen-1 验货 claim**: `[task_bindings.lift_geometric]`(policy=工厂 ref,
+   planner/catalogue/oracles 卡自持)、`[campaigns] lift_geometric =
+   scripts/acceptance_campaign.py`、`[claim]`(task=lift, policy_label=geometric,
+   stages=pick_stages, dev/held-out 种子块, max_generations=1)。needs_sim=true,
+   third_party 列 robosuite/mujoco。`--dry-run` 建出 prereg sha 73672d3e90b4。
+   **体检 GREEN**(Tier A 校验绑定 refs 加载+契约形状, needs_sim 门在有 sim 的本机放行)。
+
+4. **说明书不够就补 IT(同一提交)**: README 从零 planner 契约原文写"节点带 oracle 键",
+   与真验证器不符——改成节点恰四键 + 独立 verify 列表(predicate∈oracles, 不可空),
+   并添 skill_geometric_grasp 为第二个样例(自持词表, 执行走验货)。CLI 缝: 运行时原来
+   spawn campaign 只传 `--out`, 而 acceptance_campaign 要 `--claim`; 补
+   `_campaign_cmd`——脚本名是 acceptance_campaign.py 时按其所属卡的 manifest 补
+   `--claim <卡目录>`, 自持脚本(stack_campaign)只吃 --out 不受影响。这条让"技能卡
+   [campaigns] 指向 acceptance_campaign 就能经 submit_brief 跑"从设计文档兑现成真。
+
+5. **种子预登记(真跑前)**: `alloc_seeds` 领 floor 48200 的最低未烧区间, dev
+   48200-48699(500)/ held-out 48700-48899(200), 在 STATUS.md 区块预算写
+   `预留(round 97 预登记)` 一行(ledger 解析为 reserved, alloc 下一格跳到 48900)。
+   真烧留给"几何抓取卡走进化态运行时"那一 rung; 运行时重叠守卫只对已烧执法。
+
+### 门禁
+
+全量 442→**448 通过, 3 跳过**(+4 test_lift_geometric [1 robosuite] + 2 test_runtime_campaign)。
+隔离底座道(robosuite 屏蔽, 新进程)413→**418 通过, 6 跳过 [同因], 27 弃**, 零缩水
+(改动前底座道 413, 我的 5 条新底座测试零扰动既有)。eval_battery --no-soak PASS
+(demo/stack 三块逐位复现, 未动任何封存 sha——本卡无 mount, 不碰 spec/hash 路径)。
+ruff 触及文件全清。plugin_doctor plugins/skill_geometric_grasp GREEN。
+
+### 显式开放项(非缺陷)
+
+几何抓取卡的活验货(下一 rung: 进化态运行时真跑, 烧 48200-48899, 长出 [claim.sealed])
+——base rate 高(lift 几何臂 ~100%)时晋级空间小是那一 rung 要正视的诚实结果。
+SKILL_SPECS["grasp"] 执行绑定(通用 task 环也能驱几何抓取)留作需要时的活。
