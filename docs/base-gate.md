@@ -63,3 +63,22 @@ deselected : 25 robosuite-marked items
 Full-suite parity (card present): `391 passed, 3 skipped` (+8 over R4). base_profile
 sha is byte-stable at `b905a5…` (still folds to the value sealed in
 runs/round25-rerun) — the manifest fold reproduces the old hard-coded mounts.
+
+## round-96 snapshot (2026-08-23, isolated, robosuite blocked)
+
+```
+pass       : 412 passed
+skips      : 6 skipped
+             [2] test_grasp_geometric.py:141  camera env unavailable
+             [1] test_grasp_geometry.py:231   camera env unavailable
+             [1] test_reducers.py:171         cloned weights not present
+             [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
+wall time  : ~3.8s
+AST green  : 17 passed (test_boundaries + test_kernel), card present and absent
+deselected : 26 robosuite-marked items (self-skip under `-m robosuite`)
+```
+
+Full-suite parity (card present): `441 passed, 3 skipped`. base_profile sha
+byte-stable at `b905a5…`; sealed eval-battery shas unmoved (demo `895958e…`,
+stack-three-block `2f5f3756…`). This is the T3/R10 motherboard baseline — a
+regression in any field blocks the merge.

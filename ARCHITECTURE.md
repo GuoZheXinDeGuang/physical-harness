@@ -2,6 +2,28 @@
 
 一句话: dsh 式插件内核承载 Zetta 式 physical RSI, 三层科研板块以契约接入, 一切能改变结论的东西(挂载、解析、特权、参数)都进内容哈希。
 
+## 两层结构: 执行 / 进化(GOAL v4.2)
+
+底座只焊死两层, 其余(顶层 VLM / 导航 / 建图 / 感知 / 抓取 / RL 动作 / 机器人 / 界面)全是随插随拔的卡:
+
+- **执行层(L-exec)**: 接大任务 → 拆成小任务串 → 逐个匹配技能 → 按依赖调度 → 每步验证状态 → 失败重规划。本体只有编排逻辑(拆解规则 / JSON 传参格式 / 工具调用约定 / 执行验证循环)。执行真任务只用已入库技能与固化配置, 不在线试错。
+- **进化层(L-evo)**: 独立、离线, 把执行层当**实验设备**调用。两种活: (a) 冻结全部技能, 只改 harness 编排配置/参数, 仿真批量执行对比前后; (b) 仿真反复试验新技能到成功率达标——产出走验证四件套(配对 / 盲孪生 / held-out / 消融)后, 连同全部实测数据沉淀进技能库。
+
+**mode 机制(两层的硬边界, round 96)**: mode 是每会话属性, 默认 EXECUTION(fail-safe: 真任务永不触发 RSI)。`harness_runtime --mode {execution,evolution}` 写一次 `<session-dir>/MODE`(重启断言一致 = 进程间不可变), 并封 `runtime.boot` 行 `{mode, skills_manifest, mount_plan_sha}` 为链 0 号 —— 篡改 mode/清单即令 `verify()` 断链, 断链就是审计(复用既有 chain_start/chain_step, 无新哈希)。一守卫一审计: (a) `_process` 只在进化态接受 `kind=="campaign"`, 否则拒到 failed/ 记 `runtime.task_error`(拒绝非中和, 同注入键防御, 亦即 M4 rung-3 的修正); (b) 每执行任务前重折 `skills_root` 摘要集断言等于 boot 清单(文件名即内容摘要, 集合相等即抓住带外篡改)。
+
+**单向流**: 只有进化态的 `_copy_skills` 写封存记录; 执行态从不写 `skills_root`, 只挂已封 SkillRecord(`heldout_judgement_established=True`) + 冻结 profile。真机(`actuation:real`)卡被此 sim 运行时拒挂 —— 它属另一个认证运行时, 永不是一条 brief 之遥。
+
+## 固定原则 → 机制(GOAL v4.2, 逐条可验)
+
+| 原则 | 机制(在 harness 里落在哪) |
+|---|---|
+| 零插件可启动、自测全绿 | `harness/fakes.py` 七能力空 provider + `profiles.fakes_profile()`; `plugins/` 空目录下 `pytest -m "not robosuite"` 全绿, `harness_runtime --drain` 假 brief 跑到 done/ |
+| 挂载时校验, 不合格在 mount 报错(非任务中失败) | 契约是 runtime_checkable Protocol; `Kernel.provide` 在挂载点做 isinstance 门, 挂错形状当场失败, 不流进 episode |
+| 完整配置进内容哈希, 配置变 = 另一个实验身份 | Profile/Bundle/Patch → `resolve_plan` → `MountPlan.sha`; 能改结论的常数进预注册哈希, 加缝即换 sha |
+| 事件链式日志, 事后不可篡改, 重启延续 | `SessionLog` 链式承诺, 挂载/解析/campaign 同一条链; 就地篡改被 `verify()` 抓住; 常驻运行时 load-or-fresh 续链 |
+| 特权每次使用被记录, 每技能带特权依赖测量 | 特权解析吃预算(Kernel 记账), critic/recovery 只能碰 `FeatureView`(特征读取逐次记账); 每条 SkillRecord 附特权消融曲线 |
+| 两层单向(进化调用执行, 执行不反向调用) | mode 机制: 进化态调用执行做实验, 执行态只消费封存沉淀; 执行时刻 campaign brief 被拒、`skills_root` 不写 |
+
 ## 三层 OS 与契约的映射
 
 | OS 板块 | 骨架契约(harness/contracts.py) | 第一个 provider |

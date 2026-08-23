@@ -17,9 +17,12 @@ uv venv && uv pip install -e ".[dev]"
 PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest tests/
 ```
 
-当前全量: **223 通过, 3 跳过**(跳过 = Mac 归档 campaign 与 BC 权重不在 git, 预期)。
+当前全量: **441 通过, 3 跳过**(跳过 = Mac 归档 campaign 与 BC 权重不在 git, 预期)。
+
+底座快道(W6, 改底座前后各跑一遍、变差不许合入)= 隔离进程(robosuite 卡缺席)里 `pytest -m "not robosuite"`: **412 通过, 6 跳过, 26 弃**。快照格式与隔离跑法见 [docs/base-gate.md](docs/base-gate.md)。
 
 - `mujoco==3.3.7` + `robosuite==1.5.2` 是硬 pin: mujoco>=3.4 把 `qM` 改名 `M`, robosuite 1.5.2 会崩。
+- robosuite/mujoco 进 `[embodiment_robosuite]` 可选 extra; 不装这块卡, 底座仍能开机、跑通自己的测试(纯假件)。
 - Linux 无头环境要 `MUJOCO_GL=egl`; 无 GPU 训练、无网络、无 API key 需求。
 
 ## 可跑入口
@@ -45,7 +48,7 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest tests/
 held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 ```
 
-同一份 artifact 里: 对盲发孪生 +35.5pp(盲发基线 29.5%, p=8.4e-16, judgement established); 消融曲线零破坏全档(真值 +18.0 / sd=0.010 +13.5 / 0.020 +6.5 / 0.030 +3.5pp)。**头条现为四区块**(rounds 85/91 复验): **+6.5 / +9.5 / +11.0 / +10.5pp, 75 修 0 破, n=800**, 判定四块全确立(42000/42200/42400 + place-g1 的处女块 47000)。
+同一份 artifact 里: 对盲发孪生 +35.5pp(盲发基线 29.5%, p=8.4e-16, judgement established); 消融曲线零破坏全档(真值 +18.0 / sd=0.010 +13.5 / 0.020 +6.5 / 0.030 +3.5pp)。**头条现为四区块**(rounds 85/91 复验): **+6.5 / +9.5 / +11.0 / +10.5pp, 75 修 0 破, n=800**, 判定四块全确立(42000/42200/42400 + place-g1 的处女块 47000)。放置链(place-g2, round 96)成为并列第二个报告级技能: **+9.5 / +11.0 / +10.5pp, 68 修 6 破, n=600**, 三块判定全确立(自带块 47200 + 复现块 47400/48000), 对盲发孪生 +44.5–55.0pp; broken 率逐块 2/2/2 稳定。
 
 ## 架构
 
@@ -85,22 +88,33 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 
 产出物是 `SkillRecord`: 前置条件 = 触发器, 效果 = 对父代配对增益, 失败模式 = broken 计数, 能力边界 = 特权声明 + 消融曲线。**集成判据 = provider + 过门禁的证据, 不是 demo。** phase 1 的 53 轮全过程(含 23 个被自己抓住的错误)在 [docs/report.html](docs/report.html) 与 [progress.md](progress.md)。
 
-## 现状(round 91 止)
+## 现状(round 96 止)
 
 **R 阶梯(robosuite 轨迁移):**
 
 - R0/R1 ✅(round 77): 4090 冷启动全绿, 跨机 parity 实测成立(demo 与 Mac 封存数字逐位一致); 三个证据洞补齐, demo 逐位不变。
 - R2 ✅(round 78-79 主体, 85 收尾): 阶段机、Stack 标定、长程 campaign `runs/stack-g1` 三区块复现 + 阶段归因(受治理残余放置反超抓取 ~45-47/200 = MSR place 原语定量进场配额)。
 - R3 目标函数修复 ✅(round 88): 破案"修复价值随开火时机"——语义分裂(搜索评分带 reducer 而运行时不带)/峰值臂不可达/裁决盲修三件套齐修, 修好的搜索纯 dev 证据自选峰值臂, 追平天真挑法。
-- R4 meta-RSI 未动; Isaac 具身 gated; anygrasp rung 1 几何链路 sim 实证 ✅(round 89), rung 2/3 gated(license 指纹漂移, 用户行动项)。
+- R4 meta-RSI 种子已落(eval battery, round 94); Isaac 具身 gated; anygrasp **round 93 用户裁定弃用**, 换几何位姿抓取(见下)。
 
 **M 阶梯(agentic OS 化):**
 
-- M0 ✅(round 80): zos 经 `sim.*` 工具消费 harness。 M1 ≈(round 81): 三臂对比 harness 落地; qwen38 臂待 GPU。
-- M2 ✅(rounds 82/87): graph.scene 真 provider、zos 证据顾问层、`Session.evidence` 接进规划提示与授权面板(注记永不改裁决)。
+- M0 ✅(round 80): zos 经 `sim.*` 工具消费 harness。 M1 ≈(round 81): 三臂对比 harness 落地; qwen38 臂 round 96 包成模型卡。
+- M2 ✅(rounds 82/87): graph.scene 真 provider、证据顾问层、`Session.evidence` 接进规划提示与授权面板(注记永不改裁决)。
 - M3 ✅(rounds 83/86): `task.planner` 缝 + 规划 workload; `clear_table` 双节点图真闭环(排序/跳过已完成/arg threading)。
 
-**修复库存(round 90):** `replace` 原语进场——首个放置形修复(释放前重放置), 对抓取程序严格增量(金哈希钉死); 双探针裁决: 放置失败对本体感受不可见(tell 1.9%)→放置治理必须特权; bring-up 转化 42.6%。首个特权 campaign `runs/place-g1`(round 91): gen1 候选被 dev 门禁正确拒绝(触发器选席谜题进 frontier), 抓取规则在处女块复验 +10.5pp 判定确立。
+**修复库存 + 放置链(rounds 90-96):** `replace` 原语进场——首个放置形修复(释放前重放置), 对抓取程序严格增量(金哈希钉死); 双探针裁决: 放置失败对本体感受不可见(tell 1.9%)→放置治理必须特权。`runs/place-g1`(round 91) gen1 的 dev 拒绝 **round 92 破案为假阴性**: campaign 给新规则铸名与父代同名, `governed_rollout` 的调用预算按 rule_id 做键致两规则静默合并——结构修复改按链位置做键(对唯一 id 的封存 bundle 逐位不变, 决定论/影子重放作证)。重战 `runs/place-g2`(round 92 终章)首次续种进化长出两代放置链(gen1/gen2 皆晋级, 第一条特权晋级规则); round 96 复现两块后**放置链三块判定全确立**, 与抓取链并列第二个报告级技能。
+
+**几何位姿抓取 ✅(round 93):** 质心+PCA 顶抓, 走 vendored client 同一 transport 缝, 控制回路**零特权读**——首个零特权感知抓取闭环。60 席(90200-90259): 几何臂 100% / 位置误差均值 0.9cm, 与无噪声基线打平。诚实边界: 单物体假设(平面滤波+固定工作箱), 多物体前需加聚类。
+
+**主机底座(M4 + GOAL v4 宪章, rounds 94-96):** 项目升为"机器人 agent 的主机底座"——底座只焊死执行层(跑任务)与进化层(RSI 攒证据), 其余(技能/模型/软件包/机器人/界面)皆是随插随拔的卡。两层结构与 mode 机制见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+- **常驻运行时 ✅(M4, round 94):** `scripts/harness_runtime.py` boot 内核 → 挂技能目录+实测证据 → 接任务; 每任务治理全程(planner→validate→governed rollout→阶段评分→账本), 单任务失败不倒系统(逃生舱记 `runtime.task_error`, 循环续)。会话链跨任务连续、重启可续可验; RSI 作为一类系统任务被调度, 产出 SkillRecord 立即回流挂载目录。注错 soak: 50 brief × 6 故障类 + 中途 SIGKILL, 40 done / 10 failed / 恰 5 task_error / 零断链。
+- **manifest 自注册 ✅(round 96):** 卡 = 带 `manifest.toml` 的目录(纯数据, tomllib 解析永不 import); `harness/manifest.py` 折叠出 {mounts, task_bindings, campaigns, third_party}, `base_profile()` 变成对已装 manifest 的折叠——**base plan sha 逐位不变**(b905a51…, round25-rerun 封存值), 重构顶着封存 parity 过关。运行时四张写死表退役; 丢卡目录进 `plugins/` → `git status` 只有那个目录、新任务被接受、base sha 不动。brief 仍只带任务字符串, 绑定在 boot 从已装 manifest 的并集解析(文件系统权威, 非 brief)。写卡说明书见下节。
+- **两态铁律 ✅(mode 机制, round 96):** 会话默认 EXECUTION(fail-safe: 真任务永不触发 RSI)。`--mode {execution,evolution}` 写一次 `MODE` 文件(重启断言一致=进程间不可变), 封 `runtime.boot` 行 {mode, skills_manifest, mount_plan_sha} 为链 0 号(篡改即断链, 断链就是审计)。campaign 类 brief 只在进化态被接受(否则拒到 failed/ 记 `runtime.task_error`, 非中和); 每执行任务前重折技能目录摘要集断言等于 boot 清单。单向流: 只有进化态写封存记录, 执行态只挂已封 SkillRecord + 冻结配置、从不写。
+- **装机规矩 ✅(体检 + 验货, round 96):** `scripts/plugin_doctor.py <卡目录>` 体检(Tier A 复用 `Kernel.provide` 的 isinstance 门 + 拒 actuation:real; Tier B 按能力类别一发假件冒烟, 确定性政策分流; `needs_sim` 卡真仿真层); `scripts/acceptance_campaign.py --claim <卡>` 验货(既有证据机器的参数化封装, 零新统计, 过关 = ≥1 条 `heldout_judgement_established=True` 的晋级 SkillRecord); `plugin_doctor --verify-claim` 对 `runs/` 核对卡的封存声明。体检 mode-agnostic, 验货 evolution-only——那道封条就是执行态准入票。
+- **驾驶舱 = dsh ✅(round 95):** 骑标准 MCP 缝零 vendor 接 dsh(:3080), 七只只读工具逐字节等价 `board.store` + `submit_brief` 原子投递; 自建 web board 对齐后退役, 报告改由 `python -m board.report` headless 出。**PH 上牌**: `profiles/dsh/rebrand.sh` 对安装副本七处打补丁(标题/PWA/favicon/slogan), dsh 源码零改动、包名不动、MIT 署名保留; `scripts/cockpit` 原生启动器每次启动幂等重敷补丁(dsh 升级后自愈)。
+- **zos 退役 ✅(W4/R10, 2026-08-23):** 操作面归 dsh, 设计资本审计落 [docs/zos-salvage.md](docs/zos-salvage.md)(authority FSM / 风险派生树 / 权限阶梯 / verify 沙箱 / not-measured 纪律 / World 状态模型 / 真机 ACT 半的需求规格); zos 仓 README 立碑 + tag `zos-retirement-2026-08-23` 冻结、代码零删除(`gh repo archive` 属组织动作留用户)。真机不搁置——升为未来 `actuation:real` 具身卡(v4.2), 挂独立认证运行时, sim 运行时拒挂。
 
 **Phase 1/2 已收口的头条**(Lift, 多区块合并): 脚本策略 held-out 三区块 **+32.2pp**(193 修 / 0 破, n=600), 对盲发孪生 +27.0pp(p=3e-32); 克隆策略三区块 +13.2pp。方法的实测下界: 失败不可被选择性检测的策略长不出规则, 决定性的不是成功率。
 
@@ -132,6 +146,52 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 真机是同一 `embodiment.env` 缝下未来的 actuation:real 具身卡(zos 已退役, 设计资本见
 docs/zos-salvage.md), MSR 模块经门禁进入, 技能以实测 SkillRecord 流向消费者做顾问
 (手写安全下界永不放宽)。**
+
+## 写一张卡(说明书)
+
+底座的终态验收: 实验室同学照这张说明书写个插件, 体检通过、验货通过, 就能进主线——底座一行不改, 全程在 dsh 里。卡 = `plugins/<名字>/` 一个目录, 核心是一份 `manifest.toml`(纯数据, 被解析永不 import, 所以底座保持声明式)。
+
+**1. manifest.toml —— 卡的自述。** 参考卡 `plugins/skill_toy` 是最小任务卡: 丢进 `plugins/` 即令 `{"kind":"task","task":"toy"}` 被接受, 底座零改动。
+
+```toml
+# 一个新任务名, 全靠 manifest 登记 —— 不碰底座、不改 harness_runtime。
+[task_bindings.toy]
+policy    = "plugins.policies:stack_scripted_provider"   # 执行绑定可借他卡
+planner   = "plugins.skill_toy.planner:provider"          # 本卡自持
+catalogue = "plugins.skill_toy.planner:CATALOGUE"         # 技能作者的词表, 按 ref 挂
+oracles   = "plugins.skill_toy.planner:ORACLES"
+```
+
+schema 全貌(各段皆可选, 装了才折叠进并集; 跨卡同名一律响亮):
+
+- `[mounts.<capability>]` `ref=` / `params=` —— 把 provider 挂到能力缝(取代旧 base_profile 写死挂载);
+- `[bundles.<name>]` —— 叠加层挂载(如 sawyer / robot-world), 从不进 base 折叠;
+- `[task_bindings.<task>]` —— 任务字符串 → policy / planner / catalogue / oracles;
+- `[campaigns.<name>]` —— 一个 campaign brief 可 spawn 的验货脚本(服务端 allowlist);
+- `third_party = [...]` —— 卡的第三方依赖面(喂插件边界 AST 测试);
+- `actuation = "sim" | "real"` / `needs_sim = true | false` —— sim 运行时拒挂 `real`;
+- `[claim]` / `[claim.sealed]` —— 技能卡的封存声明(见第 3 步)。
+
+**2. 体检(装机第一关, mode-agnostic):**
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/plugin_doctor.py plugins/skill_toy
+```
+
+Tier A 挂载时形状校验(复用 `Kernel.provide` 的 isinstance 门, 挂错形状当场红, 非任务中失败) + Tier B 按能力类别一发假件冒烟(确定性政策分流: percept/planner 必须确定, LLM reasoner 只验形状)。`needs_sim` 的卡在无仿真的底座机上跳过真仿真层, 不算失败。
+
+**3. 验货(能力声称必须过对照实验, evolution-only):** 带 `[claim]` 的技能卡声明它凭什么算数——task / policy / dev+heldout 种子块 / stages, 逐位重建同一份 prereg:
+
+```bash
+PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/acceptance_campaign.py \
+    --claim plugins/task --out runs/accept-stack
+```
+
+这是既有证据机器的参数化封装, **零新统计**。过关 = 至少一条 `heldout_judgement_established=True` 的晋级 SkillRecord。封存后 `plugin_doctor --verify-claim` 拿 `[claim.sealed]`(store + 精确 SkillRecord 摘要 + 头条 rescore 块)对 `runs/` 核对——那道封条就是执行态挂载的准入票。种子块用 `scripts/alloc_seeds.py` 领未烧区间, 在 STATUS.md 预定(运行时的重叠守卫仍是最终执法)。
+
+**4. 验证四件套(每条技能进库前都要过, GOAL v4.2 北极星):**
+
+① 同条件与父代**配对比较**(精确 McNemar); ② 与不含判断的**盲孪生**对照(证明赢的是判断, 不是多跑的控制步); ③ 从未参与调试的 **held-out** 区块终评(头条至少三块); ④ 传感条件变差的**消融曲线**(= sim-to-real 保留度估计)。通过者连同全部实验数据进技能库。
 
 ## 复现已发布的结果(parity)
 
