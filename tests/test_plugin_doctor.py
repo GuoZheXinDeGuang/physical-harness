@@ -104,13 +104,30 @@ def test_doctor_refuses_actuation_real(tmp_path):
     assert any(r.name == "actuation" and r.status == "FAIL" for r in rep.results)
 
 
-def test_doctor_skips_a_task_only_card(tmp_path):
-    # a task-binding card declares no mounts -- nothing to shape-check, still green.
-    body = ('[task_bindings.toy]\npolicy = "p:x"\nplanner = "p:x"\n'
-            'catalogue = "p:C"\noracles = "p:O"\n')
-    rep = check(_card(tmp_path, "task_only", body))
+def test_doctor_reddens_a_task_binding_with_dead_refs(tmp_path):
+    # GOAL v4.2: 不合格在 mount 报错而非任务中失败 -- a binding whose planner
+    # cannot even import must redden at 体检, not at brief dispatch (the hole
+    # the round-96 charter verifier caught: this card used to pass GREEN).
+    body = ('[task_bindings.bogus]\npolicy = "does.not.exist:nope"\n'
+            'planner = "does.not.exist:nope"\n'
+            'catalogue = "does.not.exist:C"\noracles = "does.not.exist:O"\n')
+    rep = check(_card(tmp_path, "task_dead", body))
+    assert not rep.green
+    assert any(r.name == "task:bogus" and r.status == "FAIL" for r in rep.results)
+
+
+def test_doctor_greens_a_task_binding_with_live_refs(tmp_path):
+    # the committed reference card's own refs, resolved exactly as the runtime
+    # would at dispatch: policy+planner through Kernel.provide, catalogue/oracles
+    # as importable attributes.
+    body = ('[task_bindings.toy]\n'
+            'policy = "plugins.policies:stack_scripted_provider"\n'
+            'planner = "plugins.skill_toy.planner:provider"\n'
+            'catalogue = "plugins.skill_toy.planner:CATALOGUE"\n'
+            'oracles = "plugins.skill_toy.planner:ORACLES"\n')
+    rep = check(_card(tmp_path, "task_live", body))
     assert rep.green
-    assert any(r.status == "SKIP" for r in rep.results)
+    assert any(r.name == "task:toy" and r.status == "PASS" for r in rep.results)
 
 
 # ── 验货 (--verify): the acceptance reader over a published skill store ───────

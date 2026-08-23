@@ -172,6 +172,15 @@ schema 全貌(各段皆可选, 装了才折叠进并集; 跨卡同名一律响�
 - `actuation = "sim" | "real"` / `needs_sim = true | false` —— sim 运行时拒挂 `real`;
 - `[claim]` / `[claim.sealed]` —— 技能卡的封存声明(见第 3 步)。
 
+**从零写 planner 的契约**(不借他卡时): `planner` ref 指向一个零参工厂
+`provider() -> TaskPlanner`, 其 `plan(brief: Mapping) -> Mapping` 读
+`brief["task"]` 返回纯 JSON 计划 `{"goal": str, "nodes": [{"skill", "args",
+"after", "oracle"}, ...]}`(节点按 `after` 排依赖, `oracle` 必须在你声明的
+oracles 集合里); `catalogue` 是 `{技能名: {参数名: type}}` 的词表(`type` 对象,
+所以走 ref 不走 JSON), `oracles` 是谓词名集合——两者被 fail-first 验证器用来在
+执行前拒掉坏计划。契约即 `harness/contracts.py:TaskPlanner`, 样例即
+`plugins/skill_toy/planner.py`(23 行, 连同确定性冒烟一起被体检 Tier B 覆盖)。
+
 **2. 体检(装机第一关, mode-agnostic):**
 
 ```bash

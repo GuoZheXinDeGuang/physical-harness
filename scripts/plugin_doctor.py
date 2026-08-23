@@ -212,9 +212,31 @@ def check(plugin_dir: str | Path) -> Report:
                     f"gated: simulator absent here ({missing}) -- run on a sim machine")
             return rep
 
+    # Tier A for task bindings: every ref a binding declares must load and pass
+    # the SAME contract gates the runtime applies at dispatch -- policy/planner
+    # through Kernel.provide (isinstance against PolicyFactory/TaskPlanner),
+    # catalogue/oracles as importable attributes. GOAL v4.2's fixed principle is
+    # "不合格在 mount 报错而非任务中失败"; a binding with a dead ref must redden
+    # HERE, not when the resident runtime resolves it mid-brief.
+    for task, binding in data.get("task_bindings", {}).items():
+        bk = Kernel(CAPABILITIES)
+        try:
+            bk.provide("policy.driver", load_provider(binding["policy"], {}),
+                       ref=binding["policy"], params={})
+            bk.provide("task.planner", load_provider(binding["planner"], {}),
+                       ref=binding["planner"], params={})
+            for attr_key in ("catalogue", "oracles"):
+                module_name, attr = binding[attr_key].split(":", 1)
+                getattr(importlib.import_module(module_name), attr)
+        except Exception as exc:  # noqa: BLE001 -- any dead ref is a red
+            rep.add("A", f"task:{task}", "FAIL", f"{type(exc).__name__}: {exc}")
+            continue
+        rep.add("A", f"task:{task}", "PASS", binding["planner"])
+
     mounts = card_mounts(data)
     if not mounts:
-        rep.add("A", "mounts", "SKIP", "task-only card: no capability mounts to check")
+        if not data.get("task_bindings"):
+            rep.add("A", "mounts", "SKIP", "claim-only card: nothing executable to check")
         return rep
 
     # Tier A: load + isinstance, reusing Kernel.provide's contract gate.
