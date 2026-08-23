@@ -225,12 +225,20 @@ A panel submit button is roadmap and would call the existing MCP tool, not a new
 ### Where each piece is mounted
 
 - `board/storecli.py` + its test → motherboard repo (`board/`).
-- BoardBridge **code** → fork (`packages/host/dsh-ph-board/`). Its **mount row**
-  (with box-specific `pythonPath`/`repoRoot`/`runsDir`) → the deploy overlay
-  `~/.dsh/cordis.patch.yml`, as a second `- insert:` row next to the existing
-  `mcp-physical-harness` row (keeps the fork bundle deployment-agnostic; the
-  `- insert:` directive is load-bearing — a bare `- id:` silently no-ops, see the
-  MCP row's own comment).
+- BoardBridge **code + mount row** → fork
+  (`packages/host/dsh-ph-board/` + a `board-bridge` `- insert:` row in
+  `packages/bundle/web-app/cordis.patch.yml`, next to `message-feedback`).
+  **Rollback fix (adversarial check):** the row does NOT go in the shared deploy
+  overlay `~/.dsh/cordis.patch.yml`. That overlay is also layered by
+  `scripts/cockpit --npx`, which serves the *published* dsh whose tree cannot
+  resolve this fork-only host package — a `- insert:` row there would hard-fail
+  the strict boot and break the rollback §6 promises. Keeping the row in the
+  fork bundle (which `--npx` never loads) makes rollback safe by construction;
+  the overlay stays MCP-row-only. Box-specific `pythonPath`/`repoRoot`/`runsDir`
+  are the **fork-only channel**: `scripts/cockpit` exports them as `PH_BOARD_*`
+  env vars that the row reads via `!!js`, and the row is
+  `disabled: !!js process.env.PH_BOARD_REPO === undefined` so a plain `dsh web`
+  still boots (a leading `!` in a `!!js` scalar reads as a second YAML tag).
 - 战报 panel **code + roster row** → fork (`packages/client/ui-ph-battle/` +
   a `dsh.client` row in `packages/bundle/web-app/cordis.patch.yml`); no
   box-specific config, so bake it in.
@@ -276,10 +284,12 @@ on the chosen data plane. Ordered; each step commits + pushes.
 2. **Harness CLI face** — `board/storecli.py` + byte-equivalence test
    (`storecli == board.store == mcp tool`, `../` rejected). Motherboard repo.
 3. **Fork host bridge** — `packages/host/dsh-ph-board/` `TypertRemoteService board`
-   with `@Remote('stores'|'store'|'heldout')` execFile→storecli; real-composition
-   test booting a `cordis.yml` through the Loader asserting `/api/board/stores`
-   returns the same dict as `board.store.list_stores`. Add its mount row (with box
-   paths) to `~/.dsh/cordis.patch.yml`.
+   with `@Remote('stores'|'store'|'heldout')` execFile→storecli, returning
+   `JsonValue` (the Typert generator rejects an unconstrained `unknown` at a
+   Remote boundary). Register the generated `board` remote-client in
+   `packages/api/remotes/src/client/index.ts` so `ctx.remote.board` resolves. Add
+   the `board-bridge` row to the **fork bundle** patch (not `~/.dsh/`; see §3
+   "Where each piece is mounted") gated on `PH_BOARD_*` env.
 4. **战报 panel** — `packages/client/ui-ph-battle/` copied from `ui-trajectory`,
    registers view id `battle` into `conversation.view`, fetches `/api/board/stores`
    (list) → `/api/board/store` + `/api/board/heldout` (drill-down), renders paired
@@ -304,8 +314,9 @@ Edit `/home/yusenzlabpc/Desktop/physical-harness/scripts/cockpit`.
 
 - Add `PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"` and a `--npx` flag.
 - Keep the `nvm use 22` + `export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"` block
-  unchanged — this is what makes the fork inherit the MCP row + BoardBridge row +
-  workspace seed from `$DSH_HOME`.
+  unchanged — this is what makes the fork inherit the MCP row + workspace seed
+  from `$DSH_HOME`. (The BoardBridge row rides the fork *bundle*, not `$DSH_HOME`;
+  the fork path additionally exports `PH_BOARD_*` so that row activates.)
 - **Fork path (default):** guard the built artifacts
   (`[ -f "$PH_STATION/apps/web/dist/index.html" ] && [ -f "$PH_STATION/apps/cli/lib/bin.js" ]`);
   if missing, error `run 'pnpm run build' in ph-station` (do **not** serve an
@@ -336,15 +347,18 @@ normalizes cleanly.
 5. BoardBridge live: `/api/board/stores` returns the same dict as
    `board.store.list_stores(runs)` (byte-equivalence test green); the 战报 panel
    renders a real store's paired gate + McNemar + held-out badge.
-6. URL/bind parity: fork serves `127.0.0.1:3080` same as npx; `--npx` fallback
-   still works from the same tree.
+6. URL/bind parity + rollback: fork serves `127.0.0.1:3080` same as npx. `--npx`
+   **boots green WITH the deployed `~/.dsh/cordis.patch.yml` overlay present** —
+   proving the BoardBridge row is NOT in that overlay (it rides the fork bundle),
+   so the published dsh never meets a host package its tree cannot resolve.
 7. Fork build is green (`pnpm run build`) and the box can rebuild from clean.
 
 ### Retire plan (after parity, separate PR — not executed by this task)
 
 Delete `profiles/dsh/rebrand.sh`; delete the `DSH_PKG=@deepseek-ai/dsh@0.1.1-rc.2`
 pin and the `--npx` branch from `scripts/cockpit`; keep `profiles/dsh/seed_workspace.py`
-(user-data seed, still used) and `~/.dsh/cordis.patch.yml` (MCP + BoardBridge rows).
+(user-data seed, still used) and `~/.dsh/cordis.patch.yml` (MCP row only — the
+BoardBridge row lives in the fork bundle, see §3).
 
 ---
 

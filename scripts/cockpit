@@ -72,12 +72,13 @@ if [ "$USE_NPX" -eq 1 ]; then
   # --- fallback path (unchanged round-95 behavior) --------------------------
   # rebrand.sh patches the npx install AND seeds the workspace at its tail.
   #
-  # NOTE for a future slice: when the BoardBridge host-bridge row is added to
-  # the shared $DSH_HOME/cordis.patch.yml, this npx path must point DSH_HOME at
-  # an overlay variant WITHOUT that row -- npx cannot resolve the fork-only host
-  # package and dsh's strict boot would fail. The current overlay carries only
-  # the mcp-physical-harness row (@deepseek-ai/dsh-mcp-client ships with the
-  # published CLI), so both paths boot green today. See ph-station-design.md §6.
+  # ROLLBACK is safe by construction: the BoardBridge host row lives in the fork
+  # bundle (packages/bundle/web-app/cordis.patch.yml), NOT the shared
+  # $DSH_HOME/cordis.patch.yml overlay this npx path also loads. The overlay
+  # carries only the mcp-physical-harness row (@deepseek-ai/dsh-mcp-client ships
+  # with the published CLI), so this path never sees a host package the npx tree
+  # cannot resolve, and PH_BOARD_* are never exported here so nothing activates
+  # the board. Both paths boot green. See ph-station-design.md §6.
   if ! bash "$REPO/profiles/dsh/rebrand.sh"; then
     echo "cockpit: WARNING rebrand overlay reported an error; serving anyway" >&2
   fi
@@ -100,6 +101,15 @@ fi
 if ! python3 "$REPO/profiles/dsh/seed_workspace.py" --workspace "$REPO" --dsh-home "$DSH_HOME"; then
   echo "cockpit: WARNING workspace seed reported an issue; console still serves" >&2
 fi
+
+# BoardBridge box paths (the fork-only channel): the web-app bundle's
+# board-bridge row reads these PH_BOARD_* env vars via !!js and disables itself
+# when PH_BOARD_REPO is unset, so the 战报 panel's /api/board/* endpoints only
+# come alive on this fork path. The board host package ships in the fork bundle,
+# never in $DSH_HOME/cordis.patch.yml, so --npx is unaffected (design §3/§6).
+export PH_BOARD_PYTHON="${PH_BOARD_PYTHON:-$REPO/.venv/bin/python}"
+export PH_BOARD_REPO="${PH_BOARD_REPO:-$REPO}"
+export PH_BOARD_RUNS="${PH_BOARD_RUNS:-$REPO/runs}"
 
 echo "cockpit: serving physical-harness console (fork build) at http://127.0.0.1:$PORT" >&2
 exec node "$BIN" web --no-open --port "$PORT"
