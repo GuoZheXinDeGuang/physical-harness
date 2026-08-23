@@ -1,0 +1,30 @@
+# The place skill card. "place" is the stack task's place-shaped recovery
+# (recovery_name = "replace"), seeded from stack-g1 and sealed in runs/place-g2
+# -- a report-grade skill (three held-out blocks, judgement established). It adds
+# no mount or task binding (the recovery rides the stack binding), so this is a
+# claim-only card: 体检 skips it (no seams), 验货 reads its claim.
+#
+# [claim] rebuilds place_campaign.place_prereg() byte-for-byte (the place-shaped
+# overrides -- critic_budget/recovery_name/prior_discordance_yield/parent seed --
+# on the stack baseline), so acceptance_campaign re-runs the SAME machine.
+# [claim.sealed] is the sealed evidence `plugin_doctor --verify-claim` checks.
+[claim]
+task = "stack"
+policy = "plugins.policies:stack_scripted_provider"
+dev = [46267, 47000]
+heldout = [47200, 47400]
+stages = "plugins.embodiment_robosuite.env:stack_stages"
+critic_budget = 1
+recovery_name = "replace"
+prior_discordance_yield = 0.15
+parent_store = "/home/yusenzlabpc/Desktop/physical-harness/runs/stack-g1"
+parent_final_sha = "2f5f3756f23c51aaff93685412b760ae42132b72e9e9229d31140c1a9d562c1a"
+
+[claim.sealed]
+store = "runs/place-g2"
+skills = [
+  "adc5578932681b6607737cdee40164c472e1bde277b0637a3b2c02623a3c4440",
+  "eb46481a88b93cf9db9e774734fdde063725557d83f1abffe3033cd33a45a40f",
+]
+heldout_judgement_established = true
+rescore_blocks = ["runs/place-g2-rescore-47400", "runs/place-g2-rescore-48000"]

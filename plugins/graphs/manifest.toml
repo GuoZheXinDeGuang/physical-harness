@@ -4,3 +4,10 @@ ref = "plugins.graphs:skill_graph_provider"
 
 [mounts."graph.scene"]
 ref = "plugins.graphs:scene_graph_provider"
+
+# The real-world scene overlay: swap graph.scene to WorldSceneGraph (a robot
+# World.snapshot() bridge). profiles.bundle("robot-world") layers this over
+# base_profile -- only graph.scene differs, and the plan sha moves. Neutral name
+# (was the zos-world bundle; WorldSceneGraph's zos provenance retires in R10).
+[bundles.robot-world]
+"graph.scene" = "plugins.graphs:world_scene_graph_provider"

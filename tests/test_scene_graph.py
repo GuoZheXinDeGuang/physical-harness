@@ -5,8 +5,8 @@ The load-bearing claims, in test order:
 (a) base_profile's graph.scene ref string is byte-identical to before, so
     MountPlan.sha does not move — the behavior behind the unchanged ref goes
     from empty stub to SimSceneGraph.
-(b) zos_world_bundle swaps ONLY graph.scene (to WorldSceneGraph) and mints a
-    new sha — the sawyer_bundle story, replayed for the real-robot bridge.
+(b) the robot-world bundle swaps ONLY graph.scene (to WorldSceneGraph) and mints
+    a new sha — the sawyer bundle story, replayed for the real-robot bridge.
 (c) SimSceneGraph mirrors features.py semantics: _OBJECT_KEYS resolution,
     planar eef-to-object distance (features.py:67), absent keys omitted never
     faked — all without numpy in the import chain.
@@ -21,7 +21,7 @@ import sys
 from harness import Kernel, resolve_plan
 from harness.definitions import CAPABILITIES
 from plugins.graphs import SimSceneGraph, WorldSceneGraph
-from profiles import base_profile, zos_world_bundle
+from profiles import base_profile, bundle
 
 CONSUMER = "scene-test"
 
@@ -56,11 +56,11 @@ def test_base_profile_scene_ref_is_byte_identical_and_resolves_sim_graph():
     assert isinstance(k.resolve("graph.scene", consumer=CONSUMER), SimSceneGraph)
 
 
-# --- (b) zos_world_bundle: one mount swapped, new identity ------------------
+# --- (b) robot-world bundle: one mount swapped, new identity ----------------
 
-def test_zos_world_bundle_swaps_only_scene_and_mints_a_new_sha():
+def test_robot_world_bundle_swaps_only_scene_and_mints_a_new_sha():
     base = resolve_plan(base_profile())
-    world = resolve_plan(base_profile(), bundles=(zos_world_bundle(),))
+    world = resolve_plan(base_profile(), bundles=(bundle("robot-world"),))
     assert world.sha() != base.sha(), "the mount is experiment identity: sha must move"
 
     base_by_cap = {m.capability: m for m in base.mounts}

@@ -91,3 +91,25 @@ def test_dry_run_prints_the_prereg_sha_without_mounting(tmp_path, capsys):
     rc = main(["--claim", str(_card(tmp_path)), "--dry-run"])
     assert rc == 0
     assert stack_prereg().sha()[:12] in capsys.readouterr().out
+
+
+# ── the committed skill cards' claims re-run the SAME machine (R9 dogfood) ────
+
+def test_committed_stack_card_claim_rebuilds_stack_prereg():
+    """The stack skill card (plugins/task) is a real 说明书: acceptance_campaign
+    rebuilds stack_prereg() byte-for-byte from its [claim]."""
+    assert build_prereg(load_claim("plugins/task")).sha() == stack_prereg().sha()
+
+
+def test_committed_place_card_claim_rebuilds_place_prereg():
+    """The place skill card's [claim] rebuilds place_prereg() byte-for-byte -- the
+    place-shaped overrides on the stack baseline, moved into manifest data."""
+    from scripts.place_campaign import place_prereg
+    assert build_prereg(load_claim("plugins/skill_place")).sha() == place_prereg().sha()
+
+
+def test_claim_sealed_table_is_ignored_by_build_prereg():
+    """[claim.sealed] is evidence for --verify-claim, never a prereg input -- it
+    must not trip the loud unknown-field guard."""
+    claim = dict(_STACK_CLAIM, sealed={"store": "runs/stack-g1", "skills": ["x"]})
+    assert build_prereg(claim).sha() == stack_prereg().sha()

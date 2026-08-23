@@ -2,7 +2,7 @@
 """验货 template: run the existing evidence machine over a manifest CLAIM (R8, W2).
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/acceptance_campaign.py \
-        --claim plugins/skill_stack --out runs/accept-stack
+        --claim plugins/task --out runs/accept-stack
     (add --dry-run to print the preregistration sha without mounting or running)
 
 The parameterized form of ``scripts/stack_campaign.py`` / ``place_campaign.py``:
@@ -60,7 +60,9 @@ _PREREG_FIELDS = {f.name for f in dataclasses.fields(Preregistration)}
 #: field. ``policy`` is the driver MOUNT ref, not ``prereg.policy`` (that label is
 #: ``policy_label``, default "scripted"); env/policy/percept provider refs are
 #: stamped by ``rsi_run`` from the resolved mount, so a claim must not set them.
-_CLAIM_SPECIAL = {"task", "policy", "policy_label", "dev", "heldout", "stages"}
+#: ``sealed`` is the [claim.sealed] evidence table (plugin_doctor --verify-claim
+#: reads it), not a prereg input.
+_CLAIM_SPECIAL = {"task", "policy", "policy_label", "dev", "heldout", "stages", "sealed"}
 
 
 def _load_attr(ref: str):

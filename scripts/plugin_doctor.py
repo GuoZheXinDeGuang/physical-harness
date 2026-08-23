@@ -284,6 +284,57 @@ def verify(store: str | Path) -> Report:
     return rep
 
 
+def verify_claim(plugin_dir: str | Path) -> Report:
+    """验货 a skill card's manifest CLAIM against the sealed store it names.
+
+    The card-oriented counterpart to ``verify(store)``: a skill card declares its
+    sealed evidence in ``[claim.sealed]`` -- the ``store`` its records live in, the
+    exact SkillRecord ``skills`` digests it commits to, ``heldout_judgement_established``,
+    and the headline ``rescore_blocks``. This resolves the store, reuses ``verify``
+    for the four record checks (promotion / prereg_sha / held-out judgement /
+    ablation), then adds the claim-specific pins: the declared digests must be
+    EXACTLY the store's skill filenames (a content commitment -- a swapped or added
+    sealed record breaks the claim), and each cited rescore block must be present
+    as a sealed store. So `--verify-claim plugins/task` is the execution-mode
+    admission ticket read straight off the card, no store path to remember.
+    """
+    plugin_dir = Path(plugin_dir)
+    data = _toml((plugin_dir / "manifest.toml").read_text())
+    sealed = (data.get("claim") or {}).get("sealed")
+    if not sealed:
+        rep = Report(f"{plugin_dir.name} (验货 claim)")
+        rep.add("V", "claim.sealed", "FAIL",
+                "manifest has no [claim.sealed] table to verify")
+        return rep
+
+    store = (REPO_ROOT / sealed["store"]).resolve()
+    rep = verify(store / "skills")
+    rep.plugin = f"{plugin_dir.name} (验货 claim: {sealed['store']})"
+
+    # Content commitment: the claim pins EXACTLY these sealed digests. A record
+    # swapped out (or an extra one slipped in) breaks set-equality, so the claim
+    # can never silently drift off the evidence it was written against.
+    on_disk = {f.stem for f in (store / "skills").glob("*.json")}
+    declared = set(sealed.get("skills", ()))
+    rep.add("V", "sealed digests",
+            "PASS" if declared and declared == on_disk else "FAIL",
+            f"claim pins {sorted(d[:12] for d in declared)} vs store "
+            f"{sorted(d[:12] for d in on_disk)}")
+
+    # The card asserts the held-out judgement is established; verify() above
+    # confirmed it on the records themselves.
+    rep.add("V", "claim established",
+            "PASS" if sealed.get("heldout_judgement_established") is True else "FAIL",
+            "manifest claims heldout_judgement_established")
+
+    # The headline rescore blocks the claim cites must exist as sealed stores.
+    for rb in sealed.get("rescore_blocks", ()):
+        rep.add("V", f"rescore {rb}",
+                "PASS" if (REPO_ROOT / rb / "index.jsonl").exists() else "FAIL",
+                "sealed heldout_rescore block present")
+    return rep
+
+
 def _fmt(rep: Report) -> str:
     lines = [f"plugin_doctor: {rep.plugin} -- {'GREEN' if rep.green else 'RED'}"]
     for r in rep.results:
@@ -297,13 +348,17 @@ def main(argv: list[str] | None = None) -> int:
                     help="the card directory to 体检 (holds manifest.toml)")
     ap.add_argument("--verify", metavar="STORE",
                     help="验货: pass/fail a published skill store instead of 体检 a card")
+    ap.add_argument("--verify-claim", metavar="DIR", dest="verify_claim",
+                    help="验货 a skill card's [claim.sealed] against the store it names")
     args = ap.parse_args(argv)
-    if args.verify is not None:
+    if args.verify_claim is not None:
+        rep = verify_claim(args.verify_claim)
+    elif args.verify is not None:
         rep = verify(args.verify)
     elif args.plugin_dir is not None:
         rep = check(args.plugin_dir)
     else:
-        ap.error("give a card directory to 体检, or --verify STORE to 验货")
+        ap.error("give a card directory to 体检, --verify STORE, or --verify-claim DIR")
     print(_fmt(rep))
     return 0 if rep.green else 1
 

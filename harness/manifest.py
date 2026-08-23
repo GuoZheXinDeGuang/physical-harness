@@ -43,6 +43,10 @@ class Registry:
     task_bindings: dict[str, dict] = field(default_factory=dict)
     campaigns: dict[str, str] = field(default_factory=dict)
     third_party: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Named overlay bundles a card owns: an alternate mount set (a second robot,
+    #: a real-world scene bridge) layered over ``base_profile`` by ``profiles.bundle``.
+    #: The wiring lives in the card's manifest, not welded into ``profiles``.
+    bundles: dict[str, tuple[Mount, ...]] = field(default_factory=dict)
 
 
 def _load(root: Path) -> list[tuple[str, dict]]:
@@ -63,6 +67,24 @@ def card_mounts(data: dict) -> list[Mount]:
         ref = spec if isinstance(spec, str) else spec["ref"]
         params = {} if isinstance(spec, str) else dict(spec.get("params", {}))
         out.append(Mount(cap, ref, params))
+    return out
+
+
+def card_bundles(data: dict) -> dict[str, list[Mount]]:
+    """Every named ``[bundles.<name>]`` overlay a SINGLE manifest declares.
+
+    A bundle table maps ``capability -> ref (+params)`` exactly like ``mounts``
+    (same string-or-``{ref, params}`` shape), so ``profiles.bundle(name)`` can
+    layer it over ``base_profile`` -- the reader lives here so bundle wiring has
+    one shape reader, the same as ``card_mounts``."""
+    out: dict[str, list[Mount]] = {}
+    for name, table in data.get("bundles", {}).items():
+        mounts = []
+        for cap, spec in table.items():
+            ref = spec if isinstance(spec, str) else spec["ref"]
+            params = {} if isinstance(spec, str) else dict(spec.get("params", {}))
+            mounts.append(Mount(cap, ref, params))
+        out[name] = mounts
     return out
 
 
@@ -87,9 +109,11 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     task_bindings: dict[str, dict] = {}
     campaigns: dict[str, str] = {}
     third_party: dict[str, tuple[str, ...]] = {}
+    bundles: dict[str, tuple[Mount, ...]] = {}
     cap_owner: dict = {}
     task_owner: dict = {}
     camp_owner: dict = {}
+    bundle_owner: dict = {}
 
     for plugin, data in _load(root):
         if data.get("actuation", "sim") == "real":
@@ -113,7 +137,11 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, script in data.get("campaigns", {}).items():
             _claim(campaigns, camp_owner, name, script,
                    kind="campaign", plugin=plugin)
+        for name, mounts_ in card_bundles(data).items():
+            _claim(bundles, bundle_owner, name, tuple(mounts_),
+                   kind="bundle", plugin=plugin)
         if "third_party" in data:
             third_party[plugin] = tuple(data["third_party"])
 
-    return Registry(tuple(mounts.values()), task_bindings, campaigns, third_party)
+    return Registry(tuple(mounts.values()), task_bindings, campaigns,
+                    third_party, bundles)

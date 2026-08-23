@@ -17,3 +17,22 @@ oracles = "plugins.task.planner_stack:ORACLES"
 
 [campaigns]
 stack = "scripts/stack_campaign.py"
+
+# The stack skill's acceptance claim. [claim] is the re-runnable half:
+# acceptance_campaign builds stack_prereg() byte-for-byte from these fields
+# (task/policy/dev/heldout/stages), so 验货 is the campaign machine as inspector.
+# [claim.sealed] is the sealed half: the store + the exact SkillRecord digests +
+# heldout_judgement_established the campaign already earned, which
+# `plugin_doctor --verify-claim` checks against runs/ (the execution-mode ticket).
+[claim]
+task = "stack"
+policy = "plugins.policies:stack_scripted_provider"
+dev = [41000, 42000]
+heldout = [42000, 42200]
+stages = "plugins.embodiment_robosuite.env:stack_stages"
+
+[claim.sealed]
+store = "runs/stack-g1"
+skills = ["57162e40d2bd4a0d59973d8c51d19f7267b682ba582c7b5c84568b334f02d41d"]
+heldout_judgement_established = true
+rescore_blocks = ["runs/stack-g1-rescore-42200", "runs/stack-g1-rescore-42400"]

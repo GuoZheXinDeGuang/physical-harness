@@ -142,3 +142,46 @@ def test_actuation_real_is_refused(tmp_path):
                     '[mounts."embodiment.env"]\nref = "some.real:provider"\n')
     with pytest.raises(ValueError, match="actuation:real"):
         discover(tmp_path)
+
+
+# ── bundles: card-owned overlays folded off profiles (R9) ────────────────────
+
+def test_committed_cards_declare_their_bundles_in_the_union():
+    """The bundle wiring lives in the cards, not profiles: the embodiment card
+    owns ``sawyer`` (embodiment + driver), the graph card owns ``robot-world``."""
+    reg = discover()
+    saw = {m.capability: m.provider for m in reg.bundles["sawyer"]}
+    assert saw == {"embodiment.env": "plugins.embodiment_robosuite:sawyer_provider",
+                   "policy.driver": "plugins.policies:sawyer_scripted_provider"}
+    rw = {m.capability: m.provider for m in reg.bundles["robot-world"]}
+    assert rw == {"graph.scene": "plugins.graphs:world_scene_graph_provider"}
+
+
+def test_bundles_do_not_move_the_base_plan_sha():
+    """Bundles are alternate overlays, never folded into base_profile -- declaring
+    them leaves the sealed base identity untouched."""
+    assert resolve_plan(base_profile()).sha() == _SEALED_BASE_SHA
+
+
+def test_profiles_bundle_builds_and_is_absent_from_the_base_mounts():
+    """profiles.bundle(name) reads the manifest overlay; its mounts are NOT in the
+    base plan (a bundle is layered, not folded)."""
+    from profiles import bundle
+    b = bundle("sawyer")
+    assert b.name == "sawyer" and len(b.mounts) == 2
+    base_refs = {m.provider for m in resolve_plan(base_profile()).mounts}
+    assert "plugins.embodiment_robosuite:sawyer_provider" not in base_refs
+
+
+def test_unknown_bundle_is_loud():
+    from profiles import bundle
+    with pytest.raises(KeyError, match="no bundle 'nope'"):
+        bundle("nope")
+
+
+def test_duplicate_bundle_across_manifests_is_loud(tmp_path):
+    body = '[bundles.dup]\n"graph.scene" = "plugins.graphs:scene_graph_provider"\n'
+    _write_manifest(tmp_path, "card_a", body)
+    _write_manifest(tmp_path, "card_b", body)
+    with pytest.raises(ValueError, match="duplicate bundle 'dup'"):
+        discover(tmp_path)

@@ -3448,3 +3448,63 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
 并列成为第二个报告级技能。** broken 率逐块 2/2/2 稳定, round 92 终章的"首次带破坏晋级
 要盯稳定性"疑虑解除。工程侧双验证: R0 抢救的 parent 续种重建路径真跑成立(三规则 bundle
 b026831c 逐位重建), R7 的 reasoner 新字段对旧封存正确哈希折叠。
+
+## Round 96 T3 尾 - 2026-08-23 - R9 狗粮重装 + 终态验收彩排: bundle 归卡、封存声明可验、驾驶舱走通全链
+
+### 做成了什么
+
+1. **bundle 布线搬出 profiles → 卡自持(manifest 数据)**: manifest schema 增 `[bundles.<name>]`
+   段(与 mounts 同形状, card_bundles 一处读, discover 折叠且跨卡同名响亮); profiles 的
+   sawyer_bundle()/zos_world_bundle() 两个写死函数删除, 换一个通用 `bundle(name)` 读者
+   (布线零留在 profiles)。sawyer 布线入 embodiment_robosuite 卡, world 布线入 graphs 卡
+   并中性化改名 zos-world→**robot-world**(WorldSceneGraph 被 test_scene_graph c/d 消费,
+   非 zos-死代码, 保留; zos 出处注释 R10 清)。**base plan sha b905a51 逐位不动**——bundle
+   是叠加层, 从不进 base_profile 折叠。
+2. **技能卡获封存声明段(sealed-claim), doctor --verify-claim 可查**: stack 声明扩进
+   plugins/task(既有 stack binding/campaign 的家, 扩非建), place 声明入新
+   plugins/skill_place(place 是 stack 任务的 replace 恢复, 无既有家 → 纯声明卡)。
+   每张 `[claim]` 逐位重建 stack_prereg/place_prereg(验货可重跑同一机器),
+   `[claim.sealed]` = store + 精确 SkillRecord 摘要 + heldout_judgement_established +
+   头条 rescore 块。verify_claim 复用 verify() 四检 + 加两钉: 声明摘要集必须与 store 内
+   技能文件名逐一相等(内容承诺, 换/加一条封存记录即破声明), 引用的 rescore 块须在场。
+   真跑绿两卡(runs/stack-g1 一条 + runs/place-g2 两条, 各自 rescore 块在场)。
+3. **终态验收彩排(经 dsh 网关 API, round-95 同路径同证据)**: 新会话
+   session-6345195a, 3 次交互(1 create + 2 prompt), 会话 JSONL 是地面真相。
+   - **第一轮**「看技能库里有哪些已确立的技能, 一句话总结」: 治理面工具真被调用——
+     `mcp__physical-harness__list_stores` → `__sessions` → `__session`(session-main /
+     place-g2)。**但 MCP 读面止于 store/session 摘要, 不暴露单条技能记录的
+     heldout_judgement_established**, 模型遂用 read/grep/bash 补读 skills/*.json 拿细节;
+     终文一句话总结: 已确立技能仅 grasp_recovery 一种("replace" 恢复), 6 个通过 heldout
+     判定的版本(lift: demo-r1/r2/r3; stack: stack-g1 gen1、place-g2 gen1+gen2), demo
+     另有一个未判定的同种。**判定正确, 治理工具在场; 补读细节非绕过治理(工具先行)。**
+   - **第二轮**「投一个 stack 任务, seed 90300, 然后确认它完成」:
+     `mcp__physical-harness__submit_brief {"kind":"task","task":"stack","seed":90300}`
+     → resident runtime 领取(brief-385e2dd5…)→ inbox 清空 → 移到 done/ → 模型用
+     bash + `mcp__physical-harness__session` 确认。**任务确实完成到 done/ + 写下
+     task.plan_complete, chain_ok=true**; 但 seed 90300 的堆叠 **success=false**(3 次
+     node_failure + max_actuations=3 预算耗尽)——难 seed 的正常失败率, runtime 诚实报告
+     不伪造成功。彩排证的是 dsh→MCP治理工具→驻留 runtime inbox→done/→plan_complete 读回
+     这条缝端到端通, 而非某个 seed 会不会堆成。
+4. **门禁全绿**: 全量 441 通过 / 3 跳(HEAD 429/3, +12 新测试, 零缩水); 隔离底座道
+   (新鲜进程 + robosuite 屏蔽)412 通过 / 6 跳 / 26 弃(HEAD 400/6/26, 零缩水, 跳/弃不变);
+   eval_battery --no-soak PASS(demo parity + 三块 rescore, 封存 sha 2f5f3756 不动);
+   触碰文件 ruff 清。
+
+### 什么没成 / 注意
+
+- **驻留 runtime 是 05:30 起的老进程(pre-R4, 无 MODE 封条), 已在跑 → 未重启**(施工图:
+   不在跑才启)。task brief 的准入在执行态与老码一致(只有 campaign brief 才被模式门挡),
+   故彩排缝证据成立; 未重启是避免在既存 pre-R4 链上重放 boot 的风险。若要 R4 MODE 封条的
+   执行态会话, 需清空(本无)MODE 再以当前码 --mode execution 重启, 留作需要时。
+- **偏差(现实赢, 已最小化并记)**: (1) robot-world bundle 放 graphs 卡而非施工图字面的
+   embodiment_robosuite——scene 交换归 graphs 卡所有更干净, 且 R10 本就动 graphs; sawyer
+   放 embodiment_robosuite。(2) stack 声明扩进 plugins/task(既有家), place 建新
+   skill_place(无既有 place 家)——非对称由现实强制。(3) 施工图说 stack "四块 rescore",
+   盘上实为 2 个 rescore 目录(42200/42400)+ campaign 自带 held-out(42000)= 三块头条
+   (与 eval_battery stack_three_block 一致); place 同为三块(47200 自带 + 47400/48000)。
+- **第一轮暴露一个读面缺口(非阻断, 反成 R9 动机)**: 驾驶舱 MCP 读工具是 store/session 级,
+   要"已确立技能"需下探 skill 记录; 这正是 [claim.sealed] + verify-claim 补的可机检面——
+   声明把 heldout 判定与精确摘要钉进 manifest, doctor 一条命令即验。
+- 彩排 session 存 ~/.dsh/sessions(非仓库), 第二轮向 runs/session-main 投任务是彩排应有
+   写入(runtime 作业目录, 非封存 campaign store); place-g2 rescore 后台作业只写
+   runs/place-g2-rescore-*, 全程未碰。

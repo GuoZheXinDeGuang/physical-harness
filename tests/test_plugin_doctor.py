@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.plugin_doctor import check, verify
+from scripts.plugin_doctor import check, verify, verify_claim
 
 _REPO = Path(__file__).resolve().parent.parent
 
@@ -160,6 +160,44 @@ def test_verify_reddens_missing_prereg_sha(tmp_path):
     rep = verify(_store(tmp_path, _skill_record(prereg_sha=None)))
     assert not rep.green
     assert any(r.name == "prereg_sha" and r.status == "FAIL" for r in rep.results)
+
+
+# ── --verify-claim: a skill card's sealed claim vs the store it names (R9) ────
+
+def test_verify_claim_greens_the_committed_stack_card():
+    """The stack skill card (plugins/task) claims runs/stack-g1: --verify-claim
+    reads the [claim.sealed] table and greens it against the sealed store."""
+    rep = verify_claim(_REPO / "plugins" / "task")
+    assert rep.green, _fails(rep)
+
+
+def test_verify_claim_greens_the_committed_place_card():
+    rep = verify_claim(_REPO / "plugins" / "skill_place")
+    assert rep.green, _fails(rep)
+    # both sealed place digests are pinned and the rescore blocks are present.
+    names = {r.name for r in rep.results if r.status == "PASS"}
+    assert "sealed digests" in names
+    assert any(n.startswith("rescore runs/place-g2-rescore") for n in names)
+
+
+def test_verify_claim_reddens_a_card_without_a_sealed_table(tmp_path):
+    card = _card(tmp_path, "no_sealed", '[claim]\ntask = "stack"\n')
+    rep = verify_claim(card)
+    assert not rep.green
+    assert any(r.name == "claim.sealed" and r.status == "FAIL" for r in rep.results)
+
+
+def test_verify_claim_reddens_a_wrong_digest_pin(tmp_path):
+    """A claim pinning a digest the store does not hold breaks set-equality -- the
+    content commitment catches a claim drifting off its evidence."""
+    card = _card(tmp_path, "wrong_pin",
+                 '[claim.sealed]\n'
+                 'store = "runs/stack-g1"\n'
+                 'skills = ["deadbeef"]\n'
+                 'heldout_judgement_established = true\n')
+    rep = verify_claim(card)
+    assert not rep.green
+    assert any(r.name == "sealed digests" and r.status == "FAIL" for r in rep.results)
 
 
 @pytest.mark.robosuite

@@ -103,29 +103,22 @@ def matrix_plans() -> dict[tuple[str, str], tuple[MountPlan, dict[str, str]]]:
     }
 
 
-def sawyer_bundle():
-    """Swap the embodiment to Sawyer: one bundle, zero code changes anywhere else.
+def bundle(name: str):
+    """Build an installed card's named overlay bundle from its manifest.
 
-    resolve_plan(base_profile(), bundles=(sawyer_bundle(),)) is the whole story
-    of "a second robot": the plan sha changes (the mount is part of the
-    experiment's identity), every other capability keeps its provider.
+    A bundle is an alternate mount set a card owns (a second robot, a real-world
+    scene bridge), declared in ``plugins/*/manifest.toml`` under ``[bundles.<name>]``
+    and folded by ``discover``. ``resolve_plan(base_profile(), bundles=(bundle("sawyer"),))``
+    is the whole story of "a second robot": the plan sha moves (the mount IS
+    experiment identity), every other capability keeps its provider. The wiring
+    lives in the card, not here -- so a new robot's bundle is a manifest edit, not
+    a code edit, exactly like adding a task is a dropped-in plugin dir.
     """
-    from harness.config import Bundle, Mount
+    from harness.config import Bundle
 
-    return Bundle("sawyer", (
-        Mount("embodiment.env", "plugins.embodiment_robosuite:sawyer_provider"),
-        Mount("policy.driver", "plugins.policies:sawyer_scripted_provider"),))
-
-
-def zos_world_bundle():
-    """Swap graph.scene to the zos World bridge: the real-robot deployment.
-
-    base_profile's graph.scene ref stays byte-identical (sha-stable); a zos
-    deployment layers this bundle and hands ``World.snapshot()`` dicts to the
-    resolved provider. Same story as sawyer_bundle: a config edit, not a code
-    edit, and the plan sha moves because the mount is experiment identity.
-    """
-    from harness.config import Bundle, Mount
-
-    return Bundle("zos-world", (
-        Mount("graph.scene", "plugins.graphs:world_scene_graph_provider"),))
+    reg = discover()
+    if name not in reg.bundles:
+        raise KeyError(
+            f"no bundle {name!r} among installed manifests "
+            f"(have {sorted(reg.bundles)}) -- declare it under [bundles.{name}]")
+    return Bundle(name, reg.bundles[name])

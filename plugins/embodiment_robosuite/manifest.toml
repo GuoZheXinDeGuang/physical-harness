@@ -10,3 +10,11 @@ ref = "plugins.embodiment_robosuite:provider"
 
 [mounts."percept.model"]
 ref = "plugins.embodiment_robosuite.percept:provider"
+
+# The "second robot" overlay: swap the embodiment to Sawyer, its scripted driver
+# riding along. profiles.bundle("sawyer") layers this over base_profile -- the
+# plan sha moves (the mount IS experiment identity) while every other capability
+# keeps its provider. The wiring lives here (the card owns it), not in profiles.
+[bundles.sawyer]
+"embodiment.env" = "plugins.embodiment_robosuite:sawyer_provider"
+"policy.driver" = "plugins.policies:sawyer_scripted_provider"

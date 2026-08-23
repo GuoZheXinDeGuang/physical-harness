@@ -7,8 +7,8 @@ Two scene-graph providers share one snapshot schema
 (frame/t/nodes[id,label,kind,pos,conf,stale]/relations[from,to,rel]):
 
 - SimSceneGraph reads a robosuite observation (the base_profile context);
-- WorldSceneGraph reads a zos ``World.snapshot()`` dict (the real-robot
-  context, mounted via ``profiles.zos_world_bundle``).
+- WorldSceneGraph reads a robot ``World.snapshot()`` dict (the real-robot
+  context, mounted via the ``robot-world`` bundle -- ``profiles.bundle``).
 
 The caller supplies the raw observation (contracts.SceneGraph.snapshot(obs));
 this module is a pure normalizer, so it imports neither zos nor numpy — the
