@@ -58,6 +58,14 @@ def sha_json(payload) -> str:
     ).hexdigest()
 
 
+#: Round 90 fields that fold out of the content hash at their default value so a
+#: sealed prereg (which predates them) rebuilds to its archived sha; see
+#: Preregistration._hash_payload.
+_HASH_FOLD_DEFAULTS = (("recovery_name", "regrasp"),
+                       ("parent_store", None),
+                       ("parent_final_sha", None))
+
+
 @dataclass(frozen=True, slots=True)
 class Preregistration:
     """The seed partition, frozen before any episode runs.
@@ -134,6 +142,23 @@ class Preregistration:
     prior_judgement_yield: float = 0.35
     earliness: float = DEFAULT_EARLINESS
     fp_penalty: float = DEFAULT_FP_PENALTY
+    #: Round 90: the recovery strategy every proposed rule wires (a name in
+    #: plugins.rsi.repertoire). Default "regrasp" folds OUT of the content hash
+    #: (`_hash_payload`), so every prereg sealed before round 90 rebuilds to its
+    #: exact archived sha; place-g1 sets "replace", the place-shaped repair, which
+    #: enters the hash like any other non-default field.
+    recovery_name: str = "regrasp"
+    #: Round 90 seeding: a sealed campaign store whose FINAL PROMOTED bundle this
+    #: campaign starts from -- generations append onto it, gain is measured against
+    #: it by the existing parent/child machinery -- instead of the empty bundle.
+    #: None (folded out of the hash) is a from-scratch campaign; place-g1 seeds
+    #: from stack-g1.
+    parent_store: str | None = None
+    #: The final promoted child_sha the parent store MUST rebuild to. run_campaign
+    #: asserts it before seeding and fails loud on mismatch, so a parent that
+    #: drifted since sealing cannot silently reroot this campaign. None (folded
+    #: out) when parent_store is None.
+    parent_final_sha: str | None = None
     #: R2 stage chain the governed rollout scores (harness/stages.py). In the
     #: preregistration because "what stage chain this bundle was scored
     #: against" is a conclusion-moving fact: asdict recursion carries it into
@@ -174,8 +199,20 @@ class Preregistration:
         if self.percept_provider is None:
             object.__setattr__(self, "percept_provider", DEFAULT_PERCEPT_REF)
 
+    def _hash_payload(self) -> dict:
+        """asdict for the content hash, with the round-90 fields folded out at
+        their defaults. Appending a plain field would move every predating
+        archive's sha (asdict adds a key); folding the default keeps each sealed
+        prereg byte-identical while a non-default value -- place-g1 sets all
+        three -- still enters the hash for free through asdict."""
+        d = asdict(self)
+        for name, default in _HASH_FOLD_DEFAULTS:
+            if d[name] == default:
+                del d[name]
+        return d
+
     def sha(self) -> str:
-        return sha_json(asdict(self))
+        return sha_json(self._hash_payload())
 
 
 @dataclass
@@ -282,6 +319,12 @@ def propose_rule(
     """
     if not any(labels) or all(labels):
         return None
+    # Mint the id from the rule's 1-indexed CHAIN POSITION, not `generation`, so a
+    # rule appended onto a seeded parent (place-g1 seeds stack-g1's g1) does not
+    # reuse the parent's id and collide (round 92). Byte-identical for from-scratch
+    # campaigns: every prior generation promoted (run_campaign breaks on rejection),
+    # so len(parent.rules) == generation - 1 there; beam mints its own id downstream.
+    rule_id = f"g{(len(parent.rules) if parent is not None else 0) + 1}"
     if prereg.screen_triggers:
         from plugins.rsi.stats.screen import screen
 
@@ -294,8 +337,9 @@ def propose_rule(
             # the very evidence screening exists to discount. The tie-break is
             # an in-sample-ranking repair only; the fall-through below is that
             # ranking, so it gets the tie-break.
-            return Rule(rule_id=f"g{generation}", trigger=screened[0].trigger,
-                        recovery=RecoverySpec(sensor_sd=prereg.recovery_sensor_sd))
+            return Rule(rule_id=rule_id, trigger=screened[0].trigger,
+                        recovery=RecoverySpec(name=prereg.recovery_name,
+                                              sensor_sd=prereg.recovery_sensor_sd))
         # too few episodes to split; fall through to the in-sample ranking
     ranked = search_triggers(traces, labels, privilege_budget=prereg.critic_budget, top_k=3,
                              earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
@@ -305,18 +349,21 @@ def propose_rule(
     if dev_specs is not None and executor is not None:
         from governor.proposer import break_tie_by_repair
 
+        # recovery_name threads the campaign's ACTUAL repair (place-g1's `replace`)
+        # into the replay, so `fixed` measures the repair the campaign will run.
         trigger, selection = break_tie_by_repair(
             traces, labels, privilege_budget=prereg.critic_budget,
             recovery_sensor_sd=prereg.recovery_sensor_sd, dev_specs=dev_specs,
             executor=executor, workers=workers, default=trigger, parent=parent,
+            recovery_name=prereg.recovery_name,
             earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
         if store is not None:
             store.put("tie_break", {"preregistration_sha": prereg.sha(),
                                     "generation": generation, **selection})
     return Rule(
-        rule_id=f"g{generation}",
+        rule_id=rule_id,
         trigger=trigger,
-        recovery=RecoverySpec(sensor_sd=prereg.recovery_sensor_sd),
+        recovery=RecoverySpec(name=prereg.recovery_name, sensor_sd=prereg.recovery_sensor_sd),
     )
 
 
@@ -334,18 +381,67 @@ class GenerationRecord:
     reason: str
 
 
+def _seed_from_parent(prereg: Preregistration, *, verbose: bool = True) -> Bundle:
+    """Rebuild the parent store's final promoted bundle, assert it matches the
+    preregistered parent_final_sha, and return it rebudgeted to THIS campaign's
+    budgets.
+
+    The rebuild reuses ``plugins.rsi.rebuild.rebuild_final_bundle`` -- the same
+    child_sha-asserted reconstruction the rescore and probe scripts use (they
+    re-export it) -- so there is one reconstruction, not a second that could
+    drift. The parent's own budgets only had to reproduce the sealed sha (the
+    assertion pins that); the returned bundle carries prereg's budgets because the
+    new generations search under those. The parent's promoted rules are
+    observable, so their behaviour is budget-invariant -- rebudgeting only widens
+    the view the NEW rules may read, which is the point of the higher critic_budget.
+    """
+    from harness.registry import load_provider
+    from plugins.rsi.rebuild import (
+        read_store_artifacts,
+        rebuild_final_bundle,
+        rebuild_preregistration,
+    )
+
+    archived = read_store_artifacts(prereg.parent_store)
+    prereg_payloads = archived.get("preregistration", [])
+    if not prereg_payloads:
+        raise ValueError(f"parent store {prereg.parent_store} has no preregistration artifact")
+    parent_prereg = rebuild_preregistration(prereg_payloads[0])
+    # Registry order (round 69/85): declared_privilege reads the feature catalog,
+    # populated when the embodiment plugin is imported. Load the parent's own
+    # provider ref first, exactly as rescore_heldout.run_rescore does, so a fresh
+    # process (a direct run_campaign, not via workload.run) is safe too.
+    load_provider(parent_prereg.env_provider or "plugins.embodiment_robosuite:provider", {})
+    parent = rebuild_final_bundle(parent_prereg, archived.get("generation", []))
+    if parent.sha() != prereg.parent_final_sha:
+        raise AssertionError(
+            f"parent store {prereg.parent_store} rebuilds to bundle {parent.sha()[:12]}, "
+            f"but the prereg pinned parent_final_sha {str(prereg.parent_final_sha)[:12]}: "
+            "refusing to seed from a parent that does not match its preregistration")
+    if verbose:
+        print(f"seeded from {prereg.parent_store} final bundle {parent.sha()[:12]} "
+              f"({len(parent.rules)} rule(s)), rebudgeted to critic={prereg.critic_budget} "
+              f"action={prereg.action_budget}")
+    return Bundle(rules=parent.rules, critic_budget=prereg.critic_budget,
+                  action_budget=prereg.action_budget)
+
+
 def run_campaign(
     prereg: Preregistration, store: CampaignStore, *, workers: int = 10, verbose: bool = True,
     executor=None,
 ) -> dict:
     """Drive generations until nothing further clears the dev gate."""
-    prereg_sha = store.put("preregistration", asdict(prereg))
+    prereg_sha = store.put("preregistration", prereg._hash_payload())
     if verbose:
         print(f"preregistration {prereg_sha[:12]}  dev={len(prereg.dev)} heldout={len(prereg.heldout)}")
 
     reservoir = _specs(prereg.dev, prereg)
     dev_specs = reservoir
-    bundle = Bundle(rules=(), critic_budget=prereg.critic_budget, action_budget=prereg.action_budget)
+    if prereg.parent_store is not None:
+        bundle = _seed_from_parent(prereg, verbose=verbose)
+    else:
+        bundle = Bundle(rules=(), critic_budget=prereg.critic_budget,
+                        action_budget=prereg.action_budget)
     history: list[GenerationRecord] = []
     plans: list[dict] = []
 

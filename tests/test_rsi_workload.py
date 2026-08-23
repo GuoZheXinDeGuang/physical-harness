@@ -118,7 +118,9 @@ def _fake_run_campaign_factory(captured: dict, *, second_generation_promoted: bo
     def fake_run_campaign(prereg, store, *, workers=10, verbose=True, executor=None):
         captured["prereg"] = prereg
         captured["store"] = store
-        prereg_sha = store.put("preregistration", dataclasses.asdict(prereg))
+        # Mirror the real run_campaign: the sealed prereg payload is _hash_payload
+        # (round-90 fields fold out at their defaults), so prereg_sha == prereg.sha().
+        prereg_sha = store.put("preregistration", prereg._hash_payload())
 
         rule_g1 = {"rule_id": "g1", "trigger": _TRIGGER, "recovery": _RECOVERY}
         store.put("generation", {

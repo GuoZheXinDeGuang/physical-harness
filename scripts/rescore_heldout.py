@@ -34,60 +34,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from plugins.rsi.campaign import (
     CampaignStore,
-    Preregistration,
     _specs,
     blind_twin,
     sha_json,
     stage_attribution,
 )
 from plugins.rsi.gate import paired_gate
-from plugins.rsi.governed import Bundle, RecoverySpec, Rule
-from plugins.rsi.stats.search import Trigger
-from scripts.parity_check import read_store_artifacts, rebuild_preregistration
+from plugins.rsi.governed import Bundle
 
+# Store reconstruction moved to the plugins layer (round 90: run_campaign needs
+# it and a plugin may not import scripts); re-exported so callers and tests that
+# do `rescore_heldout.rebuild_final_bundle` / `.rule_from_canonical` are unchanged.
+from plugins.rsi.rebuild import (
+    read_store_artifacts,
+    rebuild_final_bundle,
+    rebuild_preregistration,
+    rule_from_canonical,
+)
 
-def rule_from_canonical(payload: dict) -> Rule:
-    """Invert ``Rule.canonical()``: the archived byte-stable form back to a Rule.
-
-    The canonical program is the RESOLVED steps ``(name, dur, dx, dy)``. A
-    zero-offset program round-trips exactly as an explicit
-    ``RecoverySpec.program``; one with lateral offsets cannot (the explicit
-    form carries no dx/dy), so it falls back to the named repertoire strategy
-    -- and the caller's child_sha assertion is what catches a repertoire that
-    drifted since sealing.
-    """
-    t = payload["trigger"]
-    r = payload["recovery"]
-    if any(dx or dy for _name, _dur, dx, dy in r["program"]):
-        program = None  # repertoire-owned offsets; the child_sha assertion pins them
-    else:
-        program = tuple((name, int(dur)) for name, dur, _dx, _dy in r["program"])
-    return Rule(
-        payload["rule_id"],
-        Trigger(t["feature"], t["op"], t["threshold"], t["dwell"], t["arm_after"], t["reducer"]),
-        RecoverySpec(name=r["name"], program=program, sensor_sd=r["sensor_sd"],
-                     max_invocations=r["max_invocations"]),
-    )
-
-
-def rebuild_final_bundle(prereg: Preregistration, generations: list[dict]) -> Bundle:
-    """The promoted chain, re-grown through ``Bundle.append`` and asserted per
-    generation against the sealed ``child_sha`` -- rescoring the wrong object
-    would be worse than no rescore at all."""
-    bundle = Bundle(rules=(), critic_budget=prereg.critic_budget,
-                    action_budget=prereg.action_budget)
-    for gen in generations:
-        if not gen["promoted"]:
-            continue
-        bundle = bundle.append(rule_from_canonical(gen["rule"]))
-        if bundle.sha() != gen["child_sha"]:
-            raise AssertionError(
-                f"rebuilt generation {gen['generation']} hashes to {bundle.sha()[:12]}, "
-                f"archive sealed child_sha {gen['child_sha'][:12]}: the reconstruction "
-                "does not reproduce the sealed bundle")
-    if not bundle.rules:
-        raise ValueError("no promoted generations in this store; nothing to rescore")
-    return bundle
+__all__ = ["read_store_artifacts", "rebuild_final_bundle",
+           "rebuild_preregistration", "rule_from_canonical", "run_rescore"]
 
 
 def run_rescore(store_dir: str | Path, out_dir: str | Path, block: int, *,

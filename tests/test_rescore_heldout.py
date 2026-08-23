@@ -197,7 +197,7 @@ def test_corrupt_child_sha_is_rejected_before_any_rollout(tmp_path):
 
 def test_no_promoted_generations_is_rejected(tmp_path):
     _sealed_store(tmp_path / "sealed", promote_first=False)
-    with pytest.raises(ValueError, match="nothing to rescore"):
+    with pytest.raises(ValueError, match="nothing to rebuild"):
         rescore_heldout.run_rescore(tmp_path / "sealed", tmp_path / "rescore", 43000,
                                     workers=1, verbose=False)
 

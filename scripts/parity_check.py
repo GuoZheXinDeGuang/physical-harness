@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -39,12 +38,12 @@ from typing import Any
 # Runnable as `python scripts/parity_check.py ...` without PYTHONPATH gymnastics.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness.stages import Clause, StageSpec
-from plugins.rsi.campaign import Preregistration
+# Store reconstruction moved to the plugins layer (round 90: run_campaign needs
+# it and a plugin may not import scripts); re-exported here so this module's own
+# API -- and every importer of it -- is unchanged.
+from plugins.rsi.rebuild import read_store_artifacts, rebuild_preregistration
 
-#: Preregistration fields whose canonical (json-round-tripped) form is a list
-#: but whose dataclass field is a tuple; every other field is json-stable.
-_TUPLE_FIELDS = ("dev", "heldout")
+__all__ = ["read_store_artifacts", "rebuild_preregistration"]
 
 #: PairedResult fields compared bit for bit between archive and rerun, for the
 #: dev gate, the blind-twin judgement gate, and the held-out result alike.
@@ -64,71 +63,6 @@ class FieldGroupResult:
     def line(self) -> str:
         status = "PASS" if self.ok else "FAIL"
         return f"[{status}] {self.name}" + (f": {self.detail}" if self.detail else "")
-
-
-def read_store_artifacts(store_dir: str | Path) -> dict[str, list[dict]]:
-    """Every artifact in a `plugins.rsi.campaign.CampaignStore` directory, by kind, in index order.
-
-    A plain reader over the same index.jsonl + content-addressed
-    artifacts/*.json shape `CampaignStore` writes, rather than a `CampaignStore`
-    method: a parity check reads an ARCHIVED store this process never wrote to,
-    old or new, and has no writer's lock on either.
-    """
-    store_dir = Path(store_dir)
-    index_path = store_dir / "index.jsonl"
-    if not index_path.exists():
-        raise FileNotFoundError(f"no campaign store at {store_dir} (missing index.jsonl)")
-    by_kind: dict[str, list[dict]] = {}
-    with index_path.open() as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            artifact_path = store_dir / "artifacts" / f"{row['sha']}.json"
-            payload = json.loads(artifact_path.read_text())
-            by_kind.setdefault(row["kind"], []).append(payload)
-    return by_kind
-
-
-def rebuild_preregistration(payload: dict[str, Any]) -> Preregistration:
-    """Reconstruct a `Preregistration` from its archived canonical dict.
-
-    Drops any key the current dataclass no longer declares -- an archive from
-    an earlier round of this project may predate a field since removed -- and
-    restores `dev` / `heldout` to tuples: `asdict` (and the json round-trip
-    through the store) turns them into lists, but `Preregistration` expects
-    tuples both for `__post_init__`'s overlap check and for `.sha()` to match
-    what a freshly constructed `Preregistration` would hash to.
-
-    Deliberately does NOT set `env_provider` / `policy_provider`: threading
-    the kernel-resolved refs onto the rebuilt preregistration is
-    `plugins.rsi.workload.run`'s job, not this reconstruction's.
-    """
-    known = {f.name for f in dataclasses.fields(Preregistration)}
-    kwargs = {k: v for k, v in payload.items() if k in known}
-    dropped = sorted(set(payload) - known)
-    filled = sorted(known - set(payload))
-    if dropped:
-        print(f"[parity] archive keys the dataclass no longer declares, DROPPED: {dropped}",
-              file=sys.stderr)
-    if filled:
-        # The dangerous direction: an old archive silently inherits today's
-        # defaults. Every filled-in field is named so the operator can judge
-        # whether the rerun is still the same experiment.
-        print(f"[parity] dataclass fields the archive predates, FILLED WITH TODAY'S "
-              f"DEFAULTS: {filled}", file=sys.stderr)
-    for field_name in _TUPLE_FIELDS:
-        if field_name in kwargs:
-            kwargs[field_name] = tuple(kwargs[field_name])
-    # A staged archive (R2, e.g. runs/stack-g1) stores StageSpec chains as
-    # dicts; the rollout consumes StageSpec attributes, so restore the real
-    # dataclasses -- asdict/sha round-trip identically either way.
-    if kwargs.get("stages") is not None:
-        kwargs["stages"] = tuple(
-            StageSpec(s["name"], tuple(Clause(**c) for c in s["success"]), s["budget"])
-            for s in kwargs["stages"])
-    return Preregistration(**kwargs)
 
 
 def _held_out_delta(paired: dict[str, Any]) -> float:

@@ -60,6 +60,7 @@ TIE_BREAK_CAP = 8
 def break_tie_by_repair(traces, labels, *, privilege_budget: int,
                         recovery_sensor_sd: float, dev_specs, executor,
                         workers: int, default: Trigger, parent=None,
+                        recovery_name: str = "regrasp",
                         earliness: float = DEFAULT_EARLINESS,
                         fp_penalty: float = DEFAULT_FP_PENALTY) -> tuple[Trigger, dict]:
     """Replay the float-exact top-score ties on dev; keep the max-fixed one.
@@ -70,7 +71,10 @@ def break_tie_by_repair(traces, labels, *, privilege_budget: int,
     `parent`, when given, replays each candidate as ``parent.append(rule)`` --
     at generation 2+ the residual labels were measured UNDER the parent, so a
     candidate replayed alone would be scored against a population it will never
-    govern. `earliness`/`fp_penalty` keep the tie set under the same
+    govern. `recovery_name` is the repair the replay wires (round 90: place-g1's
+    `replace`, not the default regrasp) so `fixed` measures the campaign's actual
+    repair; it defaults to the RecoverySpec default so SearchProposer is
+    byte-identical. `earliness`/`fp_penalty` keep the tie set under the same
     preregistered objective that ranked the head (round 26/29's lesson).
     """
     import numpy as np
@@ -89,7 +93,8 @@ def break_tie_by_repair(traces, labels, *, privilege_budget: int,
     base = np.asarray(labels, dtype=bool)
     best_trigger, best_fixed, yields = default, -1, []
     for cand in replay:
-        rule = Rule("tiebreak", cand.trigger, RecoverySpec(sensor_sd=recovery_sensor_sd))
+        rule = Rule("tiebreak", cand.trigger,
+                    RecoverySpec(name=recovery_name, sensor_sd=recovery_sensor_sd))
         # ponytail: without a parent, action_budget mirrors critic_budget -- the
         # observable rules search proposes declare zero privilege and the
         # recovery percept is non-privileged; split the budgets if a privileged
