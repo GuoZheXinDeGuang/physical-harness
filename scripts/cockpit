@@ -1,8 +1,28 @@
 #!/usr/bin/env bash
-# physical-harness cockpit -- native launcher for the lab console.
+# physical-harness cockpit -- the SINGLE native entry for the lab console.
 #
-# operators run:  scripts/cockpit [--port N]
-# never:          npx @deepseek-ai/dsh web ...
+# operators run:  scripts/cockpit            (start EVERYTHING; leaves it running)
+#                 scripts/cockpit --stop      (stop what THIS cockpit started)
+# never:          npx @deepseek-ai/dsh web ...  /  a second terminal for the runtime
+#
+# WHAT IT STARTS (operator is UI-only -- no second terminal):
+#   1. the resident harness_runtime on runs/session-main (adopt-or-spawn, below)
+#   2. the web console (fork build by default; --npx for the rollback path)
+#
+# RUNTIME adopt-vs-spawn: harness_runtime.py has no concurrent-session guard of
+#   its own (only a write-once MODE file; its inbox claim is an atomic rename so a
+#   double-run can't corrupt, but two runtimes on one session dir is still wrong).
+#   So cockpit enforces it: it scans `ps` for a live harness_runtime on
+#   runs/session-main. If one exists it is ADOPTED (its PID printed, NOT restarted,
+#   NOT recorded for --stop -- cockpit did not start it, so cockpit won't kill it).
+#   If none exists cockpit SPAWNS one (nohup, logged to runs/session-main/
+#   runtime.log) and records its PID so --stop can kill it. --render is passed IFF
+#   $DISPLAY is set (the runtime hard-refuses --render headless); headless spawns
+#   get MUJOCO_GL=egl for offscreen sim. Opt out with --no-runtime / --no-render.
+#
+# --stop kills BOTH the web server and any runtime cockpit SPAWNED, by the exact
+#   PIDs recorded in the pidfile (never pkill-by-pattern -- that would match
+#   operator shells). An ADOPTED runtime is left running.
 #
 # DEFAULT (fork): serve the ph-station fork's own build. brand is NATIVE in
 #   fork source (no launch-time string patching), so this path does NOT run
@@ -25,17 +45,37 @@ set -u
 DSH_PKG="@deepseek-ai/dsh@0.1.1-rc.2"   # single source of the pinned version (fallback only)
 PORT=3080
 USE_NPX=0
+DO_STOP=0
+NO_RUNTIME=0
+NO_RENDER=0
+SESSION_DIR="runs/session-main"          # cockpit's canonical resident session
 
 usage() {
   cat <<EOF
-physical-harness cockpit -- launch the lab console
+physical-harness cockpit -- the single entry that starts EVERYTHING
 
-usage: cockpit [--port N] [--npx] [-h|--help]
+usage: cockpit [--port N] [--npx] [--no-render] [--no-runtime]
+       cockpit --stop
+       cockpit -h|--help
 
-  --port N    port to serve on (default: 3080)
-  --npx       fallback: serve the pinned published dsh via npx + rebrand.sh
-              overlay instead of the ph-station fork build (rollback path)
-  -h, --help  show this help
+  --port N       port to serve the console on (default: 3080)
+  --npx          fallback: serve the pinned published dsh via npx + rebrand.sh
+                 overlay instead of the ph-station fork build (rollback path)
+  --no-render    spawn the runtime headless even with a display attached
+                 (default: --render IFF \$DISPLAY is set; the runtime refuses
+                 --render without a display)
+  --no-runtime   do not adopt or spawn the resident runtime; serve only the web
+                 console (the pre-single-entry behavior)
+  --stop         stop the web server and any runtime THIS cockpit spawned, by the
+                 exact PIDs in the pidfile. An ADOPTED runtime is left running.
+  -h, --help     show this help
+
+Starting (no --stop) brings up two things and leaves them running:
+  1. the resident harness_runtime on $SESSION_DIR --
+       ADOPTED if one is already serving it (PID printed, not restarted, not
+       killed by --stop), otherwise SPAWNED (nohup, logged) and recorded for
+       --stop. Never two runtimes on one session dir.
+  2. the web console (fork build by default; --npx for the rollback).
 
 default serves the ph-station fork build (native brand); --npx restores the
 pre-fork round-95 behavior. use this instead of 'npx $DSH_PKG'.
@@ -47,6 +87,9 @@ while [ $# -gt 0 ]; do
     --port)   PORT="${2:?--port needs a value}"; shift 2;;
     --port=*) PORT="${1#*=}"; shift;;
     --npx)    USE_NPX=1; shift;;
+    --stop)   DO_STOP=1; shift;;
+    --no-runtime) NO_RUNTIME=1; shift;;
+    --no-render)  NO_RENDER=1; shift;;
     -h|--help) usage; exit 0;;
     *) echo "cockpit: unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
@@ -55,7 +98,67 @@ done
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO="$(cd "$HERE/.." && pwd -P)"
 PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"
+PIDFILE="$REPO/$SESSION_DIR/cockpit.pids"
+RUNTIME_LOG="$REPO/$SESSION_DIR/runtime.log"
 
+# --- helpers ----------------------------------------------------------------
+_alive()  { kill -0 "$1" 2>/dev/null; }
+_cmd_of() { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null; }
+
+# PID of a live harness_runtime serving the given session dir, or empty. Reads a
+# `ps` snapshot and matches in-shell (no grep child to self-match); the snapshot
+# only contains processes alive when ps ran, and neither `ps` nor this shell's
+# own cmdline mentions harness_runtime.py, so there is no false positive.
+find_runtime() {
+  local sess="$1" pid rest
+  ps -eo pid=,args= | while read -r pid rest; do
+    case "$rest" in
+      *harness_runtime.py*"$sess"*) echo "$pid"; break;;
+    esac
+  done
+}
+
+# Kill an EXACT recorded PID only if its cmdline still matches (guards against
+# PID reuse -- we never pattern-kill).
+kill_recorded() {
+  local pid="$1" needle="$2" label="$3"
+  if ! _alive "$pid"; then
+    echo "cockpit: $label (pid $pid) already not running" >&2
+    return
+  fi
+  case "$(_cmd_of "$pid")" in
+    *"$needle"*) kill "$pid" && echo "cockpit: stopped $label (pid $pid)" >&2;;
+    *) echo "cockpit: WARNING pid $pid is not $label anymore (cmdline changed); NOT killing" >&2;;
+  esac
+}
+
+# --- --stop: read pidfile, kill exactly what we started ---------------------
+if [ "$DO_STOP" -eq 1 ]; then
+  if [ ! -f "$PIDFILE" ]; then
+    echo "cockpit: no pidfile at $PIDFILE; nothing to stop" >&2
+    exit 0
+  fi
+  web_pid=""; runtime_pid=""; runtime_adopted="1"
+  while IFS='=' read -r k v; do
+    case "$k" in
+      web_pid) web_pid="$v";;
+      runtime_pid) runtime_pid="$v";;
+      runtime_adopted) runtime_adopted="$v";;
+    esac
+  done < "$PIDFILE"
+  [ -n "$web_pid" ] && kill_recorded "$web_pid" "web --no-open" "web server"
+  if [ -n "$runtime_pid" ]; then
+    if [ "$runtime_adopted" = "0" ]; then
+      kill_recorded "$runtime_pid" "harness_runtime.py" "runtime"
+    else
+      echo "cockpit: runtime pid $runtime_pid was ADOPTED (started outside cockpit); leaving it running" >&2
+    fi
+  fi
+  rm -f "$PIDFILE"
+  exit 0
+fi
+
+# --- start path -------------------------------------------------------------
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   echo "cockpit: ERROR nvm not found at $NVM_DIR/nvm.sh" >&2
@@ -67,6 +170,43 @@ nvm use 22 >/dev/null
 
 export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 export DSH_PKG
+
+# --- resident runtime: adopt-or-spawn (single entry means no second terminal)
+RT_PID=""
+RT_ADOPTED=""
+if [ "$NO_RUNTIME" -eq 0 ]; then
+  existing="$(find_runtime "$SESSION_DIR")"
+  if [ -n "$existing" ]; then
+    RT_PID="$existing"; RT_ADOPTED=1
+    echo "cockpit: adopting resident runtime on $SESSION_DIR (pid $RT_PID); not restarting" >&2
+  else
+    spawn_env=(PYTHONPATH="$REPO")
+    render_flag=()
+    if [ "$NO_RENDER" -eq 0 ] && [ -n "${DISPLAY:-}" ]; then
+      render_flag=(--render)
+    else
+      spawn_env+=(MUJOCO_GL=egl)   # headless: offscreen sim needs egl
+    fi
+    # cd in a subshell so the runtime cmdline stays the canonical relative form
+    # (matches find_runtime on the next boot); nohup + parent-exit detaches it.
+    RT_PID="$(cd "$REPO" && { nohup env "${spawn_env[@]}" .venv/bin/python \
+        scripts/harness_runtime.py --session-dir "$SESSION_DIR" "${render_flag[@]}" \
+        >>"$RUNTIME_LOG" 2>&1 & echo $!; })"
+    RT_ADOPTED=0
+    echo "cockpit: spawned resident runtime (pid $RT_PID, render=$([ ${#render_flag[@]} -gt 0 ] && echo on || echo off), log $RUNTIME_LOG)" >&2
+  fi
+fi
+
+# record PIDs for --stop. web_pid=$$: this shell is replaced by the web server
+# via exec below, so $$ is the server's PID after exec.
+{
+  echo "web_pid=$$"
+  echo "port=$PORT"
+  if [ -n "$RT_PID" ]; then
+    echo "runtime_pid=$RT_PID"
+    echo "runtime_adopted=$RT_ADOPTED"
+  fi
+} > "$PIDFILE"
 
 if [ "$USE_NPX" -eq 1 ]; then
   # --- fallback path (unchanged round-95 behavior) --------------------------

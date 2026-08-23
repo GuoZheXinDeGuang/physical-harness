@@ -332,6 +332,21 @@ Edit `/home/yusenzlabpc/Desktop/physical-harness/scripts/cockpit`.
 the parity checklist passes. Only then do they retire (delete plan below —
 **not yet executed**).
 
+**Single entry — runtime adopt-or-spawn (round 98, ✅ landed).** The operator is
+UI-only, so `scripts/cockpit` now starts *everything*: before serving the console
+it brings up the resident `harness_runtime` on `runs/session-main`. Adopt-or-spawn,
+because `harness_runtime.py` has no concurrent-session guard of its own (write-once
+`MODE`; atomic inbox-claim rename — a double-run can't corrupt but is still wrong):
+cockpit scans `ps` for a live runtime on that session dir, **adopts** it if found
+(prints its PID, does not restart, does not record it for `--stop`), else **spawns**
+one (`nohup`, log → `runs/session-main/runtime.log`) and records its PID. `--render`
+is passed IFF `$DISPLAY` is set (the runtime hard-refuses `--render` headless);
+headless spawns get `MUJOCO_GL=egl`. `--stop` kills the web server and any
+*spawned* runtime by the **exact PIDs** in `runs/session-main/cockpit.pids` (never
+pattern-kill — that would match operator shells); an adopted runtime is left alone.
+Opt-outs: `--no-runtime` (console only), `--no-render` (force headless). This
+supersedes the two-terminal round-97 recipe in the README.
+
 **Shared `$DSH_HOME` caution:** `healProfilesModuleFallback` re-points
 `~/.dsh/profiles/node_modules` at whichever install ran last — never run the npx
 and fork paths concurrently on the same `DSH_HOME`; expect symlink churn when
