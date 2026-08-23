@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -63,7 +63,8 @@ def sha_json(payload) -> str:
 #: Preregistration._hash_payload.
 _HASH_FOLD_DEFAULTS = (("recovery_name", "regrasp"),
                        ("parent_store", None),
-                       ("parent_final_sha", None))
+                       ("parent_final_sha", None),
+                       ("reasoner", None))
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +160,17 @@ class Preregistration:
     #: drifted since sealing cannot silently reroot this campaign. None (folded
     #: out) when parent_store is None.
     parent_final_sha: str | None = None
+    #: R7: the identity of the reasoner that PROPOSED this campaign's rules. The
+    #: deterministic search proposer declares none (None folds OUT of the content
+    #: hash, so every campaign sealed before this field rebuilds byte-identical),
+    #: but an LLM reasoner (plugins.model_qwen) reports its transport/model
+    #: identity here -- which model, at which endpoint, under which decode. Until
+    #: now that identity was smuggled in via QWEN38_MODEL/QWEN38_BASE_URL env vars
+    #: and never entered any hash, so two campaigns run against different models
+    #: were indistinguishable. run_campaign stamps `reasoner.identity` onto the
+    #: prereg before hashing, closing that hole. Before the provider triple, which
+    #: stays the literal tail the seam guard pins.
+    reasoner: str | None = None
     #: R2 stage chain the governed rollout scores (harness/stages.py). In the
     #: preregistration because "what stage chain this bundle was scored
     #: against" is a conclusion-moving fact: asdict recursion carries it into
@@ -367,6 +379,27 @@ def propose_rule(
     )
 
 
+class _DeterministicReasoner:
+    """run_campaign's default reasoner: the deterministic search seam.
+
+    Until R7 the campaign loop called ``propose_rule`` directly and the mounted
+    ``reasoner.proposer`` was never consulted -- a dead seam. run_campaign now
+    drives a reasoner OBJECT every generation (a fake mount in tests, the qwen
+    card in dogfood); when the caller passes none, this default wraps
+    ``propose_rule`` with the identical arguments, so the reference path stays
+    byte-for-byte what it was and every sealed campaign still rebuilds. It
+    declares NO ``identity`` on purpose: the default carries no reasoner field
+    into the prereg, so shas sealed before that field never move.
+    """
+
+    def propose(self, brief: Mapping) -> Mapping:
+        return {"rule": propose_rule(
+            brief["traces"], brief["labels"], generation=brief["generation"],
+            prereg=brief["prereg"], dev_specs=brief.get("dev_specs"),
+            executor=brief.get("executor"), workers=brief.get("workers", 10),
+            parent=brief.get("parent"), store=brief.get("store"))}
+
+
 @dataclass
 class GenerationRecord:
     """One generation's decision and the evidence behind it."""
@@ -428,9 +461,21 @@ def _seed_from_parent(prereg: Preregistration, *, verbose: bool = True) -> Bundl
 
 def run_campaign(
     prereg: Preregistration, store: CampaignStore, *, workers: int = 10, verbose: bool = True,
-    executor=None,
+    executor=None, reasoner=None,
 ) -> dict:
-    """Drive generations until nothing further clears the dev gate."""
+    """Drive generations until nothing further clears the dev gate.
+
+    ``reasoner`` is the mounted ``reasoner.proposer`` (``harness.contracts.Reasoner``):
+    the seam this loop resolves a candidate through each generation. None uses the
+    deterministic search proposer -- byte-identical to the old direct
+    ``propose_rule`` call -- while a reasoner declaring an ``identity`` (the qwen
+    card) has that identity stamped into the preregistration, so which model
+    proposed the rules enters the content hash instead of being smuggled via env.
+    """
+    reasoner = reasoner if reasoner is not None else _DeterministicReasoner()
+    identity = getattr(reasoner, "identity", None)
+    if identity is not None:
+        prereg = replace(prereg, reasoner=identity)
     prereg_sha = store.put("preregistration", prereg._hash_payload())
     if verbose:
         print(f"preregistration {prereg_sha[:12]}  dev={len(prereg.dev)} heldout={len(prereg.heldout)}")
@@ -509,9 +554,24 @@ def run_campaign(
                 print("  no residual failures on dev; campaign converged")
             break
 
-        rule = propose_rule([r["trace"] for r in cur], labels, generation=gen, prereg=prereg,
-                            dev_specs=dev_specs, executor=ex, workers=workers,
-                            parent=bundle, store=store)
+        # Resolve the candidate through the mounted reasoner seam (dead until R7:
+        # the loop hard-called propose_rule and never consulted the mount). The
+        # brief carries live objects -- this is an in-process seam, not a
+        # serialized one -- so a reasoner may return either a Rule or its
+        # canonical dict; both are accepted.
+        from plugins.rsi.repertoire import names as strategy_names
+        brief = {"traces": [r["trace"] for r in cur], "labels": labels,
+                 "generation": gen, "prereg": prereg, "dev_specs": dev_specs,
+                 "executor": ex, "workers": workers, "parent": bundle, "store": store,
+                 # The recovery vocabulary an LLM reasoner may name; the
+                 # deterministic default ignores it. See plugins.model_qwen.
+                 "strategies": tuple(strategy_names())}
+        proposed = reasoner.propose(brief).get("rule")
+        if isinstance(proposed, Mapping):
+            from plugins.rsi.rebuild import rule_from_canonical
+            rule = rule_from_canonical(proposed)
+        else:
+            rule = proposed
         if rule is not None and prereg.search_recovery:
             rule = _maybe_search_recovery(rule, bundle, dev_specs, prereg, store, gen,
                                           workers=workers, verbose=verbose)

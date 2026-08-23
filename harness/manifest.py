@@ -96,6 +96,14 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
             raise ValueError(
                 f"plugin {plugin!r} declares actuation:real; the sim runtime "
                 "refuses it (a real actuator needs a separate authenticated runtime)")
+        # ``enabled = false`` = installed but inactive: doctor it (card_mounts
+        # reads the file directly, ignoring this), then flip it on and disable the
+        # incumbent. Lets an ALTERNATIVE provider for an already-claimed seam --
+        # the qwen reasoner card beside plugins/reasoner (R7) -- sit in the cage
+        # without tripping the duplicate-capability guard, and keeps it out of the
+        # folded plan so the base sha is untouched.
+        if not data.get("enabled", True):
+            continue
         for m in card_mounts(data):
             _claim(mounts, cap_owner, m.capability, m,
                    kind="capability", plugin=plugin)

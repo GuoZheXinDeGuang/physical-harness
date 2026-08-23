@@ -32,7 +32,7 @@ from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-_NEW_FIELDS = ("recovery_name", "parent_store", "parent_final_sha")
+_NEW_FIELDS = ("recovery_name", "parent_store", "parent_final_sha", "reasoner")
 
 
 def _prereg(**kw) -> Preregistration:
@@ -55,8 +55,9 @@ def test_each_new_field_moves_the_prereg_hash():
 
 def test_defaults_fold_out_like_a_predating_archive():
     """The definitive backward-compat mechanism without the sealed store: a
-    prereg with all three fields at default hashes to EXACTLY what an archive
-    sealed before round 90 (no such keys) would hash to."""
+    prereg with every folded field at default (the round-90 trio plus R7's
+    reasoner) hashes to EXACTLY what an archive sealed before them (no such keys)
+    would hash to."""
     p = _prereg()
     payload = dataclasses.asdict(p)
     predating = {k: v for k, v in payload.items() if k not in _NEW_FIELDS}

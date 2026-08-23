@@ -52,6 +52,17 @@ from harness.manifest import card_mounts
 from harness.registry import load_provider
 from harness.spec import EpisodeSpec
 
+
+class DoctorSkip(Exception):
+    """A smoke that cannot run here but is not a failure -- reported SKIP, loudly.
+
+    The qwen reasoner card raises this when its endpoint is unreachable (GPU
+    held): Tier A still validated the shape, and the untrusted-determinism policy
+    never diffs an LLM anyway, so an absent model is a skip, not a red -- exactly
+    how scripts/round25_rerun degrades its qwen arm.
+    """
+
+
 #: Determinism policy per capability KIND. Absent = shape-only (run once).
 _DETERMINISM = {
     "percept.model": "required",       # a percept stand-in must be pure in (seed, draw)
@@ -119,6 +130,13 @@ def _smoke_planner(prov, ctx: _Ctx):
 
 
 def _smoke_reasoner(prov, ctx: _Ctx):
+    # A model-backed reasoner exposes `available()` (probes its endpoint); when it
+    # is down, skip loudly rather than red -- the shape passed Tier A and the
+    # untrusted policy never exercises the live proposal as a gate anyway.
+    probe = getattr(prov, "available", None)
+    if probe is not None and not probe():
+        raise DoctorSkip("reasoner endpoint unreachable -- probed and skipped "
+                         "(untrusted: shape validated Tier A, live proposal not run)")
     out = prov.propose(ctx.brief)
     assert isinstance(out, Mapping), "propose must return a Mapping"
     return "ok"  # untrusted: shape only, never diffed
@@ -229,6 +247,8 @@ def check(plugin_dir: str | Path) -> Report:
                     continue
             rep.add("B", cap, "PASS",
                     "deterministic" if policy == "required" else (policy or "shape"))
+        except DoctorSkip as skip:
+            rep.add("B", cap, "SKIP", str(skip))
         except Exception as exc:  # noqa: BLE001 -- a smoke that raises is a red
             rep.add("B", cap, "FAIL", f"{type(exc).__name__}: {exc}")
     return rep

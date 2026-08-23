@@ -1,0 +1,21 @@
+# The qwen3-8b model card: an LLM backing for the reasoner.proposer seam.
+#
+# enabled = false -> installed but INACTIVE. It claims reasoner.proposer, which
+# plugins/reasoner already owns, so discover() keeps it out of the folded plan
+# (the base sha is untouched) while plugin_doctor still checks it at this path.
+# To activate: set enabled = true here and disable plugins/reasoner -- one card
+# per seam is the duplicate-loud rule.
+enabled = false
+
+# needs_sim = false: a reasoner reads statistics, not a simulator. Its Tier-A/B
+# run on the base tier; the endpoint being down is a graceful SKIP, not a gate.
+needs_sim = false
+
+[mounts."reasoner.proposer"]
+ref = "plugins.model_qwen:provider"
+# base_url / model / temperature / seed / attempts ride here and enter the plan
+# sha AND (via the provider's identity) the campaign prereg sha, so the model
+# identity is content, not an env-var smuggled past the hash. Left at the
+# provider defaults (localhost:30000, model resolved from GET /models) so the
+# card is a clean template.
+params = { temperature = 0.0, seed = 0, attempts = 2 }
