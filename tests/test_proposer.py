@@ -268,3 +268,58 @@ def test_search_without_dev_block_keeps_the_ranked_head(monkeypatch):
     rule = SearchProposer().propose(traces, labels, generation=1, privilege_budget=0,
                                     recovery_sensor_sd=0.02)
     assert rule.trigger == default
+
+
+def test_campaign_propose_rule_breaks_tie_and_seals_audit(monkeypatch, tmp_path):
+    """Round 88 part C at the PRODUCTION seam: run_campaign's propose_rule must
+    break the top-score tie by the same dev replay SearchProposer uses -- keep
+    max-fixed, cap the replays, seal the audit (with what the cap dropped) in
+    the campaign store -- and keep the no-dev-block call byte-identical."""
+    import json
+
+    from governor.proposer import TIE_BREAK_CAP
+    from plugins.rsi import gate
+    from plugins.rsi.campaign import CampaignStore, Preregistration, propose_rule
+    from plugins.rsi.stats.search import search_triggers
+
+    traces, labels, dev_specs = _peaked()
+
+    def _fake_run(job):
+        # A failing dev seed is repaired ONLY by a late arm (>= 40); later arms
+        # fix more, so the tie-break must reject the early-arm default.
+        spec, bundle = job
+        failing = spec.seed % 2 == 0
+        fixed = failing and bundle.rules[-1].trigger.arm_after >= 40
+        return {"success": (not failing) or fixed, "fired_at": 0, "trace": {}}
+    monkeypatch.setattr(gate, "_run", _fake_run)
+
+    prereg = Preregistration(dev=tuple(range(40)), heldout=(1000,), percept_noise=0.02,
+                             critic_budget=0, action_budget=0, recovery_sensor_sd=0.02,
+                             max_generations=1)
+    ex = _CountingExecutor()
+    store = CampaignStore(tmp_path / "store")
+    rule = propose_rule(traces, labels, generation=1, prereg=prereg,
+                        dev_specs=dev_specs, executor=ex, store=store)
+
+    assert rule.trigger.arm_after >= 40, "campaign must arm at the peak, not the onset"
+    assert ex.map_calls == TIE_BREAK_CAP, "one dev replay per capped candidate"
+
+    index = [json.loads(line) for line in store.index_path.open()]
+    sel = store.read(next(r["sha"] for r in index if r["kind"] == "tie_break"))
+    assert sel["generation"] == 1
+    assert sel["preregistration_sha"] == prereg.sha()
+    assert sel["pick"] == rule.trigger.describe()
+    assert sel["pick_fixed"] == 20 == max(y["fixed"] for y in sel["yields"])
+    assert sel["tied"] > TIE_BREAK_CAP, "fixture must actually exercise the cap"
+    assert sel["replayed"] == TIE_BREAK_CAP
+    assert len(sel["dropped"]) == sel["tied"] - TIE_BREAK_CAP
+
+    # determinism: an identical call makes the identical pick.
+    rule2 = propose_rule(traces, labels, generation=1, prereg=prereg,
+                         dev_specs=dev_specs, executor=_CountingExecutor())
+    assert rule2.trigger == rule.trigger
+
+    # without a dev block, byte-for-byte the old pick (beam's path today).
+    old = propose_rule(traces, labels, generation=1, prereg=prereg)
+    assert old.trigger == search_triggers(traces, labels, privilege_budget=0,
+                                          top_k=3)[0].trigger

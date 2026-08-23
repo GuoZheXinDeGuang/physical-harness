@@ -29,7 +29,13 @@ from typing import Protocol
 
 from harness.features import REGISTRY, Privilege
 from plugins.rsi.governed import RecoverySpec, Rule
-from plugins.rsi.stats.search import REDUCERS, Trigger, search_triggers
+from plugins.rsi.stats.search import (
+    DEFAULT_EARLINESS,
+    DEFAULT_FP_PENALTY,
+    REDUCERS,
+    Trigger,
+    search_triggers,
+)
 
 
 class ProposerError(ValueError):
@@ -49,6 +55,57 @@ class Proposer(Protocol):
 #: How many top-score ties the tie-break will pay a dev rollout for. Detection
 #: saturates, so the tied set can be large; a replay costs real episodes.
 TIE_BREAK_CAP = 8
+
+
+def break_tie_by_repair(traces, labels, *, privilege_budget: int,
+                        recovery_sensor_sd: float, dev_specs, executor,
+                        workers: int, default: Trigger, parent=None,
+                        earliness: float = DEFAULT_EARLINESS,
+                        fp_penalty: float = DEFAULT_FP_PENALTY) -> tuple[Trigger, dict]:
+    """Replay the float-exact top-score ties on dev; keep the max-fixed one.
+
+    Returns ``(pick, audit)``. The one selection layer shared by SearchProposer
+    and the campaign's ``propose_rule`` (round 88 part C), so the production
+    generation loop cannot drift from the seam the rerun scripts exercise.
+    `parent`, when given, replays each candidate as ``parent.append(rule)`` --
+    at generation 2+ the residual labels were measured UNDER the parent, so a
+    candidate replayed alone would be scored against a population it will never
+    govern. `earliness`/`fp_penalty` keep the tie set under the same
+    preregistered objective that ranked the head (round 26/29's lesson).
+    """
+    import numpy as np
+
+    from plugins.rsi import gate
+    from plugins.rsi.governed import Bundle
+    from plugins.rsi.stats.search import top_score_candidates
+
+    ties = top_score_candidates(traces, labels, privilege_budget=privilege_budget,
+                                earliness=earliness, fp_penalty=fp_penalty)
+    replay = ties[:TIE_BREAK_CAP]
+    dropped = [s.trigger.describe() for s in ties[TIE_BREAK_CAP:]]
+    if len(replay) <= 1:                       # no genuine tie to break
+        return default, {"tied": len(ties), "replayed": len(replay),
+                         "dropped": dropped, "pick": default.describe()}
+    base = np.asarray(labels, dtype=bool)
+    best_trigger, best_fixed, yields = default, -1, []
+    for cand in replay:
+        rule = Rule("tiebreak", cand.trigger, RecoverySpec(sensor_sd=recovery_sensor_sd))
+        # ponytail: without a parent, action_budget mirrors critic_budget -- the
+        # observable rules search proposes declare zero privilege and the
+        # recovery percept is non-privileged; split the budgets if a privileged
+        # recovery ever enters the search path.
+        bundle = (parent.append(rule) if parent is not None else
+                  Bundle(rules=(rule,), critic_budget=privilege_budget,
+                         action_budget=privilege_budget))
+        gov = executor.map(gate._run, [(s, bundle) for s in dev_specs], workers=workers)
+        gov_ok = np.asarray([r["success"] for r in gov], dtype=bool)
+        fixed = int(((~base) & gov_ok).sum())
+        yields.append({"trigger": cand.trigger.describe(), "fixed": fixed})
+        if fixed > best_fixed:        # strict > -> residual ties keep enumeration order
+            best_fixed, best_trigger = fixed, cand.trigger
+    return best_trigger, {"tied": len(ties), "replayed": len(replay), "dropped": dropped,
+                          "pick": best_trigger.describe(), "pick_fixed": best_fixed,
+                          "yields": yields}
 
 
 @dataclass
@@ -77,50 +134,12 @@ class SearchProposer:
         # SELECTION is where a rollout is affordable. A dev-block replay for
         # selection is licensed use of a dev block.
         if dev_specs is not None and executor is not None:
-            trigger = self._break_tie_by_repair(
+            trigger, self.selection = break_tie_by_repair(
                 traces, labels, privilege_budget=privilege_budget,
                 recovery_sensor_sd=recovery_sensor_sd, dev_specs=dev_specs,
                 executor=executor, workers=workers, default=trigger)
         return Rule(f"g{generation}", trigger,
                     RecoverySpec(sensor_sd=recovery_sensor_sd))
-
-    def _break_tie_by_repair(self, traces, labels, *, privilege_budget: int,
-                             recovery_sensor_sd: float, dev_specs, executor,
-                             workers: int, default) -> Trigger:
-        """Replay the float-exact top-score ties on dev; keep the max-fixed one."""
-        import numpy as np
-
-        from plugins.rsi import gate
-        from plugins.rsi.governed import Bundle
-        from plugins.rsi.stats.search import top_score_candidates
-
-        ties = top_score_candidates(traces, labels, privilege_budget=privilege_budget)
-        replay = ties[:TIE_BREAK_CAP]
-        dropped = [s.trigger.describe() for s in ties[TIE_BREAK_CAP:]]
-        if len(replay) <= 1:                       # no genuine tie to break
-            self.selection = {"tied": len(ties), "replayed": len(replay),
-                              "dropped": dropped, "pick": default.describe()}
-            return default
-        base = np.asarray(labels, dtype=bool)
-        best_trigger, best_fixed, yields = default, -1, []
-        for cand in replay:
-            rule = Rule("tiebreak", cand.trigger, RecoverySpec(sensor_sd=recovery_sensor_sd))
-            # ponytail: action_budget mirrors critic_budget -- the observable
-            # rules search proposes declare zero privilege and the recovery
-            # percept is non-privileged; split the budgets if a privileged
-            # recovery ever enters the search path.
-            bundle = Bundle(rules=(rule,), critic_budget=privilege_budget,
-                            action_budget=privilege_budget)
-            gov = executor.map(gate._run, [(s, bundle) for s in dev_specs], workers=workers)
-            gov_ok = np.asarray([r["success"] for r in gov], dtype=bool)
-            fixed = int(((~base) & gov_ok).sum())
-            yields.append({"trigger": cand.trigger.describe(), "fixed": fixed})
-            if fixed > best_fixed:        # strict > -> residual ties keep enumeration order
-                best_fixed, best_trigger = fixed, cand.trigger
-        self.selection = {"tied": len(ties), "replayed": len(replay), "dropped": dropped,
-                          "pick": best_trigger.describe(), "pick_fixed": best_fixed,
-                          "yields": yields}
-        return best_trigger
 
     @property
     def identity(self) -> str:

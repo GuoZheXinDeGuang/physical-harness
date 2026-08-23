@@ -262,6 +262,8 @@ def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
 
 def propose_rule(
     traces, labels, *, generation: int, prereg: Preregistration,
+    dev_specs=None, executor=None, workers: int = 10,
+    parent: Bundle | None = None, store: CampaignStore | None = None,
 ) -> Rule | None:
     """Deterministic proposer: the best admissible trigger over residual failures.
 
@@ -269,6 +271,14 @@ def propose_rule(
     the same ``(traces, labels) -> Rule`` contract; making the deterministic one
     the reference implementation keeps the loop runnable and reproducible
     without a network.
+
+    With `dev_specs` and an `executor`, the round-88 repair tie-break applies to
+    the in-sample ranked path: the objective is blind to fire time, so many arm
+    variants tie at the float-exact top score and the family dedup keeps
+    whichever enumerated first -- the divergence onset, not the arm that repairs
+    most. The tied candidates are replayed on the dev block and the max-fixed
+    one kept; a dev replay for SELECTION is licensed use of a dev block. The
+    audit, including what the cap dropped, is sealed in `store` when given.
     """
     if not any(labels) or all(labels):
         return None
@@ -278,6 +288,12 @@ def propose_rule(
         screened = screen(traces, labels, privilege_budget=prereg.critic_budget, pool=8,
                           earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
         if screened:
+            # No repair tie-break on this path: screening already re-ranked the
+            # family-deduped pool by OUT-of-sample shadow score, and replaying
+            # the in-sample top-score ties would override that ordering with
+            # the very evidence screening exists to discount. The tie-break is
+            # an in-sample-ranking repair only; the fall-through below is that
+            # ranking, so it gets the tie-break.
             return Rule(rule_id=f"g{generation}", trigger=screened[0].trigger,
                         recovery=RecoverySpec(sensor_sd=prereg.recovery_sensor_sd))
         # too few episodes to split; fall through to the in-sample ranking
@@ -285,9 +301,21 @@ def propose_rule(
                              earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
     if not ranked:
         return None
+    trigger = ranked[0].trigger
+    if dev_specs is not None and executor is not None:
+        from governor.proposer import break_tie_by_repair
+
+        trigger, selection = break_tie_by_repair(
+            traces, labels, privilege_budget=prereg.critic_budget,
+            recovery_sensor_sd=prereg.recovery_sensor_sd, dev_specs=dev_specs,
+            executor=executor, workers=workers, default=trigger, parent=parent,
+            earliness=prereg.earliness, fp_penalty=prereg.fp_penalty)
+        if store is not None:
+            store.put("tie_break", {"preregistration_sha": prereg.sha(),
+                                    "generation": generation, **selection})
     return Rule(
         rule_id=f"g{generation}",
-        trigger=ranked[0].trigger,
+        trigger=trigger,
         recovery=RecoverySpec(sensor_sd=prereg.recovery_sensor_sd),
     )
 
@@ -366,7 +394,8 @@ def run_campaign(
         # Residual failures under the CURRENT bundle are the target population.
         from plugins.rsi.gate import _run
         from plugins.rsi.parallel import default_executor
-        cur = (executor or default_executor()).map(
+        ex = executor or default_executor()
+        cur = ex.map(
             _run, [(s, bundle if bundle.rules else None) for s in dev_specs],
             workers=workers)
         labels = [r["success"] for r in cur]
@@ -384,7 +413,9 @@ def run_campaign(
                 print("  no residual failures on dev; campaign converged")
             break
 
-        rule = propose_rule([r["trace"] for r in cur], labels, generation=gen, prereg=prereg)
+        rule = propose_rule([r["trace"] for r in cur], labels, generation=gen, prereg=prereg,
+                            dev_specs=dev_specs, executor=ex, workers=workers,
+                            parent=bundle, store=store)
         if rule is not None and prereg.search_recovery:
             rule = _maybe_search_recovery(rule, bundle, dev_specs, prereg, store, gen,
                                           workers=workers, verbose=verbose)

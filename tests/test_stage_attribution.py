@@ -118,11 +118,14 @@ def test_attribution_successes_equal_the_gated_label_count(tmp_path, monkeypatch
 
 def test_stages_none_writes_nothing_and_changes_nothing(tmp_path, monkeypatch):
     """Round 78's byte-identity discipline at the artifact layer: a stages=None
-    campaign's index carries exactly the legacy kinds and the result dict
-    exactly the legacy keys -- no new artifact, no new key, no new config."""
+    campaign's index carries exactly the expected kinds and the result dict
+    exactly the legacy keys -- no stage artifact, no new key, no new config.
+    (tie_break is round 88 part C's selection audit, sealed every generation
+    regardless of the stage overlay.)"""
     _store, result, index = _campaign(tmp_path, monkeypatch, None)
 
-    assert [r["kind"] for r in index] == ["preregistration", "generation", "campaign_result"]
+    assert [r["kind"] for r in index] == ["preregistration", "tie_break", "generation",
+                                          "campaign_result"]
     assert set(result) == {"preregistration_sha", "power_plans", "generations", "promoted",
                            "final_sha", "rules", "heldout", "heldout_vs_blind", "ablation"}
 
