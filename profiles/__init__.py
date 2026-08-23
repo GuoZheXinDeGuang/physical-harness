@@ -58,6 +58,27 @@ def base_profile() -> Profile:
     ))
 
 
+def fakes_profile() -> Profile:
+    """Zero-plugin boot: every non-privileged capability mounted to a base fake.
+
+    This is the "开机" profile (W1) -- with ``plugins/`` empty the kernel still
+    has a provider for each seam, so a governed episode runs end to end on
+    ``harness.fakes`` alone. ``embodiment.ground_truth`` stays unmounted for the
+    same reason ``base_profile`` omits it (privileged, mounted only where oracle
+    state is needed); ``exec.rollouts`` reuses the base-owned local pool.
+    """
+    return Profile("fakes", (
+        Mount("embodiment.env", "harness.fakes:env_provider"),
+        Mount("policy.driver", "harness.fakes:policy_provider"),
+        Mount("percept.model", "harness.fakes:percept_provider"),
+        Mount("reasoner.proposer", "harness.fakes:reasoner_provider"),
+        Mount("task.planner", "harness.fakes:task_planner_provider"),
+        Mount("graph.skill", "harness.fakes:skill_graph_provider"),
+        Mount("graph.scene", "harness.fakes:scene_graph_provider"),
+        Mount("exec.rollouts", "harness.executor:provider"),
+    ))
+
+
 def matrix_plans() -> dict[tuple[str, str], tuple[MountPlan, dict[str, str]]]:
     """The 3-task x 2-policy pure-config matrix, as (shared plan, prereg overrides).
 
