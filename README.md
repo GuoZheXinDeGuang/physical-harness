@@ -114,6 +114,17 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 - **两态铁律 ✅(mode 机制, round 96):** 会话默认 EXECUTION(fail-safe: 真任务永不触发 RSI)。`--mode {execution,evolution}` 写一次 `MODE` 文件(重启断言一致=进程间不可变), 封 `runtime.boot` 行 {mode, skills_manifest, mount_plan_sha} 为链 0 号(篡改即断链, 断链就是审计)。campaign 类 brief 只在进化态被接受(否则拒到 failed/ 记 `runtime.task_error`, 非中和); 每执行任务前重折技能目录摘要集断言等于 boot 清单。单向流: 只有进化态写封存记录, 执行态只挂已封 SkillRecord + 冻结配置、从不写。
 - **装机规矩 ✅(体检 + 验货, round 96):** `scripts/plugin_doctor.py <卡目录>` 体检(Tier A 复用 `Kernel.provide` 的 isinstance 门 + 拒 actuation:real; Tier B 按能力类别一发假件冒烟, 确定性政策分流; `needs_sim` 卡真仿真层); `scripts/acceptance_campaign.py --claim <卡>` 验货(既有证据机器的参数化封装, 零新统计, 过关 = ≥1 条 `heldout_judgement_established=True` 的晋级 SkillRecord); `plugin_doctor --verify-claim` 对 `runs/` 核对卡的封存声明。体检 mode-agnostic, 验货 evolution-only——那道封条就是执行态准入票。
 - **驾驶舱 = dsh ✅(round 95):** 骑标准 MCP 缝零 vendor 接 dsh(:3080), 七只只读工具逐字节等价 `board.store` + `submit_brief` 原子投递; 自建 web board 对齐后退役, 报告改由 `python -m board.report` headless 出。**PH 上牌**: `profiles/dsh/rebrand.sh` 对安装副本七处打补丁(标题/PWA/favicon/slogan), dsh 源码零改动、包名不动、MIT 署名保留; `scripts/cockpit` 原生启动器每次启动幂等重敷补丁(dsh 升级后自愈)。
+- **两屏看仿真 ✅(`--render`, round 97):** 一屏 prompt、一屏看 sim。屏 1 `scripts/cockpit` 起 dsh 驾驶舱(:3080), 操作员在聊天里说人话下任务; 屏 2 常驻运行时带 `--render` 开一扇活的 MuJoCo 窗:
+
+  ```bash
+  scripts/cockpit                                    # 屏 1: dsh UI @ :3080
+  PYTHONPATH=. .venv/bin/python scripts/harness_runtime.py \
+      --session-dir runs/session-main --render        # 屏 2: 活窗(需 $DISPLAY, 如 :1)
+  # 屏 1 聊天里: "跑一个 stack, seed 90000" → LLM 调 submit_brief 原子投递 →
+  # 运行时认领 → 屏 2 窗里逐步看到这条 rollout(真 governed_rollout 加一扇窗, 零逻辑复制)
+  ```
+
+  `--render` 是每次开机的运维选择(像 `--mode`), **不进 brief**(brief 仍只 selector+budgets)、与执行/进化态正交; 无 `$DISPLAY` 直接拒开(绝不静默退回无头), `MUJOCO_GL=egl` 是无头 GL、开机自动卸掉换原生 GL(round-80 教训)。pacing 见 `--render-fps`(默认 50)。campaign 走子进程, 无论如何仍无头。
 - **zos 退役 ✅(W4/R10, 2026-08-23):** 操作面归 dsh, 设计资本审计落 [docs/zos-salvage.md](docs/zos-salvage.md)(authority FSM / 风险派生树 / 权限阶梯 / verify 沙箱 / not-measured 纪律 / World 状态模型 / 真机 ACT 半的需求规格); zos 仓 README 立碑 + tag `zos-retirement-2026-08-23` 冻结、代码零删除(`gh repo archive` 属组织动作留用户)。真机不搁置——升为未来 `actuation:real` 具身卡(v4.2), 挂独立认证运行时, sim 运行时拒挂。
 
 **Phase 1/2 已收口的头条**(Lift, 多区块合并): 脚本策略 held-out 三区块 **+32.2pp**(193 修 / 0 破, n=600), 对盲发孪生 +27.0pp(p=3e-32); 克隆策略三区块 +13.2pp。方法的实测下界: 失败不可被选择性检测的策略长不出规则, 决定性的不是成功率。

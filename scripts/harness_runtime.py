@@ -77,6 +77,15 @@ from profiles import base_profile
 #: The one prose seed-ledger the guard enforces (board.store.parse_ledger).
 STATUS_MD = REPO_ROOT / "STATUS.md"
 
+#: The render overlay: the generalised viewer wrapper (scripts/watch_stack.py),
+#: mounted on ``embodiment.env`` per task when ``--render`` is set. Param-free on
+#: purpose -- the workload refuses Mount params on embodiment.env (they cannot
+#: ride an EpisodeSpec ref), so the base ref it wraps + pacing travel via the
+#: watch_stack module globals _prepare_render arms (in-process only).
+RENDER_ENV_REF = "scripts.watch_stack:viewer_provider"
+#: watch_stack's default per-step pacing is 0.02s of extra sleep; 1/50 == 0.02.
+DEFAULT_RENDER_FPS = 50.0
+
 
 def _load_attr(ref: str):
     """Import ``module:attr`` and return the ATTRIBUTE (not call it).
@@ -113,6 +122,10 @@ class Runtime:
     skills_root: Path
     log: SessionLog
     mode: str = "execution"
+    #: Per-BOOT operator flag (never a brief, never MODE): overlay the rendering
+    #: env provider on each task so the operator watches the MuJoCo window live.
+    #: Composes with mode; campaigns spawn a headless subprocess regardless.
+    render: bool = False
     skills_manifest: tuple[str, ...] = ()
     #: task STRING -> {policy, planner, catalogue, oracles} and campaign name ->
     #: script, both folded from the installed manifests at boot -- the
@@ -128,8 +141,33 @@ def _skills_manifest(skills_root: Path) -> list[str]:
     return sorted(f.stem for f in skills_root.glob("*.json"))
 
 
+def _prepare_render(fps: float) -> None:
+    """Sanity-check the GL env for a live MuJoCo window and arm the viewer overlay.
+
+    round-80 lesson: ``MUJOCO_GL=egl`` is HEADLESS -- a window needs native GL, so
+    an egl/osmesa setting is unset here (loud, never a silent headless fallback).
+    No ``$DISPLAY`` = refuse the whole boot. Sets watch_stack's module globals (the
+    base env ref to wrap + per-step pacing) -- the in-process channel the task
+    plan loop reads; NOT spawn-safe, which is why campaigns stay headless.
+    """
+    from scripts import watch_stack
+
+    if not os.environ.get("DISPLAY"):
+        raise RuntimeError(
+            "--render needs an X DISPLAY for the MuJoCo window, but $DISPLAY is "
+            "unset; run on the workstation display (e.g. DISPLAY=:1), not headless")
+    gl = os.environ.get("MUJOCO_GL", "").lower()
+    if gl in ("egl", "osmesa"):
+        print(f"harness_runtime: --render unsetting MUJOCO_GL={gl!r} "
+              "(headless GL; a live window needs native GL)", file=sys.stderr)
+        os.environ.pop("MUJOCO_GL", None)
+    watch_stack._DELAY = 1.0 / fps if fps > 0 else 0.0
+    watch_stack._RENDER_BASE_REF = resolve_plan(base_profile()).ref("embodiment.env")
+
+
 def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
-         mode: str = "execution") -> Runtime:
+         mode: str = "execution", render: bool = False,
+         render_fps: float = DEFAULT_RENDER_FPS) -> Runtime:
     """Load-or-fresh the session chain, make the intake dirs, re-queue crashes.
 
     The session's ``mode`` is written once to ``<session-dir>/MODE`` at first
@@ -141,6 +179,8 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
+    if render:
+        _prepare_render(render_fps)  # refuses loudly with no $DISPLAY, before any dir work
     session_dir = Path(session_dir)
     log_dir = session_dir / "session-log"
     skills_root = session_dir / "skills"
@@ -194,20 +234,29 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     # on an actuation:real card, so the sim runtime refuses to boot with one).
     registry = discover()
     return Runtime(inbox, processing, done, failed, skills_root, log, mode,
-                   baseline, registry.task_bindings, registry.campaigns)
+                   render, baseline, registry.task_bindings, registry.campaigns)
 
 
-def _mount_plan(binding: dict, skills_root: Path):
+def _mount_plan(binding: dict, skills_root: Path, render: bool = False):
     """A fresh MountPlan for this task: base profile + the task's sim policy +
     planner + the shared skills root (so a fresh graph.skill mount re-globs RSI's
     output). policy and planner come from the task binding (a manifest), so
-    swapping either is a card edit, never a base one."""
+    swapping either is a card edit, never a base one.
+
+    ``render`` overlays the viewer wrapper (RENDER_ENV_REF) on ``embodiment.env``
+    around whatever the base plan resolved -- the same governed_rollout code path,
+    plus a window. Param-free (the workload refuses env mount params); the base ref
+    it wraps rides watch_stack's module globals _prepare_render armed at boot."""
+    override = [
+        Mount("task.planner", binding["planner"]),
+        Mount("policy.driver", binding["policy"]),
+        Mount("graph.skill", "plugins.graphs:skill_graph_provider",
+              {"root": str(skills_root)}),
+    ]
+    if render:
+        override.append(Mount("embodiment.env", RENDER_ENV_REF))
     return resolve_plan(base_profile(), patches=(
-        Patch("runtime", override=(
-            Mount("task.planner", binding["planner"]),
-            Mount("policy.driver", binding["policy"]),
-            Mount("graph.skill", "plugins.graphs:skill_graph_provider",
-                  {"root": str(skills_root)}),)),))
+        Patch("runtime", override=tuple(override)),))
 
 
 def _run_task(brief: dict, rt: Runtime) -> dict:
@@ -231,7 +280,7 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     max_actuations = int(brief.get("max_actuations",
                                    4 if task == "clear_table" else 3))
     kernel = Kernel(CAPABILITIES, log=rt.log)
-    kernel.mount(_mount_plan(binding, rt.skills_root))
+    kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render))
     wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
               "oracles": _load_attr(binding["oracles"])}
     return workload.run(wbrief, kernel, seed=seed,
@@ -438,9 +487,10 @@ def _pending(rt: Runtime) -> list[Path]:
 
 def main(session_dir: str | Path, inbox: str | Path | None = None, *,
          drain: bool = False, poll_interval: float = 1.0,
-         mode: str = "execution") -> Runtime:
+         mode: str = "execution", render: bool = False,
+         render_fps: float = DEFAULT_RENDER_FPS) -> Runtime:
     """Boot, then drain the inbox once (``drain``) or poll it forever."""
-    rt = boot(session_dir, inbox, mode=mode)
+    rt = boot(session_dir, inbox, mode=mode, render=render, render_fps=render_fps)
     if drain:
         while True:
             pending = _pending(rt)
@@ -465,9 +515,19 @@ def _cli() -> int:
     ap.add_argument("--drain", action="store_true",
                     help="process pending briefs then exit (default: poll forever)")
     ap.add_argument("--poll-interval", type=float, default=1.0)
+    ap.add_argument("--render", action="store_true",
+                    help="overlay a live MuJoCo window on each task so an operator "
+                         "watches the sim (needs $DISPLAY; refuses headless, unsets "
+                         "MUJOCO_GL=egl). A per-boot deployment choice like --mode, "
+                         "never a brief; composes with execution/evolution. "
+                         "Campaigns spawn a headless subprocess regardless.")
+    ap.add_argument("--render-fps", type=float, default=DEFAULT_RENDER_FPS,
+                    help=f"render pacing when --render is set: added per-step sleep "
+                         f"= 1/fps (default {DEFAULT_RENDER_FPS:g}, watch_stack's 0.02s)")
     args = ap.parse_args()
     main(args.session_dir, args.inbox, drain=args.drain,
-         poll_interval=args.poll_interval, mode=args.mode)
+         poll_interval=args.poll_interval, mode=args.mode,
+         render=args.render, render_fps=args.render_fps)
     return 0
 
 

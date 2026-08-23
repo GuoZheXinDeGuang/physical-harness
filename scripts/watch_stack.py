@@ -24,6 +24,12 @@ POLICY_REF = "plugins.policies:stack_scripted_provider"
 ENV_REF = "plugins.embodiment_robosuite:provider"
 
 _DELAY = 0.02  # module default; --delay overrides via _RenderEnv
+#: The base embodiment.env ref whose SEMANTICS the viewer delegates to. Default is
+#: the robosuite card; harness_runtime --render sets it to whatever the manifest
+#: union resolves, so the window watches ANY task, not just stack. Read at CALL
+#: time (in-process only -- module globals don't survive spawn, see registry.py,
+#: which is exactly why campaigns stay headless).
+_RENDER_BASE_REF = ENV_REF
 
 
 class _RenderEnv:
@@ -50,14 +56,24 @@ class _RenderEnv:
 
 
 class ViewerEmbodiment:
-    """The production embodiment with the renderer turned on."""
+    """A manifest embodiment.env provider with the renderer turned on.
 
-    def __init__(self, delay: float | None = None):
-        from plugins.embodiment_robosuite import provider
+    Wraps ANY base provider (named by ref): the semantic contract methods
+    (tasks/object_key/success/terminal_success) delegate to the wrapped provider
+    via ``__getattr__``, so the window watches ANY task, not just stack. Only
+    ``make_env`` is specialised -- a MuJoCo window needs ``has_renderer=True`` at
+    CONSTRUCTION time, the one embodiment-specific act.
+    ponytail: robosuite window; there is one embodiment backend today, so a non-
+    robosuite provider would ship its own renderable make_env -- add that seam
+    only when a second backend actually arrives.
+    """
 
-        self._base = provider()
-        # Read the module global at CALL time, not def time -- the def-time
+    def __init__(self, base_ref: str | None = None, delay: float | None = None):
+        from harness.registry import load_provider
+
+        # Read the module globals at CALL time, not def time -- the def-time
         # default is exactly the binding trap STATUS warns about.
+        self._base = load_provider(base_ref or _RENDER_BASE_REF)
         self._delay = _DELAY if delay is None else delay
 
     def make_env(self, spec):
@@ -80,7 +96,21 @@ class ViewerEmbodiment:
         )
         return _RenderEnv(env, self._delay)
 
-    def __getattr__(self, name):  # tasks/object_key/success/terminal_success/...
+    # Explicit forwards for the four STRUCTURAL EnvProvider members: the kernel's
+    # mount-time isinstance uses runtime_checkable's getattr_static (py3.12), which
+    # does NOT see __getattr__-provided attributes, so these must be real to pass
+    # the mount check. Everything else (terminal_success, close, sim, ...) is a
+    # runtime call and rides __getattr__ below.
+    def tasks(self):
+        return self._base.tasks()
+
+    def object_key(self, spec):
+        return self._base.object_key(spec)
+
+    def success(self, obs, spec, start_z):
+        return self._base.success(obs, spec, start_z)
+
+    def __getattr__(self, name):  # terminal_success/close/sim/_check_success/...
         return getattr(self._base, name)
 
 
