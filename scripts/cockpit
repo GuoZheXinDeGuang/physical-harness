@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# physical-harness cockpit -- native launcher for the lab console.
+#
+# operators run:  scripts/cockpit [--port N]
+# never:          npx @deepseek-ai/dsh web ...
+#
+# it (1) sources nvm (node 22), (2) re-applies the de-brand overlay
+# (profiles/dsh/rebrand.sh -- idempotent, so it self-heals after any dsh
+# upgrade or npx-cache wipe), then (3) serves the console.
+#
+# the harness MCP integration is loaded automatically by dsh from
+# $DSH_HOME/cordis.patch.yml -- there is NO `--patch` flag on `dsh web` (the CLI
+# rejects it). so this launcher does not pass one; the deployed patch file is
+# left untouched and its `- insert:` MCP fix applies on its own.
+set -o pipefail
+set -u
+
+DSH_PKG="@deepseek-ai/dsh@0.1.1-rc.2"   # single source of the pinned version
+PORT=3080
+
+usage() {
+  cat <<EOF
+physical-harness cockpit -- launch the lab console
+
+usage: cockpit [--port N] [-h|--help]
+
+  --port N    port to serve on (default: 3080)
+  -h, --help  show this help
+
+the cockpit sources nvm (node 22), re-applies the de-brand overlay
+(idempotent -- safe to run after any dsh upgrade), then serves the console.
+use this instead of 'npx $DSH_PKG'.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port)   PORT="${2:?--port needs a value}"; shift 2;;
+    --port=*) PORT="${1#*=}"; shift;;
+    -h|--help) usage; exit 0;;
+    *) echo "cockpit: unknown argument: $1" >&2; usage >&2; exit 2;;
+  esac
+done
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO="$(cd "$HERE/.." && pwd -P)"
+
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+  echo "cockpit: ERROR nvm not found at $NVM_DIR/nvm.sh" >&2
+  exit 1
+fi
+# shellcheck disable=SC1091
+. "$NVM_DIR/nvm.sh"
+nvm use 22 >/dev/null
+
+export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+export DSH_PKG
+
+# re-apply the branding overlay onto the npx-materialized install (idempotent).
+if ! bash "$REPO/profiles/dsh/rebrand.sh"; then
+  echo "cockpit: WARNING rebrand overlay reported an error; serving anyway" >&2
+fi
+
+echo "cockpit: serving physical-harness console at http://127.0.0.1:$PORT" >&2
+exec npx --yes "$DSH_PKG" web --no-open --port "$PORT"
