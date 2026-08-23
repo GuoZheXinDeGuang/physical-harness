@@ -82,3 +82,18 @@ Full-suite parity (card present): `441 passed, 3 skipped`. base_profile sha
 byte-stable at `b905a5…`; sealed eval-battery shas unmoved (demo `895958e…`,
 stack-three-block `2f5f3756…`). This is the T3/R10 motherboard baseline — a
 regression in any field blocks the merge.
+
+## ph-station slice-2 snapshot (2026-08-24, isolated, robosuite blocked)
+
+```
+pass       : 427 passed   (+15 over round-96: board/storecli.py CLI-face tests)
+skips      : 6 skipped    (same reasons as round-96)
+wall time  : ~3.8s
+AST green  : 17 passed (test_boundaries + test_kernel)
+deselected : 27 robosuite-marked items (+1: a storecli test needs the card)
+```
+
+Full-suite parity (card present): `457 passed, 3 skipped`. Measured at HEAD
+`a7e74ed` in a throwaway `git worktree` — note the gate needs `runs/` present
+(symlink it in): the two `verify_claim` tests read sealed stores and FAIL (not
+skip) without them.
