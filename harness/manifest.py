@@ -51,6 +51,21 @@ def _load(root: Path) -> list[tuple[str, dict]]:
             for mf in sorted(root.glob("*/manifest.toml"))]
 
 
+def card_mounts(data: dict) -> list[Mount]:
+    """Every Mount a SINGLE manifest declares.
+
+    ``discover`` folds many manifests (unioning, loud on collision);
+    ``plugin_doctor`` checks one card in isolation. Both share this per-manifest
+    ``cap -> ref (+params)`` extraction so the mount shape has one reader.
+    """
+    out = []
+    for cap, spec in data.get("mounts", {}).items():
+        ref = spec if isinstance(spec, str) else spec["ref"]
+        params = {} if isinstance(spec, str) else dict(spec.get("params", {}))
+        out.append(Mount(cap, ref, params))
+    return out
+
+
 def _claim(registry: dict, owner: dict, key, value, *, kind: str, plugin: str) -> None:
     """Record key->value in one namespace, refusing a second claimant loudly.
 
@@ -81,10 +96,8 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
             raise ValueError(
                 f"plugin {plugin!r} declares actuation:real; the sim runtime "
                 "refuses it (a real actuator needs a separate authenticated runtime)")
-        for cap, spec in data.get("mounts", {}).items():
-            ref = spec if isinstance(spec, str) else spec["ref"]
-            params = {} if isinstance(spec, str) else dict(spec.get("params", {}))
-            _claim(mounts, cap_owner, cap, Mount(cap, ref, params),
+        for m in card_mounts(data):
+            _claim(mounts, cap_owner, m.capability, m,
                    kind="capability", plugin=plugin)
         for task, binding in data.get("task_bindings", {}).items():
             _claim(task_bindings, task_owner, task, dict(binding),
