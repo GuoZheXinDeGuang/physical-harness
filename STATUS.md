@@ -1,10 +1,12 @@
 # STATUS
 
-**Goal:** PHASE 3: 从单技能治理到 agentic 骨架, 见 GOAL.md v3。(phase 1/2 记录不动, v2 全文在 git 历史)
+**Goal:** 主机底座宪章(GOAL.md v4.2): 执行 harness + 离线 RSI 两层, 其余皆插拔卡。(phase 1/2 记录不动, v2 全文在 git 历史)
 **Mode:** **evolving**
-**Round:** 95 完成(**dsh 驾驶舱落地**: MCP 七读+submit_brief, 九行对等表全 VERIFIED,
-自建 board 退役; rung 5 随 zos 退役裁定取消)。**GOAL v4 主机底座宪章生效**,
-round 96 盘点+设计进行中(W1 焊死物/W6 测试分层/W2 装机规矩/W4 zos 遗产四路审计)。
+**Round:** 96 完成(**主机底座宪章 W1-W6 全兑现, 终判 PASS**): 裸机全绿(隔离道 412)、
+manifest 自注册(卡=目录, base sha 逐位不变)、体检+验货(含 task_binding refs 校验)、
+两态铁律上链、dsh 驾驶舱(PH 上牌, MCP 工具 11ms 直达, 终态彩排双回合取证)、zos 落葬。
+**双报告级技能**: 抓取四块(+6.5/+9.5/+11.0/+10.5, 75修0破 n=800) +
+放置三块(+9.5/+11.0/+10.5, 68修6破 n=600), 判定全确立。
 **W4/R10 已执行(2026-08-23)**: zos 退役——设计资本落 docs/zos-salvage.md, zos 仓 README
 立碑 + tag `zos-retirement-2026-08-23` 冻结(代码零删除; 仓库 archive 属组织管理动作留用户);
 真机 ACT 半升为未来 actuation:real 具身卡需求(v4.2), 非搁置。
@@ -66,21 +68,18 @@ round 96 盘点+设计进行中(W1 焊死物/W6 测试分层/W2 装机规矩/W4 
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位):** 0. **GUI/CLI 改用 deepseek-harness(用户裁定 2026-08-23:
-不再自建, 开 workflow 完善重构; round 95 侦察+设计进行中——dsh 真仓库解剖、我方界面
-盘点、board 逐视图裁决)** 1. **chip 会话调和合并**(campaign.py 双改动: 主检出的
-外部四文件 + worktree round90-wt 的 prereg 三字段/续种/铸 id/裁决 C——place 链一切
-后续都卡在这) 2. **place 链复现**(held-out #2 = 47400-47599, #3 = 48000-48199;
-经运行时 inbox 投递 = M4#4 真跑证明, 一石二鸟; 盯 broken 率稳定性)
-3. ~~M4#6: zos sim_test 改投 brief~~ **VOID(2026-08-23, R10)**: zos 已退役, 此对接取消
-   (dsh 接管操作面; 设计资本见 docs/zos-salvage.md)。M4 计 6/6, #6 作废不再欠。
-4. R4 配对前后门禁(评测电池已可跑) 5. 几何抓取多物体化 gate(聚类先行)
-6. qwen38 gate(腾 GPU 后 round25_rerun 补跑; VLM planner 接 task.planner 缝=换 mount) 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
-(round 93 施工中: 质心+PCA 顶抓 proposer 走 vendored client 同一输出契约与 fail-closed
-校验, rung 1 的米制点云链路直接复用; sim 探针 = 几何驱动 vs 脚本基线配对)。
-anygrasp 侦察与几何链路资产保留, license 若恢复可无缝换回(契约同形)
-3. campaign propose_rule 接修复感知裁决(chip task_6686c1d0 进行中, 外部会话)
-4. 目标函数第三假设候补: fp_penalty 1.2 与 recall>0.5 门槛未标定。
+**frontier(现存, 按顺位, 2026-08-24 晨清扫):**
+1. **新技能卡活验货**(几何抓取卡走进化态运行时 = 终态验收的验货半 + M4#4 真 campaign
+   经 inbox; 探针已 100%/60 席, 差 claim + acceptance campaign)
+2. R4 配对前后门禁(评测电池已可跑, 差 before/after 配对机器门)
+3. qwen38 活跑 gate(GPU 被 rynnbrain/Glass_killer 占, 16.7GB<21.6GB; 腾出后
+   round25_rerun 补跑 + qwen 卡活验; VLM planner=换 mount)
+4. 几何抓取多物体化 gate(触发: 进多物体场景; 单物体假设是最大集成风险, 聚类先行)
+5. 目标函数第三假设候补(fp_penalty 1.2 / recall>0.5 未标定; 检测不饱和任务才咬人)
+6. gh repo archive Z-Robotics-Lab/zos(用户/组织管理动作)
+7. 真机 actuation:real 具身卡(未来, 需求书 docs/zos-salvage.md §7)
+已清结项(史录): GUI/CLI=dsh ✓(round 95-96) / chip 调和 ✓(T1 R0) / place 复现 ✓(三块转正) /
+M4#6 作废(zos 退役) / anygrasp→几何位姿 ✓(round 93) / 裁决 C 进 propose_rule ✓(T1 R0)。
 **待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
 
 ## 已达成（不要重新验证）
