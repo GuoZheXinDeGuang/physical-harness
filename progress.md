@@ -3573,3 +3573,34 @@ b026831c 逐位重建), R7 的 reasoner 新字段对旧封存正确哈希折叠�
   历史不清洗; `grep -rn zos` 因此仍命中这些历史文档 + salvage 文档 + GOAL/STATUS 退役注记,
   与施工图"only historical-log + salvage-doc mentions"一致。ARCHITECTURE line 10 因含已死的
   zos_world_bundle 标识符(真实性问题, 非历史)故顺手修真。
+
+## Round 96 T3 - 2026-08-23 深夜 - 宪章终判 PASS: 缝接活、彩排走通、zos 落葬、文档自证
+
+### 做成了什么
+
+1. **半截缝补全(f9cfb8c)**: rsi_run 解析并驱动挂载的 reasoner.proposer(记账), 身份门
+   镜像 run_campaign 自己的逻辑——带模型身份的卡(qwen)真被咨询且身份进封存 prereg;
+   确定性参考卡无身份即回落字节等价的内部提案器。实证依据: 基座 SearchReasoner 与
+   propose_rule 字节不等(缺 tie_break 产物/prereg 感知字段), 且边界测试禁止其 import
+   plugins.rsi——身份门是唯一同时满足"生产路径必传"与"封存 sha 不动"的接法。
+2. **R9 狗粮+彩排(1b7d341)**: bundle 接线全部下卡(profiles 零布线, zos-world 更名
+   robot-world); 技能封存声明进卡([claim.sealed] 带精确摘要), plugin_doctor
+   --verify-claim 对真封存店核对全绿。**终态彩排(PH 控制台, gateway 双回合)**:
+   turn1 技能盘点→mcp list_stores/sessions/session 真调用; turn2 投 stack seed 90300
+   →submit_brief→运行时执行→**如实记败**(3 replans 预算耗尽, success=false 上链)——
+   诚实失败也是治理面工作的证明。链 32 行 verify 绿。
+3. **R10 zos 落葬(6b4778d + zos@a0c6256 已推)**: tombstone 置顶+retirement tag 上
+   GitHub; docs/zos-salvage.md 19.6KB 抢救(权限 FSM/风险派生树/验证沙箱教训/真机 ACT
+   半作为未来 actuation:real 卡的需求书); harness 侧零活耦合(grep 实证, 仅史注)。
+   gh repo archive 留用户。
+4. **R11 文档追平(cc4276a)**: README 现状/生态/写一张卡说明书, ARCHITECTURE 两层+
+   固定原则逐条对机制, base-gate 快照定型。
+5. **宪章终判 PASS**(终验自跑一切): W1/W3/W4/W5/W6 PROVEN, W2 PARTIAL→**当夜补齐**
+   (2f2cf0d: 体检学会验 task_binding refs——死 ref 卡曾 GREEN 直进主线, 违反"挂载时
+   报错"原则; 红绿双测钉死; README 补从零 planner 契约)。"只照说明书写卡"文档自证
+   通过。测试 441→442, 隔离底座道 412 零缩水, eval_battery PASS。
+
+### 显式开放项(非缺陷)
+
+gh repo archive(用户) / qwen 活跑(GPU gated) / 真机 actuation:real 卡(未来, 需求书
+已备) / 新技能卡的活验货(下一 round: 几何抓取卡走进化态运行时)。
