@@ -3508,3 +3508,68 @@ b026831c 逐位重建), R7 的 reasoner 新字段对旧封存正确哈希折叠�
 - 彩排 session 存 ~/.dsh/sessions(非仓库), 第二轮向 runs/session-main 投任务是彩排应有
    写入(runtime 作业目录, 非封存 campaign store); place-g2 rescore 后台作业只写
    runs/place-g2-rescore-*, 全程未碰。
+
+## Round 96 R10 - 2026-08-23 - zos 退役 + salvage + 真机=未来具身卡(宪章 W4)
+
+### 做成了什么
+
+1. **设计资本审计成文 → NEW docs/zos-salvage.md**: W4 要"审计确认没漏有用的东西"。有用的
+   从不是 16k 行运行时, 是一把用真机事故买来的设计裁决——逐条落文, 附 zos 冻结仓的
+   `文件:行号` 出处: (§1) authority FSM(Arbiter: IDLE/NAV/SERVO/ARM/ESTOP, 单 CAN 主、
+   ESTOP 仅操作员可清、stop 永不被拒也永不解锁、reason-string 非异常; 双写 /way_point 冻死
+   2465 空路径的事故); (§2) 风险派生树(risk 从挂载分支派生非 Tool 字段, pre 根→叶累积,
+   authority 是 risk 的地板, 未声明=校验期拒, 全向"站住"失败; 取代会静默漂移的 RISK/PRECONDS
+   双名表); (§3) 权限阶梯(gate 六步: 硬拒>操作员拒>read 放行>本会话按参放行且永不含 arm>
+   yolo 只 move/infra>问; 镜像 Claude Code hasPermissionsToUseTool; 93m 误驾事故); (§4)
+   verify AST 沙箱 + 资源耗尽教训(禁算子非算元——9**9**9**9 跑 4 天 99.9%CPU 拖垮网络,
+   Pow/Mult/Mod 出 allowlist, 每颗炸弹 <0.1s 被拒有测; 非 bool 不是判据; 拒绝≠失败记零 Step);
+   (§5) not-measured 纪律(未测 vs 测得为空不可混, 六处目录; "不可算不等于许可"; 绝不伪造读数;
+   evidence IRON RULE: 量测证据只做顾问, 永不进 gate/resolve, 1 块=established 非 proven);
+   (§6) World 状态模型(机器人上下文是每回合重渲的 3D 世界态非 transcript; staleness 一等公民);
+   (§7) 真机 ACT 半(see/nav/manip/dog + loop) **按 v4.2 明确框为未来 actuation:real 具身卡的
+   需求规格**(后置条件而非返回码、单 CAN 主、单 /way_point 写者、身后即盲、cmd_vel 镜像非替身),
+   非搁置。文末列"已回家/故意不 salvage"(cli.py/render.py 的胶水形态)。
+2. **harness 内 zos 引用切断(与 R9 协调; 真机=同一 embodiment.env 缝的未来卡, 非遗物)**:
+   - profiles: R9 已把 sawyer_bundle()/zos_world_bundle() 两写死函数换成通用 bundle(name)、
+     并中性化改名 zos-world→robot-world; profiles 内已零 zos 引用, 本轮无需再动(已核实)。
+   - plugins/graphs(__init__.py + manifest.toml): WorldSceneGraph **类保留**(纯 dict 归一化,
+     不 import zos/numpy, 具身无关), zos 出处注释诚实重述——bearing 数学"从已退役的 zos 世界
+     模型移植(world.py:471, goldens 退役前冻结)、指向 salvage §6", 抹去"活在 zos 轻 venv、
+     zos 进程递快照"这类死活体耦合, 改述为未来 actuation:real 卡供快照。goldens/断言值/ref
+     字符串/类名逐字节不动 → MountPlan.sha 不移、parity 不受影响。
+   - tests/test_scene_graph.py: 同样诚实重述注释与 docstring, 一个测试函数名
+     ...match_zos_relative_goldens → ...match_ported_relative_goldens; 全部 golden 断言值不动。
+   - README 生态图: zos 驾驶舱框 → dsh 驾驶舱(操作面, 经 MCP) + robosuite 仿真卡 +
+     actuation:real 真机卡(未来, gated); 加"zos 已退役→操作面归 dsh、真机卡设计输入见
+     salvage"一行; 能力表 line 死标识符 zos_world_bundle→robot-world 一并修真; 删掉已失真的
+     "两个 README 保持一致"括注(其一已冻结)。ARCHITECTURE.md 能力表同修死标识符。
+   - GOAL/STATUS: 只加退役注记不重写(历史留存)——W4 条目标注 R10 已执行(salvage/立碑/tag/
+     archive 留用户/M4#6 作废 6-of-6/真机升未来卡); STATUS 头块加 W4/R10 执行注 + 日期,
+     frontier #3(M4#6 zos sim_test 改投 brief)标 VOID。
+3. **ZOS 仓立碑 + tag + 推送(同身份, 独立提交, 已 push 到 origin, GitHub 可见)**:
+   README 顶部加"已退役/RETIRED (2026-08-23)"墓碑块(职责移交 dsh+physical-harness、设计资本
+   见 salvage、代码零删除冻结在 tag、archive 属组织管理动作留用户未运行); commit a0c6256
+   (身份 yusenthebot); tag **zos-retirement-2026-08-23**; `git push origin HEAD:main`
+   (198c046..a0c6256) + push tag 均成功。**未删任何代码, 未运行 gh repo archive。**
+
+### 门禁
+
+- 全量: **441 passed / 3 skipped**(HEAD 基线 441/3, 零缩水)。
+- 隔离底座道(新鲜进程 sitecustomize 屏蔽 robosuite/mujoco, `-m "not robosuite"`):
+  **412 passed / 6 skipped / 26 deselected**(基线 412/6/26, 零缩水, 跳/弃不变)。
+- eval_battery --no-soak: **PASS**(demo_parity + stack_three_block 三块; 封存 sha
+  **2f5f3756 不动**; sealed sha 从未移动)。
+- ruff: 触碰的两个 .py(plugins/graphs/__init__.py、tests/test_scene_graph.py)全清;
+  graphs 自检绿(goldens 逐字节复现)。
+
+### 偏差(现实赢, 已最小化)
+
+- 施工图 R10 原列 tag 名为 `retired-2026-08-23`; **任务令覆盖为 `zos-retirement-2026-08-23`**,
+  以任务令为准。
+- 施工图 R10 还列 docs/dsh-cockpit-design.md、docs/m4-design.md、plugins/task/* 等更新;
+  **任务令 part(2) 明确收窄到 profiles/plugins-graphs/README 生态图/GOAL-STATUS 四处 +
+  "history stays"原则**, 故那些历史设计文档与出处注释(dsh-cockpit/m4-design 的 RUNG 5 已在
+  STATUS 记取消, plugins/task 的边界断言注释, scripts/brief_drop.py 的 sim_test 注释)留作
+  历史不清洗; `grep -rn zos` 因此仍命中这些历史文档 + salvage 文档 + GOAL/STATUS 退役注记,
+  与施工图"only historical-log + salvage-doc mentions"一致。ARCHITECTURE line 10 因含已死的
+  zos_world_bundle 标识符(真实性问题, 非历史)故顺手修真。

@@ -8,14 +8,16 @@ Two scene-graph providers share one snapshot schema
 
 - SimSceneGraph reads a robosuite observation (the base_profile context);
 - WorldSceneGraph reads a robot ``World.snapshot()`` dict (the real-robot
-  context, mounted via the ``robot-world`` bundle -- ``profiles.bundle``).
+  context, mounted via the ``robot-world`` bundle -- ``profiles.bundle``). its
+  consumer was the now-retired zos cockpit; it is reserved for the future
+  actuation:real embodiment card, which supplies the live snapshot.
 
 The caller supplies the raw observation (contracts.SceneGraph.snapshot(obs));
-this module is a pure normalizer, so it imports neither zos nor numpy — the
-bearing math is PORTED from zos.world.relative (world.py:471, goldens in the
-self-check below) and array values are coerced with float()/list(). That keeps
-this file importable from the zos light venv, where the zos process hands its
-own World snapshot in.
+this module is a pure normalizer that imports neither a robot runtime nor numpy,
+so it stays light enough to load in a real robot's minimal venv. The bearing
+math is PORTED from the retired zos world model (world.py:471 ``relative``;
+goldens in the self-check below, salvage in docs/zos-salvage.md §6) and array
+values are coerced with float()/list().
 """
 
 from __future__ import annotations
@@ -36,12 +38,12 @@ class InMemorySkillGraph:
         if self._root is not None:
             self._root.mkdir(parents=True, exist_ok=True)
             # Read-back is what makes `root` a shared store rather than a write
-            # spool: a campaign publishes here, and a LATER process (the zos
-            # cockpit) mounts the same root and reads the promoted records
+            # spool: a campaign publishes here, and a LATER process (a downstream
+            # evidence reader) mounts the same root and reads the promoted records
             # through skills() — the kernel-accounted seam, so no consumer ever
             # globs this directory itself. Filename stem IS the content digest
             # (publish() named it). A corrupt file raises right here at mount
-            # time — loud where mounted, and zos's evidence reader degrades to
+            # time — loud where mounted, and a downstream reader degrades to
             # an honest empty index on its side.
             for f in sorted(self._root.glob("*.json")):
                 self._skills[f.stem] = json.loads(f.read_text())
@@ -61,10 +63,11 @@ class InMemorySkillGraph:
 
 # ── shared bearing math ────────────────────────────────────────────────────
 
-#: Mirrors zos.world.ODOM_STALE_S — a pose older than this renders stale.
+#: Mirrors the retired zos world model's ODOM_STALE_S — a pose older than this
+#: renders stale (salvage: docs/zos-salvage.md §6).
 _ODOM_STALE_S = 2.0
 
-# Ported from zos.world (world.py:471 `relative`). LLMs cannot do metric
+# Ported from the retired zos world model (world.py:471 `relative`). LLMs cannot do metric
 # arithmetic over raw coordinates, so the graph carries derived bearings; the
 # raw pos stays on the node because tools need it and it is unforgeable.
 _SECTORS = ((22.5, "straight ahead"), (67.5, "ahead-{s}"), (112.5, "directly {s}"),
@@ -72,7 +75,7 @@ _SECTORS = ((22.5, "straight ahead"), (67.5, "ahead-{s}"), (112.5, "directly {s}
 
 
 def _relation(px: float, py: float, pyaw: float, x: float, y: float) -> str:
-    """'5.6m ahead-right +32°' — byte-for-byte the zos.world.relative string."""
+    """'5.6m ahead-right +32°' — byte-for-byte the ported `relative` string."""
     dx, dy = x - px, y - py
     dist = math.hypot(dx, dy)
     rel = math.degrees(math.atan2(dy, dx) - pyaw)
@@ -86,7 +89,7 @@ def _relation(px: float, py: float, pyaw: float, x: float, y: float) -> str:
 
 #: features.py:52 _OBJECT_KEYS (one per supported task) plus cubeB_pos, the
 #: stack partner (features.py:83). Duplicated, not imported: features.py pulls
-#: numpy at import and this module must stay light for the zos venv.
+#: numpy at import and this module must stay light for a real robot's minimal venv.
 _SIM_OBJECT_KEYS = ("cube_pos", "cubeA_pos", "cubeB_pos", "Can_pos")
 
 
@@ -117,12 +120,12 @@ class SimSceneGraph:
 
 
 class WorldSceneGraph:
-    """zos ``World.snapshot()`` dict -> scene graph, same schema.
+    """A robot ``World.snapshot()`` dict -> scene graph, same schema.
 
     Staleness propagates: odom_age past _ODOM_STALE_S (or a missing pose) flags
     the self node, and every self->x bearing was computed from that pose — a
     consumer must treat them as suspect together. No pose means the honest
-    'distance unknown (no pose)' string, exactly as zos renders it.
+    'distance unknown (no pose)' string, exactly as the source world model renders it.
     """
 
     def snapshot(self, obs: Mapping) -> Mapping:
@@ -192,8 +195,9 @@ if __name__ == "__main__":
     }
     g = WorldSceneGraph().snapshot(snap)
     rel = {r["to"]: r["rel"] for r in g["relations"]}
-    # Goldens produced by zos.world.relative ITSELF on this fixture (zos venv,
-    # 2026-08-22) — the ported math must reproduce zos's strings byte-for-byte.
+    # Goldens produced by the zos world model's own `relative` on this fixture
+    # (2026-08-22, before retirement) — the ported math must reproduce the source
+    # strings byte-for-byte.
     assert rel["start"] == "2.5m left-rear +128°", rel
     assert rel["ceo_office_door"] == "9.1m ahead-left +54°", rel
     assert rel["admin_office"] == "3.2m directly left +84°", rel
@@ -206,13 +210,13 @@ if __name__ == "__main__":
     assert g["frame"] == "map" and len(g["relations"]) == 5
 
     # Stale propagation: odom_age past ODOM_STALE_S must flag the self node —
-    # a frozen pose that still reads as live is the exact defect zos guards against.
+    # a frozen pose that still reads as live is the exact defect the world model guards against.
     stale_nodes = {n["id"]: n for n in WorldSceneGraph().snapshot(
         {**snap, "odom_age": 5.0})["nodes"]}
     assert stale_nodes["self"]["stale"] is True
     assert stale_nodes["bottle_1"]["stale"] is False  # map-frame fact, not odom-derived
 
-    # No pose: honest unknown in zos's exact words; nothing invented.
+    # No pose: honest unknown in the source model's exact words; nothing invented.
     blind = WorldSceneGraph().snapshot({**snap, "pose": None})
     assert all(r["rel"] == "distance unknown (no pose)" for r in blind["relations"])
     bself = {n["id"]: n for n in blind["nodes"]}["self"]
@@ -229,7 +233,7 @@ if __name__ == "__main__":
 
     # Skill store read-back: publish with a root, a FRESH instance loads it —
     # this is the cross-process half of the graph.skill seam (campaign writes,
-    # a later zos process mounts the same root and reads through skills()).
+    # a later downstream process mounts the same root and reads through skills()).
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         first = InMemorySkillGraph(root=td)
@@ -243,5 +247,5 @@ if __name__ == "__main__":
 
     # The module must stay light: importable with no numpy in the process.
     import sys
-    assert "numpy" not in sys.modules, "graphs.py dragged numpy in — zos venv breaks"
+    assert "numpy" not in sys.modules, "graphs.py dragged numpy in — the light venv breaks"
     print("plugins/graphs.py self-check OK")

@@ -4,8 +4,11 @@
 **Mode:** **evolving**
 **Round:** 95 完成(**dsh 驾驶舱落地**: MCP 七读+submit_brief, 九行对等表全 VERIFIED,
 自建 board 退役; rung 5 随 zos 退役裁定取消)。**GOAL v4 主机底座宪章生效**,
-round 96 盘点+设计进行中(W1 焊死物/W6 测试分层/W2 装机规矩/W4 zos 遗产四路审计)
-**Updated:** 2026-08-22
+round 96 盘点+设计进行中(W1 焊死物/W6 测试分层/W2 装机规矩/W4 zos 遗产四路审计)。
+**W4/R10 已执行(2026-08-23)**: zos 退役——设计资本落 docs/zos-salvage.md, zos 仓 README
+立碑 + tag `zos-retirement-2026-08-23` 冻结(代码零删除; 仓库 archive 属组织管理动作留用户);
+真机 ACT 半升为未来 actuation:real 具身卡需求(v4.2), 非搁置。
+**Updated:** 2026-08-23
 
 ## PHASE 3 状态
 
@@ -69,7 +72,8 @@ _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在�
 外部四文件 + worktree round90-wt 的 prereg 三字段/续种/铸 id/裁决 C——place 链一切
 后续都卡在这) 2. **place 链复现**(held-out #2 = 47400-47599, #3 = 48000-48199;
 经运行时 inbox 投递 = M4#4 真跑证明, 一石二鸟; 盯 broken 率稳定性)
-3. M4#6: zos sim_test 改投 brief(inbox 契约已冻结; 与 dsh 采纳的驾驶舱边界一并设计)
+3. ~~M4#6: zos sim_test 改投 brief~~ **VOID(2026-08-23, R10)**: zos 已退役, 此对接取消
+   (dsh 接管操作面; 设计资本见 docs/zos-salvage.md)。M4 计 6/6, #6 作废不再欠。
 4. R4 配对前后门禁(评测电池已可跑) 5. 几何抓取多物体化 gate(聚类先行)
 6. qwen38 gate(腾 GPU 后 round25_rerun 补跑; VLM planner 接 task.planner 缝=换 mount) 2. **抓取感知改道(用户裁定 2026-08-23): anygrasp 弃用, 传统几何位姿方案顶上**
 (round 93 施工中: 质心+PCA 顶抓 proposer 走 vendored client 同一输出契约与 fail-closed

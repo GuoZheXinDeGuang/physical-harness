@@ -7,7 +7,8 @@ ref = "plugins.graphs:scene_graph_provider"
 
 # The real-world scene overlay: swap graph.scene to WorldSceneGraph (a robot
 # World.snapshot() bridge). profiles.bundle("robot-world") layers this over
-# base_profile -- only graph.scene differs, and the plan sha moves. Neutral name
-# (was the zos-world bundle; WorldSceneGraph's zos provenance retires in R10).
+# base_profile -- only graph.scene differs, and the plan sha moves. Neutral name:
+# its first consumer was the now-retired zos cockpit, and it is reserved for the
+# future actuation:real embodiment card (salvage: docs/zos-salvage.md §6).
 [bundles.robot-world]
 "graph.scene" = "plugins.graphs:world_scene_graph_provider"

@@ -61,7 +61,7 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 | `reasoner.proposer` | `Reasoner` | 确定性搜索(`plugins/reasoner`); qwen38/naive transport 已备(round 81), 真模型 = 换 mount |
 | `task.planner` | `TaskPlanner` | 确定性 StackPlanner + fail-first 验证器(`plugins/task`, round 83); VLM = 换 mount |
 | `graph.skill` | `SkillGraph` | 内容寻址技能库, `root=` 落盘可跨进程回读(`plugins/graphs.py`) |
-| `graph.scene` | `SceneGraph` | 真 provider ×2(round 82): SimSceneGraph(robosuite obs)/WorldSceneGraph(zos World, 走 `zos_world_bundle`) |
+| `graph.scene` | `SceneGraph` | 真 provider ×2(round 82): SimSceneGraph(robosuite obs)/WorldSceneGraph(机器人 `World.snapshot`, 走 `robot-world` bundle; 首个消费者 zos 已退役, 留给未来 actuation:real 真机卡, 见 docs/zos-salvage.md) |
 
 内核(`harness/`)做五件事:
 
@@ -104,7 +104,7 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
 
 **Phase 1/2 已收口的头条**(Lift, 多区块合并): 脚本策略 held-out 三区块 **+32.2pp**(193 修 / 0 破, n=600), 对盲发孪生 +27.0pp(p=3e-32); 克隆策略三区块 +13.2pp。方法的实测下界: 失败不可被选择性检测的策略长不出规则, 决定性的不是成功率。
 
-## 生态(两个 README 都用这一块, 保持一致)
+## 生态
 
 ```
                     MSR 研究模块(论文导向)
@@ -115,18 +115,23 @@ held-out (n=200): 58.5% -> 65.0%, 13 fixed / 0 broken, p=0.00024
    │  agentic OS 骨架: 插件内核(capability 缝) +      │
    │  证据机器(配对门禁·盲孪生·held-out·消融·内容哈希) │
    │  task.planner → 受治理执行 → SkillRecord 技能证书 │
-   └───────┬──────────────────────────┬──────────────┘
-     实测证据(顾问层)            仿真轨(robosuite; Isaac gated)
-           ▼                          ▼
-   ┌──── zos 驾驶舱 ────┐      ┌── go2W_Sim ──┐
-   │ 操作员终端 · 世界状态│      │ Isaac 数字孪生 │
-   │ 安全门·authority 互斥│      │ (gated 待接)  │
-   │ 真机 Go2W+PiPER 执行 │      └──────────────┘
-   └────────────────────┘
+   └──┬───────────────────┬────────────────────┬─────┘
+    操作面(经 MCP)      仿真具身卡            真机具身卡(未来)
+      ▼                    ▼                     ▼
+ ┌─ dsh 驾驶舱 ─┐   ┌─ robosuite ─┐   ┌ actuation:real(gated) ┐
+ │ 现成开源控制台│   │ Panda/Sawyer │   │ Go2W+PiPER · 世界状态  │
+ │ 提任务/看会话 │   │ Isaac gated  │   │ 安全门 · authority 互斥│
+ │ 体检/验货/看链│   └─────────────┘   │ 独立认证运行时, sim 拒挂│
+ └─────────────┘                     └───────────────────────┘
+
+ zos 驾驶舱已退役(2026-08-23, 宪章 W4)→ 操作面归 dsh; 真机=同一 embodiment.env 缝下
+ 未来的 actuation:real 具身卡, 其设计输入见 docs/zos-salvage.md
 ```
 
-关系一句话: **physical-harness 是 OS(证据与治理的内核), zos 是驾驶舱(操作员与真机的活体层),
-MSR 模块经门禁进入, 技能以实测 SkillRecord 流向驾驶舱做顾问(手写安全下界永不放宽)。**
+关系一句话: **physical-harness 是 OS(证据与治理的内核), dsh 是驾驶舱(操作员经 MCP 的操作面),
+真机是同一 `embodiment.env` 缝下未来的 actuation:real 具身卡(zos 已退役, 设计资本见
+docs/zos-salvage.md), MSR 模块经门禁进入, 技能以实测 SkillRecord 流向消费者做顾问
+(手写安全下界永不放宽)。**
 
 ## 复现已发布的结果(parity)
 

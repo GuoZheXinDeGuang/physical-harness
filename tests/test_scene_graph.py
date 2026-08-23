@@ -10,8 +10,9 @@ The load-bearing claims, in test order:
 (c) SimSceneGraph mirrors features.py semantics: _OBJECT_KEYS resolution,
     planar eef-to-object distance (features.py:67), absent keys omitted never
     faked — all without numpy in the import chain.
-(d) WorldSceneGraph ports zos.world.relative's bearing math byte-for-byte
-    (goldens produced by zos's own function) and propagates pose staleness.
+(d) WorldSceneGraph ports the retired zos world model's `relative` bearing math
+    byte-for-byte (goldens produced by the source function before retirement) and
+    propagates pose staleness. salvage: docs/zos-salvage.md §6.
 """
 
 from __future__ import annotations
@@ -25,7 +26,8 @@ from profiles import base_profile, bundle
 
 CONSUMER = "scene-test"
 
-#: The zos world.py __main__ fixture, serialized the way World.snapshot emits it.
+#: The zos world.py __main__ fixture (frozen at retirement), serialized the way
+#: World.snapshot emits it.
 _NOW = 1000.0
 WORLD_SNAP = {
     "t": _NOW,
@@ -90,7 +92,7 @@ def test_sim_snapshot_planar_relation_and_absent_keys_omitted():
 
 
 def test_graphs_module_never_drags_numpy():
-    # zos's light venv imports plugins.graphs; numpy there is a boot failure.
+    # a real robot's light venv imports plugins.graphs; numpy there is a boot failure.
     import pathlib
     import subprocess
 
@@ -103,10 +105,11 @@ def test_graphs_module_never_drags_numpy():
 
 # --- (d) WorldSceneGraph: ported bearings, honest staleness -----------------
 
-def test_world_snapshot_bearings_match_zos_relative_goldens():
+def test_world_snapshot_bearings_match_ported_relative_goldens():
     g = WorldSceneGraph().snapshot(WORLD_SNAP)
     rel = {r["to"]: r["rel"] for r in g["relations"]}
-    # Goldens produced by zos.world.relative itself on this fixture (2026-08-22).
+    # Goldens produced by the zos world model's own `relative` on this fixture
+    # (2026-08-22, before retirement).
     assert rel == {
         "start": "2.5m left-rear +128°",
         "ceo_office_door": "9.1m ahead-left +54°",
@@ -130,6 +133,6 @@ def test_world_snapshot_stale_pose_flags_self_and_no_pose_stays_honest():
 
     blind = WorldSceneGraph().snapshot({**WORLD_SNAP, "pose": None})
     assert all(r["rel"] == "distance unknown (no pose)" for r in blind["relations"]), \
-        "no pose means zos's honest words, never an invented bearing"
+        "no pose means the source model's honest words, never an invented bearing"
     bself = {n["id"]: n for n in blind["nodes"]}["self"]
     assert bself["pos"] is None and bself["stale"] is True and bself["conf"] == 0.0
