@@ -3746,3 +3746,30 @@ reasoner)+ resolve(consumer=rsi)+ **rsi.campaign_complete(rules=[] skills=[] hel
 - eval_battery --no-soak: **PASS**(demo_parity 895958e19c8b + stack_three_block
   2f5f3756f23c 三块; 封存 sha 未移动——本 rung 无 mount, 不碰 spec/hash 路径)。
 - ruff: 触碰 0 个 .py(只改 manifest.toml 注释 + STATUS.md + progress.md); 卡 .py(r1)全清。
+
+## Round 98 - 2026-08-24 晨 - 纯净跑收官: 真 VLM 提案人首秀 + 提示词到仿真窗的零断点
+
+### 做成了什么
+
+1. **rosm nuke 纯净清场(用户授权)**: 15 进程+3 模型服务停净, GPU 7.9GB→533MB;
+   生产面(dsh/运行时/MCP)受保护名单存活。zos GitHub archive 完成(isArchived: true)。
+2. **qwen38 复活三坑连修**: 新版 sglang 把 MTP 草稿权重计入静态池(0.88 死于 KV 无地,
+   0.90 开机但首推理 workspace 打穿最后 78MB——NCCL 报的实为 CUDA OOM); CUDA_HOME
+   需脚本内环境。展示配置 = 去 MTP + 0.85 + 短上下文, 22.0GB 稳态真推理存活。
+   **launch_qwen38.sh 待用户改**: MTP 窗口在这版 sglang 已关死。
+3. **三臂对比完赛(runs/round25-rerun-qwen, bb6baa3408dc)——round 81 支票兑现**:
+   search +27.0pp(54/0) 与 naive +31.5pp(63/0) **逐位复现封存值**(主板全套重构压着
+   parity); **qwen38 真模型首次提案**: running_min(finger_gap)<0.02 dwell 3 armed t=5
+   ——与两臂皆不同的第三种形状(单调统计量+早布防+驻留确认), held-out **+27.0pp
+   (55 修 1 破)追平确定性搜索**。模型身份进封存哈希。qwen 卡活体检 GREEN。
+4. **--render 运行时(300b832)**: round-80 取景器泛化到任意 manifest 具身卡,
+   "UI 提示词→仿真窗"零断点。载荷级发现: py3.12 runtime_checkable 走 getattr_static,
+   __getattr__ 转发过不了挂载合同——只有运行时挂载路径暴露, 改真转发。渲染是部署
+   旗标非 brief 字段(注入 render 键照拒)。测试 455/隔离道 425 零缩水。
+   双屏配方进 README。
+
+### 什么没成 / 注意
+
+- qwen 臂 broken=1: 本族首次带破坏的规则, 早布防的代价面待复现块观察。
+- 工作区免选魔改进行中(另一 agent); 三臂期间 EGL 与 22GB sglang 并存无恙(Lift 无
+  相机渲染, GPU 冲突担忧未兑现——但 lift_geometric 相机任务与大模型并存仍需实测)。
