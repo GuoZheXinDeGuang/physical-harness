@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from mcp.server import MCPServer
 
+from board import cards as bc
 from board import store as bs
 from scripts.brief_drop import drop
 
@@ -100,6 +101,12 @@ def ledger() -> list[dict]:
 def rounds() -> list[dict]:
     """progress.md round sections, latest first."""
     return bs.parse_rounds(_read(_Cfg.progress))
+
+
+@mcp.tool()
+def list_cards() -> list[dict]:
+    """Every installed 机箱 card (plugins/*/manifest.toml), manifest read as data."""
+    return bc.list_cards()
 
 
 @mcp.tool()

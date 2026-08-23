@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from board import cards as bc
 from board import store as bs
 
 
@@ -43,6 +44,8 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
     """
     if fn == "list_stores":
         return bs.list_stores(runs)
+    if fn == "cards":
+        return bc.list_cards()
     if fn == "sessions":
         return bs.discover_sessions(runs)
     if fn == "ledger":
@@ -69,7 +72,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|ledger|rounds")
+    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|ledger|rounds|cards")
     parser.add_argument("name", nargs="?", default=None, help="store/session name for the name-addressed fns")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
