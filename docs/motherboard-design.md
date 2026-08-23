@@ -100,3 +100,19 @@ v4.1 HARD RULE (执行/进化硬分离, 单向流, 执行态挂载全冻结、�
 3. CHIP-SESSION RECONCILE TIMING (R0): is the external session editing the four dirty files (governor/proposer.py break_tie_by_repair refactor + campaign.py propose_rule threading + the two test files) still ACTIVE? If yes, R0 waits for its commit then rebases R7 on top; if dormant, R0 adopts-and-supersedes (the edits are coherent and already test-covered). round90-wt is adopt-and-supersede regardless (its replace primitive is already on main at repertoire.py:99). Confirm active-vs-dormant so R0 picks wait vs supersede.
 
 (Note: the round-95 dsh open questions — nvm-scoped Node 22/pnpm 11.7, delete-while-RC, LLM-in-front-of-inbox — are treated as already decided per W3 "round 95 已执行"; re-raise only if any was left open.)
+## GUI 同源补遗(2026-08-23 用户裁定: 必须在 dsh GUI 上跑, tool 逻辑必须同一套)
+
+两条硬规矩, 约束 T2/T3 全部新工具:
+
+1. **dsh GUI 是唯一操作面**: 提任务/看会话/体检/验货/报告全部经 dsh 控制台完成。
+   R9 终态验收彩排必须在 GUI 里走通(不是 curl): 聊天驱动 MCP 工具装卡→体检→验货→
+   投任务→看链。前置: 用户配 DeepSeek API key。
+2. **工具逻辑同源(round 95 纪律的普遍化)**: 每个 MCP 工具 = 对脚本同一函数的薄透传,
+   逐字节等价测试钉死; 逻辑只活在一处(board.store / brief_drop / plugin_doctor 的
+   函数体), MCP 与 CLI 是同一函数的两个调用面。禁止在 MCP 层重实现或加语义。
+
+R9 因此扩充: NEW board/mcp_server.py 增 doctor(dir) / verify(store) / report() 三工具,
+分别透传 scripts/plugin_doctor.py 与 board.report 的同名函数(等价测试同款);
+acceptance campaign 不做独立 MCP 工具——它就是进化态 campaign brief(经 submit_brief 走
+运行时, 模式门与种子守卫全部复用), GUI 里由 LLM 组织 brief 投递。
+harness 内部约定与 dsh tool-call 同构由 R5 manifest(具名工具+JSON 参数+挂载时校验)承载。
