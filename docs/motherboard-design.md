@@ -2,7 +2,7 @@
 
 三个开放问题的裁决:
 1. zos 归档: 准备到 tombstone+tag 为止, GitHub archive 由用户执行(组织权限+对外动作)。
-2. 真机执行层: (c) 搁置——salvage 文档保全设计资本, 真机=未来 actuation:real 卡+独立认证运行时。**用户可改选**。
+2. 真机执行层(v4.2 修正): 真机与仿真是**同一 embodiment.env 接口下的两种具身卡**——salvage 文档是真机卡的设计输入, 非遗物。sim 运行时拒绝 actuation:real 的守卫保留(真机卡挂独立认证运行时), 但架构地位从"搁置"升为"既定路线上的卡"。
 3. chip 会话: 四文件 22h 未动判定休眠, R0 收编取代(adopt-and-supersede)。
 
 ## Design
