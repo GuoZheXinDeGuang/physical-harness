@@ -3662,3 +3662,87 @@ ruff 触及文件全清。plugin_doctor plugins/skill_geometric_grasp GREEN。
 几何抓取卡的活验货(下一 rung: 进化态运行时真跑, 烧 48200-48899, 长出 [claim.sealed])
 ——base rate 高(lift 几何臂 ~100%)时晋级空间小是那一 rung 要正视的诚实结果。
 SKILL_SPECS["grasp"] 执行绑定(通用 task 环也能驱几何抓取)留作需要时的活。
+
+## Round 97 R2 - 2026-08-23 - 几何抓取卡活验货: 经进化态运行时真跑, 100% 基线零晋级, 验货 RED(诚实 FAIL)
+
+### 跑成了什么(这一 rung 是一次真跑, 不是代码变更)
+
+r1 把几何抓取打包成卡、预登记了种子, 留下"活验货"这一 rung。r2 把它跑掉——不是手挂
+campaign, 而是**经常驻进化态运行时**走完整条 M4#4 系统内路径, 同时它就是终态验收的验货半。
+
+1. **新起一条进化态会话**: `harness_runtime.py --session-dir runs/session-evolution
+   --mode evolution --drain`。先经 brief_drop(共享 producer)原子落一条 campaign brief
+   `{"kind":"campaign","campaign":"lift_geometric","dev":[[48200,48699]],"heldout":[[48700,48899]]}`
+   (恰好 r1 预登记块), 再 --drain。生产 dsh(:3080)与执行态 runs/session-main 全程未碰。
+
+2. **系统内四道关全过**: 运行时 (a) 过 mode 门(evolution 才收 campaign)、(b) 过种子账本
+   重叠守卫(声明块 vs STATUS 已烧无交集)、(c) spawn acceptance_campaign 子进程(经
+   `_campaign_cmd` 自动补 `--claim plugins/skill_geometric_grasp`)、(d) 子进程 0 退出后
+   折叠发布的 SkillRecord 进会话 skills 根 + 上链 `runtime.campaign_scheduled`。全绿。
+
+3. **证据机器判决: 零晋级(诚实 FAIL)**。gen-1 dev 功效规划取 196 席(reservoir[:196]
+   = 48200-48395), 实测 **196/196 = 100.0% 基线, 零残余失败**。run_campaign 命中
+   `if all(labels): "no residual failures on dev; campaign converged"; break`——**没有失败
+   就没有可门禁的候选**, gen-1 收敛零规则, held-out(48700-48899)从未评分(无晋级链可确认),
+   盲孪生/消融从未触发。整条约 40s(196 席 × 10 worker, 无搜索开销), 远短于晋级路径的 1-2h。
+
+### 全量证据(逐字)
+
+- 预登记(stamped)prereg sha: **ff7c9f841348**(dry-run 未 stamped = 73672d3e90b4, 差在
+  run 时 stamp 的 env/policy/percept provider refs)。
+- stage_attribution(唯一世代产物): n=196, successes=196, per_stage grasp reached=196
+  success=196, first_failure {grasp:0, (terminal):0}, furthest grasp episodes=196
+  terminal_success=196 → **基线 100.0%**。
+- 逐世代 dev 门: **无**(零规则, gen-1 即收敛)。
+- held-out 线: **无**(200 席 48700-48899 从未评分)。
+- 盲孪生判决: **无**(无候选)。
+- 消融阶梯: **无**(无晋级链)。
+- 发布 SkillRecord digests: **[]**(零条)。
+- `plugin_doctor --verify runs/session-evolution/campaigns/lift-geometric-g1/skills`: **RED**
+  [FAIL×4: promoted skill 0 条 / prereg_sha / heldout judgement / ablation]。
+- `plugin_doctor --verify-claim plugins/skill_geometric_grasp`: **RED** [FAIL: manifest 无
+  [claim.sealed] 可验]——零晋级, 无证据可封。
+- `plugin_doctor plugins/skill_geometric_grasp`(体检): **GREEN**(task:lift_geometric refs
+  加载+形状通过)——卡机械健全, 只是没长出技能。
+
+### 系统内路径上链(M4#4 真证据)
+
+runs/session-evolution/session-log 链 **verify=True**(2 行):
+- seq 0 runtime.boot: mode=evolution, skills_manifest=[], mount_plan_sha=b905a5119415。
+- seq 1 runtime.campaign_scheduled: brief=lift-geometric-g1.json, campaign=lift_geometric,
+  out=runs/session-evolution/campaigns/lift-geometric-g1, prereg_sha=ff7c9f841348, **skills=[]**。
+
+campaign store 链 **verify=True**(16 行): 完整 mount(env/exec/scene/skill/percept/policy/
+reasoner)+ resolve(consumer=rsi)+ **rsi.campaign_complete(rules=[] skills=[] heldout={})**。
+折叠进会话 skills 根 = 零条(_copy_skills 无源)。
+
+### 为什么零晋级(根因, 非缺陷)
+
+证据机器搜的是"策略在感知噪声下失败时, 何时该由 critic 介入"。几何抓取是**零特权**——它从
+自开的干净相机点云算抓取位姿, **根本不读 campaign 注入的 percept 噪声**, 所以在这条难度轴上
+它不失败(100%)。没有失败 = 没有可选择性检测的失败 = 没有可门禁的候选 = 零晋级。这不是卡坏了
+(体检 GREEN、两条链 verify=True、系统内路径全通), 是**门就是门**: r1 已预判"base rate 高时
+晋级空间小是要正视的诚实结果", r2 把它测实了。要真给几何抓取长技能, 需换一条它真敏感的难度轴
+(相机噪声/遮挡/多物体), 不是给它套 privileged-percept 噪声轴——那不是调阈值凑晋级能解决的,
+是选错了验货难度(已进 frontier #3)。
+
+### 落库
+
+- **种子**: 预登记块 dev 48200-48699 + held-out 48700-48899 判为已烧(经进化态真跑; 实际只
+  消耗 196 dev 席测基线, held-out 从未评分, 但预登记块整体随实验烧掉不复用, 同 place-g2
+  733 全席规矩)。STATUS 区块预算 预留→已烧, 两块经 parse_ledger 复核均为 burned。
+- **manifest**: [claim] 表未动(仍可复跑); 注释更新为零晋级判决(无 [claim.sealed])。
+- **无新代码 = 无新测试**: r1 已覆盖卡的 planner/factory/CLI 缝; r2 是一次真跑, 非代码变更。
+- 顺手发现一处 STATUS ledger 既有解析洞(round 96 夜 48000-48199 与 已烧 关键字跨物理行 →
+  被 parse_ledger 读成 planned 而非 burned; 我这条把关键字与两块范围钉在同物理行避开它)——
+  非本 rung 引入, 另开 chip 修。
+
+### 门禁
+
+- 全量: **448 passed / 3 skipped**(r1 基线 448/3, 零缩水; census 448 dots+3 s 无 F/E,
+  摘要行被项目 pytest 配置抑制故以 census 为准; 一次瞬时 robosuite rollout flake 复跑即绿)。
+- 隔离底座道(新鲜进程 sitecustomize 屏蔽 robosuite/mujoco, `-m "not robosuite"`):
+  **418 passed / 6 skipped**(基线 418/6, 零缩水; ~27 robosuite-marked deselected)。
+- eval_battery --no-soak: **PASS**(demo_parity 895958e19c8b + stack_three_block
+  2f5f3756f23c 三块; 封存 sha 未移动——本 rung 无 mount, 不碰 spec/hash 路径)。
+- ruff: 触碰 0 个 .py(只改 manifest.toml 注释 + STATUS.md + progress.md); 卡 .py(r1)全清。

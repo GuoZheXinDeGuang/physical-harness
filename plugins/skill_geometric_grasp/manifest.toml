@@ -27,9 +27,16 @@ lift_geometric = "scripts/acceptance_campaign.py"
 # dev/held-out seed blocks, gen-1 modest campaign), so 验货 is the campaign
 # machine acting as inspector, not a second implementation. task = "lift" is the
 # embodiment task the episodes run on; the geometric grasp IS the lift task under
-# lift_geometric_provider. Seeds preregistered (reserved) in STATUS.md 区块预算;
-# the runtime overlap-guard enforces burned. [claim.sealed] lands after the real
-# run burns them (a following rung: 几何抓取卡走进化态运行时).
+# lift_geometric_provider. Seeds preregistered in STATUS.md 区块预算; the runtime
+# overlap-guard enforces burned. round 97 r2 RAN this campaign through the
+# evolution-mode runtime (M4#4, the 终态验收 验货 half): gen-1 dev measured
+# 196/196 = 100% base rate, zero residual failures -> the evidence machine
+# converged with zero rules, so NO [claim.sealed] is earned (验货 RED, 0 promoted
+# records). The zero-privilege grasp never reads the noisy percept the campaign
+# injects, so it does not fail on that difficulty axis and offers no selectively-
+# detectable failure to gate a critic on -- the honest ceiling r1 flagged, not a
+# defect (体检 stays GREEN). A real promotion needs a campaign whose difficulty
+# axis the grasp is actually sensitive to (camera noise / occlusion / multi-object).
 [claim]
 task = "lift"
 policy = "plugins.policies:lift_geometric_provider"

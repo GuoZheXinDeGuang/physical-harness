@@ -62,26 +62,26 @@ manifest 自注册(卡=目录, base sha 逐位不变)、体检+验货(含 task_b
 **已烧(round 96 夜)**: place-g2 复现块 #2 = 47400-47599(+11.0pp 24修2破 判定确立),
 #3 = 48000-48199(+10.5pp 23修2破 判定确立)。**放置链头条三块转正:
 +9.5/+11.0/+10.5pp, 68 修 6 破 n=600, 判定三块全确立; broken 率逐块稳定 2/2/2。**
-**预留(round 97 预登记):** 几何抓取卡(plugins/skill_geometric_grasp)lift_geometric 验货 campaign dev 48200-48699(500 席)/ held-out 48700-48899(200 席)——gen-1 modest campaign, alloc_seeds 领的最低未烧区间(floor 48200), unstamped prereg sha 73672d3e90b4。
-真跑烧段留给"几何抓取卡走进化态运行时"那一 rung(运行时重叠守卫只对已烧执法, 预留块可复算)。
+**已烧(round 97 r2, 活验货 FAIL):** 几何抓取卡 lift_geometric 验货 campaign 预登记块 dev 48200-48699 + held-out 48700-48899 经进化态运行时(runs/session-evolution)真跑烧掉, stamped prereg sha ff7c9f841348。
+gen-1 dev 功效规划取 196 席(48200-48395), 实测 196/196 = 100.0% 基线零残余失败 → campaign 收敛零规则 → 零晋级, 验货 RED(0 published skill records)。held-out 从未评分(无晋级链可确认), 但预登记块整体随实验烧掉不复用(同 place-g2 733 全席规矩)。base rate 高致晋级空间为零 = r1 预判的诚实天花板, 门就是门不调阈值凑晋级。
 
 **frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
 父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位, 2026-08-24 晨清扫):**
-1. **新技能卡活验货**(几何抓取卡走进化态运行时 = 终态验收的验货半 + M4#4 真 campaign
-   经 inbox; 探针已 100%/60 席, 差 claim + acceptance campaign)
-2. R4 配对前后门禁(评测电池已可跑, 差 before/after 配对机器门)
-3. qwen38 活跑 gate(GPU 被 rynnbrain/Glass_killer 占, 16.7GB<21.6GB; 腾出后
+**frontier(现存, 按顺位, round 97 r2 后):**
+1. R4 配对前后门禁(评测电池已可跑, 差 before/after 配对机器门)
+2. qwen38 活跑 gate(GPU 被 rynnbrain/Glass_killer 占, 16.7GB<21.6GB; 腾出后
    round25_rerun 补跑 + qwen 卡活验; VLM planner=换 mount)
-4. 几何抓取多物体化 gate(触发: 进多物体场景; 单物体假设是最大集成风险, 聚类先行)
-5. 目标函数第三假设候补(fp_penalty 1.2 / recall>0.5 未标定; 检测不饱和任务才咬人)
-6. gh repo archive Z-Robotics-Lab/zos(用户/组织管理动作)
-7. 真机 actuation:real 具身卡(未来, 需求书 docs/zos-salvage.md §7)
+3. 几何抓取真晋货 gate(触发: 换一条几何抓取真敏感的难度轴——相机噪声/遮挡/多物体——再验货;
+   privileged-percept 噪声轴上它零特权不失败, r2 实测 100% 零晋级; 单物体假设仍是最大集成风险, 聚类先行)
+4. 目标函数第三假设候补(fp_penalty 1.2 / recall>0.5 未标定; 检测不饱和任务才咬人)
+5. gh repo archive Z-Robotics-Lab/zos(用户/组织管理动作)
+6. 真机 actuation:real 具身卡(未来, 需求书 docs/zos-salvage.md §7)
 已清结项(史录): GUI/CLI=dsh ✓(round 95-96) / chip 调和 ✓(T1 R0) / place 复现 ✓(三块转正) /
-M4#6 作废(zos 退役) / anygrasp→几何位姿 ✓(round 93) / 裁决 C 进 propose_rule ✓(T1 R0)。
+M4#6 作废(zos 退役) / anygrasp→几何位姿 ✓(round 93) / 裁决 C 进 propose_rule ✓(T1 R0) /
+几何抓取卡活验货 ✓(round 97 r2, 判定 FAIL: 100% 基线零残余失败→零晋级, M4#4 系统内路径全通+链 verify=True, 体检 GREEN; 门就是门)。
 **待办:** Mac 归档 runs/campaign-pj-* 拷来解锁两个 skip 测试。
 
 ## 已达成（不要重新验证）
