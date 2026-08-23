@@ -12,7 +12,6 @@ import threading
 
 import pytest
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population
 from governor.proposer import (
     TransportError,
     naive_transport,

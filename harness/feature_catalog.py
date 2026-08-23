@@ -1,12 +1,26 @@
-"""Robosuite feature surface: what THIS embodiment exposes to critics.
+"""The base observation-feature catalog: what the harness declares by default.
 
-The contract machinery (Privilege, Feature, register, the registry and its
-query functions) lives in harness.features; this module is the embodiment's
-DECLARATION, executed at import time. Import-time registration is what keeps
-the registry spawn-safe: a worker that loads this embodiment's provider ref
-imports this package, and the registration re-runs in that process with no
-state to migrate. The kernel path reaches here through the provider import;
-the legacy no-ref path reaches here through this package's __init__ import.
+Round 96 (R2) moves these declarations OFF the embodiment card and onto the
+base. Before this, the catalog was populated as an import side-effect of
+``plugins.embodiment_robosuite.features`` -- the round-69 "registry inversion":
+the process-wide ``REGISTRY`` was empty until some card import happened to run,
+so base logic (percept, invariant, proposer, search) and its tests could only
+see features if a card had already been imported, and every base test that
+needed the catalog had to ``import`` the card purely for the side-effect.
+
+Owning the catalog here kills that class outright. ``harness.features`` imports
+this module at its own bottom, so the catalog is populated the instant the
+feature machinery is imported -- which every base consumer does -- and there is
+no longer any way to read an empty ``REGISTRY``. It is also spawn-safe by the
+same token: a worker re-imports ``harness.features`` and the registration
+re-runs with no state to migrate, no card required.
+
+The extractors read robosuite/Panda observation keys (``robot0_*``, ``cube*``)
+because the harness is sim-only today; the names, order, and semantics are
+byte-identical to the card declarations they replace, so the catalog every
+sealed run hashed against is unchanged (parity). A future embodiment card that
+exposes DIFFERENT features registers them itself on mount (harness.features
+.register); nothing here forbids that, and nothing here depends on it.
 """
 
 from __future__ import annotations
@@ -97,4 +111,3 @@ register(Feature("privileged.stack_xy_residual", Privilege.PRIVILEGED, _stack_xy
 register(Feature("privileged.stack_z_residual", Privilege.PRIVILEGED, _stack_z_residual,
                  "Ground-truth height of cubeA's centre above its seated-on-cubeB pose. "
                  "NaN off the stack scene."))
-

@@ -1,5 +1,10 @@
 """The demonstration pipeline is part of the artefact, not a scratch script."""
 import numpy as np
+import pytest
+
+# demos.collect_one drives real robosuite rollouts through the governor.env shim;
+# skip cleanly when the embodiment card is unplugged (R2 card-removal decoupling).
+pytest.importorskip("plugins.embodiment_robosuite.env")
 
 from plugins.policies.demos import collect_one
 

@@ -21,7 +21,6 @@ import json
 import numpy as np
 import pytest
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population
 from plugins.rsi import gate
 from plugins.rsi.campaign import CampaignStore, Preregistration, sha_json
 from plugins.rsi.governed import RecoverySpec, Rule

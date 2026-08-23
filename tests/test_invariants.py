@@ -123,16 +123,15 @@ def test_bulk_read_over_attests_toward_safety():
 def _worker_probe(budget):
     """Runs in a fresh process.
 
-    Post-inversion (round 69) the kernel registry starts EMPTY in a worker;
-    population happens when the embodiment plugin is imported -- which is what
-    every real worker does the moment it loads a provider ref. The probe
-    mirrors that path, and containment is what keeps the resurrected
-    privileged extractors harmless: the VIEW, not the registry, is the
-    boundary.
+    Round 96 (R2) made the feature catalog base-owned (harness.feature_catalog,
+    populated on harness import), retiring the round-69 inversion where the
+    registry started EMPTY until a card import happened to run. A spawn worker
+    now gets the privileged extractors from ``import harness`` alone -- no card,
+    no provider ref -- so containment, not registry emptiness, is the boundary:
+    the extractors DO exist in every worker; the VIEW is what withholds them.
     """
     import numpy as np
 
-    import plugins.embodiment_robosuite.features  # noqa: F401  the real worker path
     from harness.percept import PrivilegePolicy, project
     obs = {
         "robot0_gripper_qpos": np.array([0.02, -0.02]),
@@ -147,9 +146,9 @@ def _worker_probe(budget):
 
 
 def test_containment_holds_in_a_fresh_worker_process():
-    """A worker re-imports the embodiment feature module, so register() re-runs and
-    the privileged extractors exist there no matter what the parent did. Containment
-    is what makes that harmless: the VIEW, not the registry, is the boundary."""
+    """A fresh worker imports harness, so the base catalog's privileged extractors
+    exist there no matter what the parent did. Containment is what makes that
+    harmless: the VIEW, not the registry, is the boundary."""
     from multiprocessing import Pool
     with Pool(1) as pool:
         registry, view_keys = pool.apply(_worker_probe, (0,))

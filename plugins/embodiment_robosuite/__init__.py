@@ -14,9 +14,11 @@ from typing import Any
 
 import plugins.embodiment_robosuite.env as _env
 
-# Importing the provider declares the embodiment's feature surface (spawn-safe
-# by construction: workers re-import, registration re-runs).
-import plugins.embodiment_robosuite.features  # noqa: F401
+# The observation-feature catalog moved to base ownership in round 96 (R2):
+# harness.feature_catalog declares it and harness.features populates REGISTRY on
+# import, so this card no longer registers anything. A future embodiment that
+# exposes DIFFERENT features would register them here (harness.features.register)
+# on mount; robosuite's features ARE the base catalog, so it declares none.
 
 
 class RobosuiteEmbodiment:

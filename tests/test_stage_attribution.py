@@ -16,7 +16,6 @@ import json
 
 import numpy as np
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population
 from harness.spec import Clause, StageSpec
 from plugins.rsi import gate
 from plugins.rsi.campaign import CampaignStore, Preregistration, run_campaign, stage_attribution

@@ -31,49 +31,37 @@ import numpy as np
 # vocabulary: driver construction is the policy.driver capability, reached
 # through the governor shell until the shared vocabulary refactor lands.
 from governor.policy import make_driver
-from harness.percept import (
-    PRIVILEGED_SENSOR_SD,
-)
-from harness.spec import STACK_PHASE_HEIGHT, EpisodeSpec
-
-
-class _LegacyEmbodiment:
-    """Contract-shaped facade over governor.env for specs with no provider ref."""
-
-    def make_env(self, spec):
-        import governor.env as legacy
-
-        return legacy._default_make_env(spec)
-
-    def object_key(self, spec):
-        import governor.env as legacy
-
-        return legacy.object_key(spec)
-
-    def success(self, obs, spec, start_z):
-        import governor.env as legacy
-
-        return legacy.lifted(obs, spec, start_z)
-
-
-def _embodiment(spec: EpisodeSpec):
-    """Resolve the embodiment ONCE per rollout: contract-first, legacy fallback."""
-    if spec.env_provider:
-        from harness.registry import load_provider
-
-        return load_provider(spec.env_provider)
-    return _LegacyEmbodiment()
 from harness.episode_log import chain_start, chain_step
 from harness.invariant import (
     assert_privilege_budget,
     assert_view_reconstructable,
     record_view,
 )
-from harness.percept import PrivilegePolicy, project
+from harness.percept import PRIVILEGED_SENSOR_SD, PrivilegePolicy, project
+from harness.spec import STACK_PHASE_HEIGHT, EpisodeSpec
 from plugins.rsi.recovery import RecoveryActor
 from plugins.rsi.stats.search import Trigger
 
 #: A perfect percept is ground truth, so it costs privilege; a noisy one does not.
+
+
+#: The embodiment a spec resolves to when it names no ``env_provider``: the
+#: robosuite card, by ref string. A bare EpisodeSpec (tests, demos, the
+#: governor.env legacy entry) resolves to exactly the environment/success/
+#: object_key it did through the old ``_LegacyEmbodiment -> governor.env`` path,
+#: which was itself a facade over ``plugins.embodiment_robosuite.env`` -- so the
+#: None-provider path stays byte-identical (parity). Mirrors DEFAULT_PERCEPT_REF
+#: below: governed.py (RSI) names the card by ref, never by import, and no longer
+#: reaches back through the governor.env shim. R5 folds this into the manifest so
+#: the ref stops being hard-coded here.
+DEFAULT_ENV_REF = "plugins.embodiment_robosuite:provider"
+
+
+def _embodiment(spec: EpisodeSpec):
+    """Resolve the embodiment ONCE per rollout, by ref: the spec's, or the default."""
+    from harness.registry import load_provider
+
+    return load_provider(spec.env_provider or DEFAULT_ENV_REF)
 
 
 
@@ -239,10 +227,10 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     ``bundle=None`` runs the policy alone; both arms of a paired gate go through
     this identical code path.
     """
-    # Names AFTER the env: since round 69's registry inversion, feature
-    # registration happens when the embodiment plugin is imported, which in a
-    # fresh worker is triggered by make_env loading the provider ref. Reading
-    # the catalog before that sees an empty registry and records empty views.
+    # Round 96 (R2) retired the round-69 registry inversion: the feature catalog
+    # is base-owned now (harness.feature_catalog, populated on harness import),
+    # so the registry is never empty and this no longer has to run after make_env.
+    # The order is kept only because nothing needs it to move.
     embodiment = _embodiment(spec)
     env = embodiment.make_env(spec)
     try:

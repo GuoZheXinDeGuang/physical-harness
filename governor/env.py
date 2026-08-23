@@ -28,14 +28,23 @@ from harness.spec import (  # noqa: F401  re-export: currency moved to the kerne
     NOMINAL_SCHEDULE,
     EpisodeSpec,
 )
-from plugins.embodiment_robosuite.env import (  # noqa: F401  re-export: embodiment moved to its plugin (L2 rung H)
-    CONTROL_FREQ,
-    TASKS,
-    _default_make_env,
-    lifted,
-    object_key,
-    task_config,
-)
+
+#: Names that live in the embodiment card and are re-exported here for the legacy
+#: import paths (plugins.policies.demos, the percept plugin, a couple of tests).
+#: Forwarded lazily via PEP 562 (round 96 R2) so `import governor.env` -- and the
+#: base names above (rollout, make_env, EpisodeSpec, NOMINAL_SCHEDULE) -- resolve
+#: with the embodiment card UNPLUGGED. Touching a card name pulls the card; a base
+#: consumer that never touches one never does. Same pattern as governor/policy.py.
+_CARD_NAMES = ("CONTROL_FREQ", "TASKS", "_default_make_env", "lifted",
+               "object_key", "task_config")
+
+
+def __getattr__(name: str):
+    if name in _CARD_NAMES:
+        import plugins.embodiment_robosuite.env as _env
+
+        return getattr(_env, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def make_env(spec: EpisodeSpec):
@@ -45,13 +54,17 @@ def make_env(spec: EpisodeSpec):
     names a provider ("module:factory"), it is loaded via
     `harness.registry.load_provider` and asked to build the env. With no ref, this
     falls back to `_default_make_env`, the original robosuite path -- so a spec
-    with no ref behaves byte-identically to before this seam existed.
+    with no ref behaves byte-identically to before this seam existed. That path
+    imports the card lazily (round 96 R2): the shim itself no longer hard-imports
+    it at module load.
     """
     ref = spec.env_provider
     if ref is not None:
         provider = load_provider(ref)
         return provider.make_env(spec)
-    return _default_make_env(spec)
+    import plugins.embodiment_robosuite.env as _env
+
+    return _env._default_make_env(spec)
 
 
 def rollout(spec: EpisodeSpec) -> dict:

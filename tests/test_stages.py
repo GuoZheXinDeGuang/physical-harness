@@ -178,8 +178,7 @@ def test_stack_residual_features_are_registered_relational_privileged():
     residuals are cubeA-relative-to-cubeB, declared in the privileged
     namespace, with the 0.045 seat literal being cube geometry, not a scene
     fact like table height."""
-    import plugins.embodiment_robosuite.features  # noqa: F401  registration is import-time
-    from harness.features import REGISTRY, Privilege
+    from harness.features import REGISTRY, Privilege  # base catalog populates on import (R2)
 
     for name in ("privileged.stack_xy_residual", "privileged.stack_z_residual"):
         assert name in REGISTRY and REGISTRY[name].privilege is Privilege.PRIVILEGED
@@ -198,7 +197,6 @@ def test_stack_residuals_degrade_to_nan_off_the_stack_scene():
     clause is honestly false."""
     import math
 
-    import plugins.embodiment_robosuite.features  # noqa: F401
     from harness.percept import PrivilegePolicy, project
 
     lift_obs = {
@@ -277,16 +275,16 @@ def _fake_embodiment(*, has_terminal: bool):
     terminal_success() return DIFFERENT constants so the branch selection is
     observable in result['success']. terminal_success is present only when
     has_terminal, so the missing-method path is reachable too."""
-    from plugins.rsi.governed import _LegacyEmbodiment
+    from harness.registry import load_provider
 
-    legacy = _LegacyEmbodiment()
+    real = load_provider("plugins.embodiment_robosuite:provider")
 
     class _Fake:
         def make_env(self, spec):
-            return legacy.make_env(spec)
+            return real.make_env(spec)
 
         def object_key(self, spec):
-            return legacy.object_key(spec)
+            return real.object_key(spec)
 
         def success(self, obs, spec, start_z):
             return False

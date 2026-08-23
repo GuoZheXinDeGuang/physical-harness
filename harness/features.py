@@ -97,3 +97,11 @@ def privilege_cost(names) -> int:
 def extract(obs: Mapping[str, np.ndarray], names) -> dict[str, float]:
     """Project a raw environment observation onto the declared feature vector."""
     return {n: REGISTRY[n].extract(obs) for n in names}
+
+
+# Populate REGISTRY with the base catalog the moment the machinery is imported.
+# The import sits at the BOTTOM on purpose: feature_catalog imports register/
+# Feature/Privilege back from this module, which are all defined above, so the
+# cycle resolves cleanly. This is what makes the round-69 empty-registry state
+# unreachable -- you cannot import the feature machinery without the catalog.
+import harness.feature_catalog  # noqa: F401  base catalog population (see module docstring)

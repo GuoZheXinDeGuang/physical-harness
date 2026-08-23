@@ -15,7 +15,6 @@ import socket
 import numpy as np
 import pytest
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population
 from harness.definitions import CAPABILITIES
 from harness.kernel import Kernel
 from plugins.rsi import gate

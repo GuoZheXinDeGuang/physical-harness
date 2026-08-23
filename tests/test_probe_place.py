@@ -8,7 +8,6 @@ orchestrator, not here.
 
 import numpy as np
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registers the feature catalog for declared_privilege
 from harness.spec import STACK_SCHEDULE
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger

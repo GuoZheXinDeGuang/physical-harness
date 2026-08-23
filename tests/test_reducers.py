@@ -7,7 +7,6 @@ undo, so each has a test that fails loudly if it does.
 import numpy as np
 import pytest
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population (isolation-safe)
 from harness.spec import EpisodeSpec
 from plugins.policies.drivers import ClonedDriver, ScriptedDriver
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout

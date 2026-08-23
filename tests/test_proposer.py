@@ -8,7 +8,6 @@ schema-constrained generation has to survive.
 import numpy as np
 import pytest
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population (post-inversion)
 from governor.proposer import (
     LlmProposer,
     ProposerError,

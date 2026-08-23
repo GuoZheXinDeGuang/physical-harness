@@ -15,6 +15,9 @@ import os
 import numpy as np
 import pytest
 
+# Exercises the embodiment card's grasp geometry; skip when it is unplugged (R2).
+pytest.importorskip("plugins.embodiment_robosuite.grasp")
+
 from plugins.embodiment_robosuite.grasp import FRAME, backproject, scene_cloud
 from plugins.embodiment_robosuite.grasp_client import (
     GRASP_CONVENTION,

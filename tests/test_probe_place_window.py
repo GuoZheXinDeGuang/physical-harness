@@ -8,7 +8,6 @@ cross-tab. `run_window_probe` (real rollouts) is exercised by the orchestrator.
 
 import numpy as np
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registers the feature catalog
 from plugins.rsi.governed import RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger
 from scripts.probe_place_window import (

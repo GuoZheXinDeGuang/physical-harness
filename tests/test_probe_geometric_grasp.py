@@ -15,6 +15,10 @@ import numpy as np
 import pytest
 
 from harness.spec import NOMINAL_SCHEDULE, PHASE_HEIGHT, EpisodeSpec
+
+# Needs the embodiment card's grasp client; skip when it is unplugged (R2).
+pytest.importorskip("plugins.embodiment_robosuite.grasp_client")
+
 from plugins.embodiment_robosuite.grasp_client import GraspInferenceError
 from plugins.policies.drivers import GraspPose, GraspPoseDriver, ScriptedDriver
 from scripts.probe_geometric_grasp import (

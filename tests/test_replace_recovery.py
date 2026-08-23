@@ -10,8 +10,13 @@ import hashlib
 import json
 
 import numpy as np
+import pytest
 
 from harness.spec import STACK_PHASE_HEIGHT, STACK_SCHEDULE, EpisodeSpec
+
+# Needs the embodiment card's onboard percept; skip when it is unplugged (R2).
+pytest.importorskip("plugins.embodiment_robosuite.percept")
+
 from plugins.embodiment_robosuite.percept import OnboardPercept
 from plugins.policies.drivers import StackScriptedDriver
 from plugins.rsi.governed import _is_place_recovery, _percept_object, _place_object

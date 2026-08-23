@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pytest
 
-import plugins.embodiment_robosuite.features  # noqa: F401  registry population
 from plugins.rsi import gate
 from plugins.rsi.campaign import CampaignStore, Preregistration, sha_json
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule
@@ -255,27 +254,31 @@ def test_help_smoke():
     assert "--block" in proc.stdout and "--out" in proc.stdout
 
 
-def test_declared_privilege_needs_the_provider_import_in_a_fresh_process():
-    """Round 85 regression: the full suite masks an empty feature catalog
-    (sibling test modules import the embodiment plugin), so the parent-process
-    KeyError only appears in a fresh interpreter. Pin both halves there."""
+def test_declared_privilege_reads_the_base_catalog_in_a_fresh_process():
+    """Round 96 (R2) retires the round-85/round-69 inversion: the feature catalog
+    is base-owned now (harness.feature_catalog), so a fresh interpreter has a
+    populated REGISTRY the instant harness.features is imported -- declared_
+    privilege() works with NO embodiment card and NO provider ref. This runs in a
+    fresh process (the full suite could never surface the old empty-catalog bug,
+    and cannot surface a regression back to it, without one) and blocks the card
+    from being reachable at all, so it proves the base -- not a card import -- is
+    what populates the catalog."""
     import subprocess
     import sys
 
     snippet = (
+        "import sys, importlib.abc\n"
+        "class _Block(importlib.abc.MetaPathFinder):\n"
+        "    def find_spec(self, name, path, target=None):\n"
+        "        if name.startswith('plugins.embodiment_robosuite'):\n"
+        "            raise ModuleNotFoundError('card blocked: ' + name)\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, _Block())\n"
         "from plugins.rsi.governed import RecoverySpec, Rule\n"
         "from plugins.rsi.stats.search import Trigger\n"
         "r = Rule('t', Trigger('observable.finger_gap', 'lt', 0.001, 1, 58, 'value'),\n"
         "         RecoverySpec(sensor_sd=0.02))\n"
-        "try:\n"
-        "    r.declared_privilege()\n"
-        "except KeyError:\n"
-        "    pass\n"
-        "else:\n"
-        "    raise SystemExit('expected KeyError on an empty catalog')\n"
-        "from harness.registry import load_provider\n"
-        "load_provider('plugins.embodiment_robosuite:provider', {})\n"
-        "assert r.declared_privilege() == 0\n"
+        "assert r.declared_privilege() == 0, 'base catalog not populated without a card'\n"
         "print('fresh-process privilege OK')\n"
     )
     cp = subprocess.run([sys.executable, "-c", snippet], capture_output=True,
