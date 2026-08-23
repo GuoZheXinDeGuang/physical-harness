@@ -3371,3 +3371,25 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
   设计文档已由本记录修正陈述。
 - ruff 红是 round-95 echo server 缺执行位(本 commit 顺手修), 非本梯队回归。
 - T2(R5-R8: manifest 自注册/体检/qwen 卡/验货模板)接续。
+
+## Round 95 补记 - 2026-08-23 - 驾驶舱 E2E 实证: insert 语义修复后, MCP 工具真跑通
+
+### 做成了什么
+
+1. **用户配好 DeepSeek key 后的首次全链验证(经 dsh 自身网关 API, 即 GUI 按钮同路径)**:
+   第一轮 FAIL 在 Stage 2——模型拿不到 MCP 工具, 自己读代码用原生 bash 算出正确答案
+   (13 store), **绕过治理面**——正是体系要杜绝的路径, 也是最好的反面教材。
+2. **根因(--dump-config 定案)**: dsh patch 语义里裸 `- id:` 行=覆盖既有行, id 不存在
+   即静默丢弃; 新插件行必须 `- insert:` 包裹。修复入库(ad8ad23, 注释写明语义陷阱),
+   三处部署点同步, dsh 重启。
+3. **重跑四阶段全 PASS**: tool/call 事件名 `mcp__physical-harness__list_stores`;
+   venv 子进程 board/mcp_server.py 全程在场(stdio 启动即驻留, 工具延迟 11ms);
+   结果 13 store 与底座直查逐字节同序一致; 终文"list_stores 返回了 13 个 store"。
+   对照失败轮: 1 次 MCP 调用替代 5 次原生兜底——insert 语义是唯一根因。
+4. 方法论: GUI 验证走网关 API 是同路径同证据(浏览器安全上下文差异是访问伪影);
+   会话 JSONL 是地面真相。
+
+### 什么没成 / 注意
+
+- 去品牌化(用户裁定: 无 DeepSeek 元素、原生 CLI 观感)进行中——配置优先阶梯,
+  scripts/cockpit 启动器随附。
