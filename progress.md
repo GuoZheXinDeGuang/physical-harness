@@ -3341,3 +3341,33 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
   MCP 工具注册与只读面不受影响。
 - dsh 是 2 天龄 developer preview, 明示会破坏兼容——版本锁死 0.1.1-rc.2, profile
   接受随版本重同步(骑标准 MCP 缝就是为了把断面钉在协议上)。
+
+## Round 96 T1 - 2026-08-23 - 主机底座第一梯队: 裸机全绿、两态铁律上链、worktree 遗产归仓
+
+### 做成了什么
+
+1. **R0 调和成了真抢救(8a49123 + 3b0474f)**: 设计文档"worktree 工作已在主线"的前提是
+   **假的**——主线连 place-g1/g2 的 prereg 都读不了。实施 agent 按预警执行完整前移:
+   chip 四文件收编(修复感知裁决进 propose_rule, 共享 break_tie_by_repair 缝) +
+   worktree rung-3 全量(rebuild.py/prereg 三字段/hash-fold/parent 续种/place_campaign/
+   铸 id 链位) + 一处必要增强(rebuild_final_bundle 学会按 parent_store 续种重建——
+   否则 place-g2 永远无法重建)。三 prereg + 两 final bundle 逐位复现, worktree 与
+   分支删除。测试 364→375。
+2. **R1 底座自带假件(harness/fakes.py + fakes_profile)**: 七能力空实现, 只 import
+   harness.*+stdlib; 诚实空而非假成功(env 永不举起)。零插件在内核上跑通治理式回合。
+3. **R2 拔卡解耦**: governed 甩掉 _LegacyEmbodiment 硬 import; 特征目录底座持有、
+   卡特征挂载时懒注册——round-69 注册反转类 bug 的机制性终结。16 个不可收集文件→0。
+4. **R3 双层测试**: robosuite 进可选 extra; conftest 标记+自动跳过; **底座快道必须
+   隔离跑**(新鲜进程+卡缺席, 不许当全绿子集——防 round-69 收集序污染被认证为底座)。
+5. **R4 两态铁律**: --mode 写一次 MODE 文件+重启断言; runtime.boot 封 {mode,
+   技能清单摘要集, mount_plan_sha} 进链; campaign 只进化态(拒绝非中和); 每执行任务前
+   技能目录集合相等审计。存量 session 以 migrated 标记追加迁移(不改写既有链)。
+6. **终验自跑一切 PASS**: 裸机道 355 全绿(阻断 import 的新鲜进程) / 全量道 383+3 /
+   五案例模式门 + 篡改 boot 行即断链验证。W1/W6/v4.1 三验收 PROVEN。
+
+### 什么没成 / 注意
+
+- 设计文档 R0 前提错误被现场纠正——第三次"实施层戳穿施工图"(rounds 82/90 同款),
+  设计文档已由本记录修正陈述。
+- ruff 红是 round-95 echo server 缺执行位(本 commit 顺手修), 非本梯队回归。
+- T2(R5-R8: manifest 自注册/体检/qwen 卡/验货模板)接续。
