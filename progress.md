@@ -3393,3 +3393,20 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
 
 - 去品牌化(用户裁定: 无 DeepSeek 元素、原生 CLI 观感)进行中——配置优先阶梯,
   scripts/cockpit 启动器随附。
+
+## Round 95 补记 2 - 2026-08-23 - 驾驶舱换装: PH 上牌, 鲸鱼下岗, 原生 cockpit 启动器
+
+### 做成了什么
+
+1. **配置优先阶梯裁决(源码实证)**: Stage 1 配置不可达——标签题被 React 内置常量
+   重设、鲸标有硬编码兜底(禁插件即回滚)、slogan 烘死在 i18n 值里。Stage 2 资产覆盖
+   胜出: profiles/dsh/rebrand.sh(c1e42b2) 对 npx 安装副本七处打补丁——标签题/运行时
+   productTitle/PWA 名/favicon(PH 字标)/侧栏与主视觉标记/slogan(物理测试台)/启动闪屏。
+   **dsh 源码零改动, 包名不动, MIT 署名保留**; 模型名与适配器等功能性元素有意不碰。
+2. **scripts/cockpit 原生启动器**: 操作员敲 scripts/cockpit, 不再敲 npx; 每次启动
+   自动重敷补丁(幂等+漂移告警)——dsh 升级后自愈, 无需人工记得。
+3. 视觉验收(浏览器实测): 侧栏 "PH physical-harness", 主视觉 "PH 物理测试台",
+   标题 "physical-harness 控制台", 服务页 "DeepSeek Harness" 字面量计数 = 0。
+   MCP insert 修复未被触碰, 服务端日志干净。
+4. 协调注记: cockpit 不传 --patch(发布 rc 无此旗标), MCP 行经 $DSH_HOME 层自动加载
+   ——两个 agent 在共享部署面上零冲突收工。
