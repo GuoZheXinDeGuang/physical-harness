@@ -20,8 +20,10 @@ from __future__ import annotations
 import json
 import os
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 
+from harness import manifest
 from plugins.graphs import skill_graph_provider
 from scripts import harness_runtime as runtime
 
@@ -59,8 +61,21 @@ def _stub_script(tmp_path: Path) -> Path:
     return p
 
 
+def _campaign(monkeypatch, name: str, script: Path) -> None:
+    """Point campaign ``name`` at a fast stub, the way installing a plugin would.
+
+    The campaign allowlist is the manifest union now, not a module dict, so the
+    stub is injected by folding it into the boot registry -- boot() reads
+    ``runtime.discover``; base_profile's own discover is untouched, so the sealed
+    mount_plan_sha never moves. An absolute stub path survives ``REPO_ROOT / ...``.
+    """
+    reg = replace(manifest.discover(),
+                  campaigns={**manifest.discover().campaigns, name: str(script)})
+    monkeypatch.setattr(runtime, "discover", lambda: reg)
+
+
 def test_campaign_publishes_skills_and_notes_the_chain(tmp_path, monkeypatch):
-    monkeypatch.setitem(runtime.CAMPAIGN_SCRIPTS, "stub", _stub_script(tmp_path))
+    _campaign(monkeypatch, "stub", _stub_script(tmp_path))
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
@@ -91,7 +106,7 @@ def test_campaign_publishes_skills_and_notes_the_chain(tmp_path, monkeypatch):
 def test_second_campaign_is_idempotent_on_shared_skills(tmp_path, monkeypatch):
     # Re-running a campaign that republishes the same content-addressed record
     # must not error or double-copy -- the stem IS the digest.
-    monkeypatch.setitem(runtime.CAMPAIGN_SCRIPTS, "stub", _stub_script(tmp_path))
+    _campaign(monkeypatch, "stub", _stub_script(tmp_path))
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
@@ -110,7 +125,7 @@ def test_burned_range_brief_is_rejected_without_spawning(tmp_path, monkeypatch):
     # Point the real "stack" key at the stub too: if the guard WRONGLY passed,
     # the stub would run and write a campaign_scheduled note instead -- the
     # assertion on the overlap reason then fails fast rather than hanging.
-    monkeypatch.setitem(runtime.CAMPAIGN_SCRIPTS, "stack", _stub_script(tmp_path))
+    _campaign(monkeypatch, "stack", _stub_script(tmp_path))
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)

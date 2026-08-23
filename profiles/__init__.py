@@ -39,23 +39,31 @@ the mount plan itself starts varying per cell, not before.
 from __future__ import annotations
 
 from harness.config import Mount, MountPlan, Profile, resolve_plan
+from harness.manifest import discover
 
 #: The 3-task x 2-policy pure-config matrix GOAL.md acceptance #2 asks for.
 TASKS: tuple[str, ...] = ("lift", "stack", "pickcan")
 POLICIES: tuple[str, ...] = ("scripted", "runs/bc_h256.npz")
 
 
+#: The one mount the base OWNS rather than a card: the local-pool execution
+#: fabric lives in ``harness`` (no plugin), so it is not folded from a manifest.
+_BASE_OWNED: tuple[Mount, ...] = (Mount("exec.rollouts", "harness.executor:provider"),)
+
+
 def base_profile() -> Profile:
-    """The L0 reference mounts: one provider per non-privileged, migrated capability."""
-    return Profile("base", (
-        Mount("embodiment.env", "plugins.embodiment_robosuite:provider"),
-        Mount("policy.driver", "plugins.policies:provider"),
-        Mount("percept.model", "plugins.embodiment_robosuite.percept:provider"),
-        Mount("reasoner.proposer", "plugins.reasoner:provider", {"top_k": 3}),
-        Mount("graph.skill", "plugins.graphs:skill_graph_provider"),
-        Mount("graph.scene", "plugins.graphs:scene_graph_provider"),
-        Mount("exec.rollouts", "harness.executor:provider"),
-    ))
+    """The L0 reference mounts: a FOLD over every installed plugin manifest.
+
+    Each card declares its ``cap -> ref (+params)`` in ``plugins/*/manifest.toml``
+    (parsed as data, never imported), and ``discover()`` unions them -- so a new
+    embodiment or policy is a dropped-in manifest, not an edit here. The base
+    contributes only ``exec.rollouts`` (harness-owned). ``resolve_plan`` sorts by
+    capability, so the plan sha is a pure function of the installed manifest set:
+    a changed set is a different experiment identity (charter "配置变=另一个实验身份").
+    ``embodiment.ground_truth`` stays off the base (privileged; a campaign mounts
+    it only where it needs oracle state) -- no manifest declares it.
+    """
+    return Profile("base", discover().mounts + _BASE_OWNED)
 
 
 def fakes_profile() -> Profile:

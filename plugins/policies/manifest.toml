@@ -1,0 +1,3 @@
+# The policy card: the frozen driver an episode runs under.
+[mounts."policy.driver"]
+ref = "plugins.policies:provider"

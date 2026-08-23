@@ -1,0 +1,6 @@
+# The graph card: the two layer-2 snapshot seams (measured skills, scene).
+[mounts."graph.skill"]
+ref = "plugins.graphs:skill_graph_provider"
+
+[mounts."graph.scene"]
+ref = "plugins.graphs:scene_graph_provider"

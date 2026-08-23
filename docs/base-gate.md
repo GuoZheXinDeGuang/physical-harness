@@ -48,3 +48,18 @@ deselected : 25 robosuite-marked items (self-skip under `-m robosuite`)
 
 Full-suite parity (card present): `378 passed, 3 skipped` — unchanged by R3, the
 marker is inert when robosuite imports.
+
+## R5 snapshot (2026-08-23, isolated, robosuite blocked)
+
+```
+pass       : 363 passed  (+8 tests/test_manifest.py over R4's 355)
+skips      : 6 skipped   (same reasons as R3)
+wall time  : ~3.4s
+AST green  : test_boundaries (third_party now READ from manifests, card-absent) +
+             test_kernel green; discover() parses TOML, imports no card
+deselected : 25 robosuite-marked items
+```
+
+Full-suite parity (card present): `391 passed, 3 skipped` (+8 over R4). base_profile
+sha is byte-stable at `b905a5…` (still folds to the value sealed in
+runs/round25-rerun) — the manifest fold reproduces the old hard-coded mounts.

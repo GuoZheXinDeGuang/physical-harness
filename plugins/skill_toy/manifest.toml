@@ -1,0 +1,9 @@
+# The demonstrator card: one task binding, zero base edits. Dropping this dir is
+# the whole install -- the runtime accepts {"kind":"task","task":"toy"} because
+# discover() folds this binding into the union at boot. policy is borrowed from
+# the policies card by ref; planner + catalogue + oracles are this card's own.
+[task_bindings.toy]
+policy = "plugins.policies:stack_scripted_provider"
+planner = "plugins.skill_toy.planner:provider"
+catalogue = "plugins.skill_toy.planner:CATALOGUE"
+oracles = "plugins.skill_toy.planner:ORACLES"

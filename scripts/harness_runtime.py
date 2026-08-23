@@ -31,10 +31,12 @@ re-queued to ``inbox/`` (at-least-once).
 
 Authority-laundering defense (non-negotiable): a brief names NO provider/mount
 ref. It is a pure selector+budgets -- ``{"kind":"task","task":"stack","seed":
-90000,"max_replans":3,"max_actuations":3}``. The runtime picks the policy from a
-fixed, SIM-ONLY allowlist keyed by task name and stamps the skill-authored
-catalogue/oracles from the mounted planner; a real-actuator embodiment is a
-DIFFERENT runtime with a different authenticated intake, never a brief away.
+90000,"max_replans":3,"max_actuations":3}``. The runtime resolves the task STRING
+to its policy/planner/catalogue/oracles through the UNION of installed plugin
+manifests at boot (``harness.manifest.discover``) and stamps them server-side;
+adding a task is installing a plugin dir (a filesystem act), never a brief. A
+manifest declaring ``actuation:real`` is refused at boot -- a real-actuator
+embodiment is a DIFFERENT authenticated runtime, never a brief (nor a card) away.
 
 Crash-safety lives HERE, not in the well-tested workload: ``workload.run`` stays
 loud-as-data for planning faults and raises for structural ones; the loop wraps
@@ -49,13 +51,14 @@ sibling closed-loop driver scripts/task_plan.py -- harness/ imports no plugin
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -66,35 +69,24 @@ from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
+from harness.manifest import discover
 from plugins.task import workload
-from plugins.task.planner_stack import CATALOGUE, ORACLES
 from profiles import base_profile
 
-#: Server-side provider allowlist keyed by task name -- the authority-laundering
-#: defense in one dict. A brief cannot name a provider; the runtime picks a
-#: SIM-ONLY policy from here. Mirrors scripts/task_plan.py's policy switch; an
-#: unknown task defaults to the stack driver and then fails loudly at
-#: planner.plan (the planner only knows stack/clear_table), so it never actuates.
-POLICY_BY_TASK: dict[str, str] = {
-    "stack": "plugins.policies:stack_scripted_provider",
-    "clear_table": "plugins.policies:provider",
-}
-_DEFAULT_POLICY = "plugins.policies:stack_scripted_provider"
-_PLANNER_REF = "plugins.task.planner_stack:provider"
-
-#: Server-side campaign allowlist keyed by campaign name -- the authority-
-#: laundering defense for RSI, symmetric with POLICY_BY_TASK. A brief names a
-#: campaign KEY, never a script path; the runtime spawns only these fixed,
-#: sim-only, CLI-shaped campaign scripts as a SUBPROCESS. In-process is
-#: forbidden: the resident kernel holds live state across N tasks, so forking it
-#: inherits a broken CUDA/GL context (rsi risk#1) and a second embodiment import
-#: trips the process-global REGISTRY duplicate (rsi risk#3) -- subprocess
-#: isolation kills both and keeps the resident loop responsive.
-CAMPAIGN_SCRIPTS: dict[str, Path] = {
-    "stack": REPO_ROOT / "scripts" / "stack_campaign.py",
-}
 #: The one prose seed-ledger the guard enforces (board.store.parse_ledger).
 STATUS_MD = REPO_ROOT / "STATUS.md"
+
+
+def _load_attr(ref: str):
+    """Import ``module:attr`` and return the ATTRIBUTE (not call it).
+
+    A task binding names its catalogue/oracles by ref -- data authored on the
+    skill side (``type`` objects, not JSON), so they cannot ride a brief. This is
+    the read half of the same ``module:attr`` crossing ``load_provider`` uses for
+    factories, minus the call: the attribute IS the value.
+    """
+    module_name, attr = ref.split(":", 1)
+    return getattr(importlib.import_module(module_name), attr)
 
 
 #: The two session modes. EXECUTION is the fail-safe default: a real task run
@@ -121,6 +113,11 @@ class Runtime:
     log: SessionLog
     mode: str = "execution"
     skills_manifest: tuple[str, ...] = ()
+    #: task STRING -> {policy, planner, catalogue, oracles} and campaign name ->
+    #: script, both folded from the installed manifests at boot -- the
+    #: authority-laundering allowlists, no longer welded into this module.
+    task_bindings: dict[str, dict] = field(default_factory=dict)
+    campaigns: dict[str, str] = field(default_factory=dict)
 
 
 def _skills_manifest(skills_root: Path) -> list[str]:
@@ -192,37 +189,50 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     else:
         baseline = tuple(boot_row["data"]["skills_manifest"])
 
-    return Runtime(inbox, processing, done, failed, skills_root, log, mode, baseline)
+    # The authority allowlists are the manifest union at boot (discover() raises
+    # on an actuation:real card, so the sim runtime refuses to boot with one).
+    registry = discover()
+    return Runtime(inbox, processing, done, failed, skills_root, log, mode,
+                   baseline, registry.task_bindings, registry.campaigns)
 
 
-def _mount_plan(task: str, skills_root: Path):
+def _mount_plan(binding: dict, skills_root: Path):
     """A fresh MountPlan for this task: base profile + the task's sim policy +
-    the shared skills root (so a fresh graph.skill mount re-globs RSI's output)."""
-    policy_ref = POLICY_BY_TASK.get(task, _DEFAULT_POLICY)
+    planner + the shared skills root (so a fresh graph.skill mount re-globs RSI's
+    output). policy and planner come from the task binding (a manifest), so
+    swapping either is a card edit, never a base one."""
     return resolve_plan(base_profile(), patches=(
         Patch("runtime", override=(
-            Mount("task.planner", _PLANNER_REF),
-            Mount("policy.driver", policy_ref),
+            Mount("task.planner", binding["planner"]),
+            Mount("policy.driver", binding["policy"]),
             Mount("graph.skill", "plugins.graphs:skill_graph_provider",
                   {"root": str(skills_root)}),)),))
 
 
-def _run_task(brief: dict, log: SessionLog, skills_root: Path) -> dict:
+def _run_task(brief: dict, rt: Runtime) -> dict:
     """Build a fresh kernel on the shared log and run one governed plan loop.
 
-    catalogue/oracles are skill-authored ``type`` objects, stamped server-side
-    from the mounted planner's module -- never carried in the JSON brief.
+    The task STRING resolves to its binding through the installed manifests; an
+    unknown task (no card declares it) is refused HERE, before any mount -- a
+    brief cannot conjure a task no plugin provides. catalogue/oracles are
+    skill-authored ``type`` objects imported by ref from the binding, never
+    carried in the JSON brief.
     """
     task = brief["task"]
+    binding = rt.task_bindings.get(task)
+    if binding is None:
+        raise ValueError(f"no task binding for {task!r}; install a plugin that "
+                         f"declares it (known: {sorted(rt.task_bindings)})")
     seed = int(brief.get("seed", 0))
     max_replans = int(brief.get("max_replans", 3))
     # clear_table's two pick nodes need one extra actuation of headroom, matching
     # scripts/task_plan.py's default.
     max_actuations = int(brief.get("max_actuations",
                                    4 if task == "clear_table" else 3))
-    kernel = Kernel(CAPABILITIES, log=log)
-    kernel.mount(_mount_plan(task, skills_root))
-    wbrief = {"task": task, "catalogue": CATALOGUE, "oracles": ORACLES}
+    kernel = Kernel(CAPABILITIES, log=rt.log)
+    kernel.mount(_mount_plan(binding, rt.skills_root))
+    wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
+              "oracles": _load_attr(binding["oracles"])}
     return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations)
 
@@ -283,9 +293,12 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     with a runtime.task_error note -- one failure path, not two.
     """
     name = brief["campaign"]
-    script = CAMPAIGN_SCRIPTS.get(name)
+    script = rt.campaigns.get(name)
     if script is None:
         raise ValueError(f"unknown campaign {name!r}")
+    # A manifest carries the script path relative to the repo; REPO_ROOT / an
+    # already-absolute path is that absolute path, so both forms resolve here.
+    script = REPO_ROOT / script
 
     # seed-ledger guard (non-negotiable invariant): the one prose ledger becomes
     # one enforced check at the scheduling boundary. Reject BEFORE spawning if
@@ -314,7 +327,8 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
 
 
 #: A brief is a selector plus budgets -- nothing else. Providers are chosen
-#: server-side (POLICY_BY_TASK / CAMPAIGN_SCRIPTS); any other key is rejected.
+#: server-side (the manifest union's task_bindings / campaigns); any other key
+#: is rejected.
 _BRIEF_KEYS = {
     "task": {"kind", "task", "seed", "max_replans", "max_actuations"},
     "campaign": {"kind", "campaign", "dev", "heldout"},
@@ -355,7 +369,7 @@ def _process(rt: Runtime, path: Path) -> None:
                     raise ValueError(
                         "skills-root mutated mid-session (execution mode): "
                         f"boot manifest {list(rt.skills_manifest)} != {current}")
-            _run_task(brief, rt.log, rt.skills_root)
+            _run_task(brief, rt)
         elif kind == "campaign":
             # v4.1 hard rule: a campaign brief is accepted ONLY in evolution mode.
             # Rejection, not neutralization -- same pattern as the injected-key

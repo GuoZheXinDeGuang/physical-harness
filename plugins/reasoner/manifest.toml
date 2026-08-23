@@ -1,0 +1,5 @@
+# The reasoner card: the layer-1 proposer seam. top_k rides the mount params
+# (part of the experiment identity -- it enters the plan sha).
+[mounts."reasoner.proposer"]
+ref = "plugins.reasoner:provider"
+params = { top_k = 3 }

@@ -1,0 +1,12 @@
+# The robosuite embodiment card: the two seams the simulator owns, plus the
+# third-party surface no other card may import (an rsi/policies module reaching
+# for robosuite would be an embodiment leak; test_boundaries reads this).
+actuation = "sim"
+needs_sim = true
+third_party = ["robosuite", "mujoco"]
+
+[mounts."embodiment.env"]
+ref = "plugins.embodiment_robosuite:provider"
+
+[mounts."percept.model"]
+ref = "plugins.embodiment_robosuite.percept:provider"

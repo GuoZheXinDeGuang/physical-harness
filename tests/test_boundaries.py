@@ -9,17 +9,19 @@ import ast
 import pathlib
 import sys
 
+from harness.manifest import discover
+
 #: Transitional L0 allowance: plugins may import the legacy governor library
 #: (ARCHITECTURE.md migration ladder); it goes away at L2. Any stdlib module
 #: plus numpy is fine; what matters is harness/governor/plugins discipline.
 _PLUGIN_ALLOWED = ("harness", "governor", "numpy")
 
-#: Third-party dependencies each plugin DECLARES. The simulator belongs to the
-#: embodiment plugin and nowhere else -- an rsi or policies module importing
-#: robosuite would be an embodiment leak, and this table is what catches it.
-_PLUGIN_THIRD_PARTY = {
-    "embodiment_robosuite": ("robosuite", "mujoco"),
-}
+#: Third-party dependencies each plugin DECLARES -- now READ FROM the manifests
+#: (each card's ``third_party`` field), not a hand-kept base table. The simulator
+#: belongs to the embodiment plugin and nowhere else -- an rsi or policies module
+#: importing robosuite is an embodiment leak, and this is what catches it. A card
+#: that needs a new third-party root declares it in its own manifest.
+_PLUGIN_THIRD_PARTY = discover().third_party
 
 
 def _allowed(root: str, plugin: str = "") -> bool:

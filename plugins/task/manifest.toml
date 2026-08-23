@@ -1,0 +1,19 @@
+# The task card: the decomposition vocabulary. task_bindings is what the runtime
+# resolves a brief's task STRING against -- policy + planner + the skill-authored
+# catalogue/oracles refs (data attributes, imported by ref at dispatch, never
+# carried in a brief). campaigns names the acceptance script a campaign brief may
+# spawn (server-side allowlist, symmetric with task_bindings).
+[task_bindings.stack]
+policy = "plugins.policies:stack_scripted_provider"
+planner = "plugins.task.planner_stack:provider"
+catalogue = "plugins.task.planner_stack:CATALOGUE"
+oracles = "plugins.task.planner_stack:ORACLES"
+
+[task_bindings.clear_table]
+policy = "plugins.policies:provider"
+planner = "plugins.task.planner_stack:provider"
+catalogue = "plugins.task.planner_stack:CATALOGUE"
+oracles = "plugins.task.planner_stack:ORACLES"
+
+[campaigns]
+stack = "scripts/stack_campaign.py"
