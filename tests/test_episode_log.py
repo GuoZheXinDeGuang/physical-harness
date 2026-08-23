@@ -38,6 +38,7 @@ def test_chain_is_order_and_content_sensitive():
     assert a != chain_step(chain_step(chain_start(), "x"), "z")
 
 
+@pytest.mark.robosuite
 def test_audit_verifies_every_episode(logged):
     log, _ = logged
     res = audit_log(log)
@@ -45,6 +46,7 @@ def test_audit_verifies_every_episode(logged):
     assert res.verified == res.episodes > 0
 
 
+@pytest.mark.robosuite
 def test_corrupting_one_value_is_caught(logged):
     log, _ = logged
     rec = next(r for r in log.episodes() if "block" in r)
@@ -62,6 +64,7 @@ def test_corrupting_one_value_is_caught(logged):
     assert audit_log(log).ok, "restore failed; fixture is dirty"
 
 
+@pytest.mark.robosuite
 def test_rebuilt_views_carry_zero_based_steps(logged):
     log, _ = logged
     rec = next(r for r in log.episodes() if "block" in r)
@@ -70,6 +73,7 @@ def test_rebuilt_views_carry_zero_based_steps(logged):
     assert views[-1].step == len(views) - 1
 
 
+@pytest.mark.robosuite
 def test_shadow_replay_predicts_the_live_fire_step_exactly(logged):
     """The log is only useful if replaying it reproduces what really happened.
 
@@ -88,6 +92,7 @@ def test_shadow_replay_predicts_the_live_fire_step_exactly(logged):
         assert predicted == live, f"seed {spec.seed}: shadow={predicted} live={live}"
 
 
+@pytest.mark.robosuite
 def test_shadow_replay_scores_without_touching_the_simulator(logged):
     log, _ = logged
     res = shadow_replay(log, TRIG, bundle_sha="ungoverned")

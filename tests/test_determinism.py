@@ -18,6 +18,7 @@ def _digest(result) -> str:
     return hashlib.sha256(np.round(flat, 9).tobytes()).hexdigest()
 
 
+@pytest.mark.robosuite
 @pytest.mark.parametrize("seed", [0, 3])
 def test_same_seed_is_bit_identical(seed):
     a = rollout(EpisodeSpec(seed=seed))
@@ -26,11 +27,13 @@ def test_same_seed_is_bit_identical(seed):
     assert a["success"] == b["success"]
 
 
+@pytest.mark.robosuite
 def test_distinct_seeds_produce_distinct_episodes():
     digests = {_digest(rollout(EpisodeSpec(seed=s))) for s in (0, 1, 2)}
     assert len(digests) == 3, "seeds are not actually controlling the episode"
 
 
+@pytest.mark.robosuite
 def test_global_numpy_seed_does_not_leak_into_the_environment():
     """Setting the global seed differently must NOT change a seeded episode."""
     np.random.seed(11)
@@ -62,6 +65,7 @@ def test_search_handles_variable_length_governed_traces():
     assert earliest_divergence(traces, labels, "observable.finger_gap") == 0
 
 
+@pytest.mark.robosuite
 def test_governed_episode_never_steps_a_terminated_env():
     """Three chained recoveries exceed the nominal horizon; the runner must stop cleanly.
 

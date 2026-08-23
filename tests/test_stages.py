@@ -35,6 +35,7 @@ def _assert_identical(a: dict, b: dict) -> None:
 
 # --- the rung's core guard: stages=None is a bit-identical no-op -------------
 
+@pytest.mark.robosuite
 def test_stages_none_is_a_bit_identical_noop():
     """An unset chain and an explicit None produce the exact same output dict
     on a fixed seed -- same key set (no "stages" key), same trace bytes."""
@@ -44,6 +45,7 @@ def test_stages_none_is_a_bit_identical_noop():
     _assert_identical(unset, explicit)
 
 
+@pytest.mark.robosuite
 def test_stage_scoring_is_a_pure_overlay_on_the_base_output():
     """A chain adds ONLY the "stages" key: every pre-existing key, including
     success (= embodiment.success, the gate/search/labels path), is byte-equal
@@ -117,6 +119,7 @@ def test_specs_threads_the_terminal_label():
 
 # --- accounting semantics on real rollouts -----------------------------------
 
+@pytest.mark.robosuite
 def test_stage_accounting_on_the_grasp_only_policy():
     """Exit-at-boundary, exit-at-exact-exhaust, and never-reached, in one
     episode: the scripted lift policy owns exactly 100 schedule steps, so a
@@ -132,6 +135,7 @@ def test_stage_accounting_on_the_grasp_only_policy():
                        "success": False, "reached": False, "privilege_used": 0}
 
 
+@pytest.mark.robosuite
 def test_privileged_stage_scoring_never_touches_the_critic_channel():
     """A scorer is not a critic: a privileged stage predicate is accounted in
     the stage's own privilege_used and leaves the trace, the chain digest, and
@@ -148,6 +152,7 @@ def test_privileged_stage_scoring_never_touches_the_critic_channel():
     assert b["stages"][0]["privilege_used"] == 1
 
 
+@pytest.mark.robosuite
 def test_handback_jump_scores_every_crossed_stage():
     """on_handback supersedes the interrupted phase, so the schedule clock can
     jump several cumulative budgets in one hop; each crossed stage must be
@@ -295,6 +300,7 @@ def _fake_embodiment(*, has_terminal: bool):
     return fake
 
 
+@pytest.mark.robosuite
 def test_terminal_label_selects_the_terminal_predicate(monkeypatch):
     """Round 79: terminal_label=True reads embodiment.terminal_success (here
     True) rather than embodiment.success (here False); =False reads success
@@ -314,6 +320,7 @@ def test_terminal_label_selects_the_terminal_predicate(monkeypatch):
         governed_rollout(EpisodeSpec(seed=3, terminal_label=True), None)
 
 
+@pytest.mark.robosuite
 def test_terminal_label_default_leaves_the_lift_success_untouched():
     """Red line: the switch defaults False, so a plain lift spec still reads
     embodiment.success. And because lift's terminal_success FALLS BACK to that

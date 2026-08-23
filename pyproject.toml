@@ -8,9 +8,6 @@ version = "0.1.0"
 description = "A physical agent harness: frozen policy, evolving runtime critics, auditable episode log, enforced privilege budget"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  # pinned: robosuite 1.5.2 calls mj_fullM(..., data.qM); mujoco >=3.4 renamed qM -> M
-  "mujoco==3.3.7",
-  "robosuite==1.5.2",
   "numpy>=1.26",
   "zstandard>=0.22",
 ]
@@ -22,6 +19,11 @@ dev = ["pytest>=8", "pytest-timeout>=2", "ruff==0.16.4"]
 # stdio JSON-RPC handshake/framing (correctness on the edge cases). Pinned: dsh
 # is an RC, so the wire (this SDK) is the piece we hold stable.
 cockpit = ["mcp==2.0.0"]
+# embodiment_robosuite: the mujoco/robosuite card's sim stack. A base install no
+# longer pulls it, so the harness boots and its base lane (`pytest -m "not
+# robosuite"`) runs on a card-absent machine. Pinned: robosuite 1.5.2 calls
+# mj_fullM(..., data.qM); mujoco >=3.4 renamed qM -> M.
+embodiment_robosuite = ["mujoco==3.3.7", "robosuite==1.5.2"]
 
 [project.scripts]
 governor = "governor.cli:main"

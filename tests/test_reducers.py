@@ -175,6 +175,7 @@ def test_cloned_handback_resumes_in_the_lift_regime():
     assert d.k != 0
 
 
+@pytest.mark.robosuite
 def test_recovery_steps_do_not_advance_the_policy_clock():
     """The policy owns its own clock; recovery steps are not policy steps."""
     spec = EpisodeSpec(seed=7)

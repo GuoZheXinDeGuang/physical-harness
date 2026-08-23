@@ -3,8 +3,8 @@ import numpy as np
 import pytest
 
 # demos.collect_one drives real robosuite rollouts through the governor.env shim;
-# skip cleanly when the embodiment card is unplugged (R2 card-removal decoupling).
-pytest.importorskip("plugins.embodiment_robosuite.env")
+# every test here needs the embodiment card (R3 base/plugin split).
+pytestmark = pytest.mark.robosuite
 
 from plugins.policies.demos import collect_one
 

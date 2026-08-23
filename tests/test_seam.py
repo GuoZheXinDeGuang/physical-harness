@@ -19,6 +19,7 @@ import dataclasses as dc
 import pickle
 
 import numpy as np
+import pytest
 
 from governor.env import NOMINAL_SCHEDULE, EpisodeSpec, make_env
 from harness.contracts import EnvProvider, PolicyFactory, Reasoner
@@ -123,6 +124,7 @@ def test_search_reasoner_propose_thin_adapter_round_trips():
 
 # --- (c) make_env dispatch equivalence, with ONE short real env build -------
 
+@pytest.mark.robosuite
 def test_make_env_dispatch_equivalence_and_smoke():
     """A ref'd spec builds through the plugin and behaves like a real env; a
     ref-less spec still resolves to the identical class (dispatch equivalence).
@@ -368,6 +370,7 @@ def test_stack_dispatch_leaves_the_lift_path_untouched():
     assert type(make_driver(EpisodeSpec(seed=0))) is ScriptedDriver
 
 
+@pytest.mark.robosuite
 def test_stack_env_smoke():
     """De-risks the obs['cubeB_pos'] direct-read assumption at CI time: build
     Stack once, reset, read both cubes, step one StackScriptedDriver action."""

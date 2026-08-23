@@ -18,10 +18,14 @@ goldens already in the suite --
 """
 
 import numpy as np
+import pytest
 
 from harness.spec import EpisodeSpec
 from plugins.rsi.governed import Bundle, RecoverySpec, Rule, governed_rollout
 from plugins.rsi.stats.search import Trigger
+
+# both tests drive governed_rollout -> make_env, so they need the card (R3).
+pytestmark = pytest.mark.robosuite
 
 
 def test_colliding_rule_ids_do_not_merge_dwell_or_invocation():
