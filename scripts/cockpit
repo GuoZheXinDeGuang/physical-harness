@@ -4,32 +4,41 @@
 # operators run:  scripts/cockpit [--port N]
 # never:          npx @deepseek-ai/dsh web ...
 #
-# it (1) sources nvm (node 22), (2) re-applies the de-brand overlay
-# (profiles/dsh/rebrand.sh -- idempotent, so it self-heals after any dsh
-# upgrade or npx-cache wipe), then (3) serves the console.
+# DEFAULT (fork): serve the ph-station fork's own build. brand is NATIVE in
+#   fork source (no launch-time string patching), so this path does NOT run
+#   profiles/dsh/rebrand.sh. it (1) sources nvm (node 22), (2) seeds the
+#   workspace user-data record, (3) serves the console from the built fork bin.
+#
+# FALLBACK (--npx): the pre-fork round-95 path. run profiles/dsh/rebrand.sh
+#   (which patches the npx-materialized install and seeds the workspace at its
+#   tail) then serve via `npx @deepseek-ai/dsh@0.1.1-rc.2`. kept alive as the
+#   rollback until the parity checklist retires it (see docs/ph-station-design.md
+#   §6). the 0.1.1-rc.2 pin and rebrand.sh stay in-tree, unmodified, for this.
 #
 # the harness MCP integration is loaded automatically by dsh from
-# $DSH_HOME/cordis.patch.yml -- there is NO `--patch` flag on `dsh web` (the CLI
-# rejects it). so this launcher does not pass one; the deployed patch file is
-# left untouched and its `- insert:` MCP fix applies on its own.
+# $DSH_HOME/cordis.patch.yml -- there is NO `--patch` flag on `dsh web`. both
+# paths export the same $DSH_HOME so the console inherits the `- insert:`
+# mcp-physical-harness row identically.
 set -o pipefail
 set -u
 
-DSH_PKG="@deepseek-ai/dsh@0.1.1-rc.2"   # single source of the pinned version
+DSH_PKG="@deepseek-ai/dsh@0.1.1-rc.2"   # single source of the pinned version (fallback only)
 PORT=3080
+USE_NPX=0
 
 usage() {
   cat <<EOF
 physical-harness cockpit -- launch the lab console
 
-usage: cockpit [--port N] [-h|--help]
+usage: cockpit [--port N] [--npx] [-h|--help]
 
   --port N    port to serve on (default: 3080)
+  --npx       fallback: serve the pinned published dsh via npx + rebrand.sh
+              overlay instead of the ph-station fork build (rollback path)
   -h, --help  show this help
 
-the cockpit sources nvm (node 22), re-applies the de-brand overlay
-(idempotent -- safe to run after any dsh upgrade), then serves the console.
-use this instead of 'npx $DSH_PKG'.
+default serves the ph-station fork build (native brand); --npx restores the
+pre-fork round-95 behavior. use this instead of 'npx $DSH_PKG'.
 EOF
 }
 
@@ -37,6 +46,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --port)   PORT="${2:?--port needs a value}"; shift 2;;
     --port=*) PORT="${1#*=}"; shift;;
+    --npx)    USE_NPX=1; shift;;
     -h|--help) usage; exit 0;;
     *) echo "cockpit: unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
@@ -44,6 +54,7 @@ done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO="$(cd "$HERE/.." && pwd -P)"
+PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"
 
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
@@ -57,10 +68,38 @@ nvm use 22 >/dev/null
 export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 export DSH_PKG
 
-# re-apply the branding overlay onto the npx-materialized install (idempotent).
-if ! bash "$REPO/profiles/dsh/rebrand.sh"; then
-  echo "cockpit: WARNING rebrand overlay reported an error; serving anyway" >&2
+if [ "$USE_NPX" -eq 1 ]; then
+  # --- fallback path (unchanged round-95 behavior) --------------------------
+  # rebrand.sh patches the npx install AND seeds the workspace at its tail.
+  #
+  # NOTE for a future slice: when the BoardBridge host-bridge row is added to
+  # the shared $DSH_HOME/cordis.patch.yml, this npx path must point DSH_HOME at
+  # an overlay variant WITHOUT that row -- npx cannot resolve the fork-only host
+  # package and dsh's strict boot would fail. The current overlay carries only
+  # the mcp-physical-harness row (@deepseek-ai/dsh-mcp-client ships with the
+  # published CLI), so both paths boot green today. See ph-station-design.md §6.
+  if ! bash "$REPO/profiles/dsh/rebrand.sh"; then
+    echo "cockpit: WARNING rebrand overlay reported an error; serving anyway" >&2
+  fi
+  echo "cockpit: [--npx fallback] serving physical-harness console at http://127.0.0.1:$PORT" >&2
+  exec npx --yes "$DSH_PKG" web --no-open --port "$PORT"
 fi
 
-echo "cockpit: serving physical-harness console at http://127.0.0.1:$PORT" >&2
-exec npx --yes "$DSH_PKG" web --no-open --port "$PORT"
+# --- default path: serve the ph-station fork build ---------------------------
+BIN="$PH_STATION/apps/cli/lib/bin.js"
+DIST="$PH_STATION/apps/web/dist/index.html"
+if [ ! -f "$DIST" ] || [ ! -f "$BIN" ]; then
+  echo "cockpit: ERROR ph-station build missing ($DIST / $BIN)." >&2
+  echo "cockpit: run 'pnpm run build' in $PH_STATION (or use 'cockpit --npx' for the fallback)." >&2
+  exit 1
+fi
+
+# seed the workspace user-data record (orthogonal to brand; native brand does
+# not seed a workspace). MUST run before the server starts -- the server holds
+# the workspace unit open and republishes the whole file on every mutation.
+if ! python3 "$REPO/profiles/dsh/seed_workspace.py" --workspace "$REPO" --dsh-home "$DSH_HOME"; then
+  echo "cockpit: WARNING workspace seed reported an issue; console still serves" >&2
+fi
+
+echo "cockpit: serving physical-harness console (fork build) at http://127.0.0.1:$PORT" >&2
+exec node "$BIN" web --no-open --port "$PORT"
