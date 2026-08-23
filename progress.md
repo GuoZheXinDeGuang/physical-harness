@@ -3410,3 +3410,32 @@ held-out), 封存锚点逐位复现是每一步的前置闸门。
    MCP insert 修复未被触碰, 服务端日志干净。
 4. 协调注记: cockpit 不传 --patch(发布 rc 无此旗标), MCP 行经 $DSH_HOME 层自动加载
    ——两个 agent 在共享部署面上零冲突收工。
+
+## Round 96 T2 - 2026-08-23 夜 - 自注册、体检、验货落地; 终验抓住半截缝
+
+### 做成了什么
+
+1. **R5 manifest 自注册(ecd4dd7)**: 卡=带 manifest.toml 的目录(纯数据 tomllib 解析,
+   永不 import); harness/manifest.py 折叠出 {mounts, task_bindings, campaigns,
+   third_party}, 跨卡碰撞一律响亮。base_profile() 变成折叠且 **sha 逐位不变**
+   (b905a51…, 即 round25-rerun 封存的 plan sha)——重构顶着封存 parity 过关。
+   运行时四张写死表全部退役; 宪章验收实证: 丢卡目录进 plugins/ → git status 只有
+   那个目录、新任务被接受、base sha 不动。skill_toy 入库作为"说明书"参考卡。
+2. **R6 plugin_doctor(9135c28)**: Tier A 形状=复用 Kernel.provide 的 isinstance 门;
+   Tier B 按能力类别一发假件冒烟; 确定性政策分流(percept/planner 必须确定,
+   LLM reasoner 验证式不信任); needs_sim 卡真仿真层。绿假件卡+robosuite 卡,
+   红违约 provider+非确定 percept。
+3. **R7 qwen 模型卡 + R8 验货模板/种子分配器**(9cbf71e/82c9672) 落地;
+   测试 383→397+, 隔离底座道 355→371 零缩水, ruff 清。
+4. **终验抓住 R7 的半截缝**: run_campaign 有 reasoner= 参数, 但生产路径(rsi_run/
+   acceptance/campaign 脚本)无一传入——挂载的 reasoner.proposer 在真环里从未被解析,
+   qwen 卡永远不会被咨询。R7 的"缝已修活"陈述过头。修复排 T3 首 rung。
+5. 终验澄清两桩虚惊: "违规推送"=编排层实时推送捎带(规矩本身); parity_check 全量
+   重跑 stack-g1 失败=round-88 目标函数修复的预期后果(旧提案由旧目标函数生成,
+   活重跑走新搜索), **rescore 路径才是封存 parity 的正确仪器且三块全绿**——
+   此范围注记待写进 parity_check 文档串。
+
+### 什么没成 / 注意
+
+- R9 施工图需按 R5 现实更新: 五张 manifest 已存在(扩展而非新建), SKILL_SPECS 留给
+  技能卡工作, plugins/graphs 已包化。
