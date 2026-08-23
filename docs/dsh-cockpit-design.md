@@ -67,3 +67,49 @@ Only what you must decide; everything else is decided above.
 2. DELETE-WHILE-RC RISK. dsh is a 2-day-old developer preview that promises compatibility-breaking changes. The MCP seam insulates the wire (standard protocol), but the profile/Cordis-YAML config format may churn and need periodic re-sync. I default to: pin 0.1.1-rc.2, accept profile re-sync, and delete board/ at rung 4 once rungs 1-3 prove parity. Confirm, OR tell me to keep board/ alive (undeleted, unmaintained) until dsh cuts a stable tag — in which case rung 4 becomes "quarantine board/" not "delete".
 
 3. LLM-IN-FRONT-OF-INBOX. The MCP seam means dsh's LLM composes the submit_brief call (the runtime still re-validates _BRIEF_KEYS server-side, so this is not authority laundering). I default to accepting this — it is inherent to adopting an LLM agent harness as the cockpit. Only veto if you require that NO LLM ever sit between a human and the inbox; that would force seam #4 (custom no-LLM agent loop in dsh's monorepo), which I recommend against (large, couples to unstable internal types).
+
+## Workspace pre-selection (native-feel, 2026-08-24)
+
+SYMPTOM. Cold-loading :3080 showed a disabled composer behind the placeholder
+"选择一个工作区开始" -- the operator had to click a workspace before typing.
+
+SEAM (traced in the dsh clone, v0.1.1-rc.2). The composer's disabled state is
+`inert = sessionId === undefined || (hero && chipTitle === undefined)`
+(ui-conversation ConversationRoot.tsx): the gate is an *active session*, not
+merely a selected workspace. But the client already auto-selects on boot --
+`WorkspaceRuntime.startInitialSelection` (runtime workspaces/service.ts, wired
+at runtime/client/index.ts) connects the single most-recent workspace and opens
+a blank session in it, and `recentWorkspace()` returns a workspace even when it
+owns zero sessions (falls back to `createdAt`). Workspaces persist server-side
+in the storage-json unit `$DSH_HOME/storages/workspace.json` (domain `workspace`
+v2). The registry shipped empty (`workspaceIds: []`), so auto-select had nothing
+to pick -> cold hero -> disabled composer. Seeding one workspace record is the
+entire unlock; no client behaviour is patched. (crypto.randomUUID in an earlier
+browser attempt was a red herring -- the id is minted host-side in
+WorkspaceRegistry.createCanonical; the durable write is the storage unit.)
+
+CHANGE (overlay only; dsh source untouched, MIT attribution intact).
+- profiles/dsh/seed_workspace.py (new): idempotent, schema-drift-guarded write
+  of one workspace record (path = repo root, title = "physical-harness") into
+  the workspace.json unit. `--selftest` runs a hermetic assert check (create /
+  idempotent re-run / schema shape / v!=2 drift refusal / bad-path skip) --
+  re-run it after any dsh upgrade to confirm the storage schema still matches.
+- profiles/dsh/rebrand.sh: computes the repo root (PH_WORKSPACE), calls the seed
+  after the chrome patches (pre-`dsh web`, since the running server holds the
+  unit in memory and would overwrite a live edit), and -- same string-swap
+  pattern as the hero headline -- patches the active-composer placeholder
+  `placeholder.hero` -> "对物理测试台下达任务…" / "Command the physical-harness…".
+  The single-workspace auto-select touch needed no code: the client already
+  does it (startInitialSelection).
+
+VERIFY (round-95 pattern, gateway-level; final visual check is the operator's).
+Storage: workspace.json after restart holds exactly one record (title
+physical-harness, correct path, in workspaceIds) -- the server LOADED the seed
+and did not wipe it. Served: `/plugins/@deepseek-ai/dsh-client-ui-conversation/
+client.js` fetched over HTTP carries the patched placeholder (old string gone);
+`/` returns 200 with `<title>physical-harness 控制台</title>`.
+
+RE-APPLY. cockpit runs rebrand.sh on every launch, so the seed + placeholder
+self-heal after any dsh upgrade or npx-cache wipe. Both are idempotent. If the
+operator deletes the workspace in the UI, the next launch re-seeds it -- the
+console is meant to always open on physical-harness.

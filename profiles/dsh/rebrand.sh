@@ -30,6 +30,13 @@
 set -o pipefail
 set -u
 
+# self-locate the repo so the workspace-seed step (end of file) knows which
+# directory to register, without cockpit having to pass it in. this script lives
+# at $REPO/profiles/dsh/rebrand.sh, so the repo root is three levels up.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO="$(cd "$HERE/../.." && pwd -P)"
+export PH_WORKSPACE="${PH_WORKSPACE:-$REPO}"
+
 # node is needed to syntax-check patched bundles (a broken client bundle would
 # blank the brand slots and the whale FALLBACKS would render -- worse than not
 # patching). source nvm so `node` is on PATH; degrade to skip-check if absent.
@@ -170,11 +177,17 @@ patch_text(p("dsh-client-ui-renderer", "lib", "client.js"),
              'const productTitle = "DeepSeek Harness"',
              'const productTitle = "%s"' % TITLE)])
 
-# 4) hero headline (the DeepSeek slogan; leave the neutral "预览版/Preview" badge)
-print("conversation hero headline:")
+# 4) hero headline + active-composer placeholder (native-feel copy). the
+#    placeholder.hero string is what the composer shows in the blank
+#    auto-selected session -- and thanks to the workspace seed (end of file) a
+#    session IS open at boot, so this is the placeholder the operator actually
+#    types over. leave the neutral "预览版/Preview" badge alone.
+print("conversation hero headline + placeholder:")
 patch_text(p("dsh-client-ui-conversation", "lib", "client.js"),
            [("hero headline zh", '"hero.headline": "探索未至之境"', '"hero.headline": "物理测试台"'),
-            ("hero headline en", '"hero.headline": "Into the Unknown"', '"hero.headline": "physical-harness"')])
+            ("hero headline en", '"hero.headline": "Into the Unknown"', '"hero.headline": "physical-harness"'),
+            ("hero placeholder zh", '"placeholder.hero": "描述你想要构建的内容"', '"placeholder.hero": "对物理测试台下达任务…"'),
+            ("hero placeholder en", '"placeholder.hero": "Describe what you want to build"', '"placeholder.hero": "Command the physical-harness…"')])
 
 # 5) boot splash wordmark (transient pre-React loading screen)
 print("boot splash wordmark:")
@@ -230,3 +243,23 @@ else:
 # never fail the launch on drift: a partly-branded console still serves.
 sys.exit(0)
 PY
+
+# --- workspace pre-selection --------------------------------------------------
+# everything above patches the INSTALLED npx copy (presentation chrome). this
+# last step writes USER DATA instead: one workspace record into $DSH_HOME so the
+# console opens with the physical-harness workspace already selected and the
+# composer live, rather than demanding a manual "选择工作区" pick first. the dsh
+# client auto-connects the single most-recent workspace at boot and opens a
+# blank session in it (startInitialSelection), so seeding one record is the
+# whole unlock -- no client behaviour is patched. idempotent + schema-drift
+# guarded; see profiles/dsh/seed_workspace.py (run it with --selftest to confirm
+# the storage schema still matches after a dsh upgrade).
+#
+# MUST run before `dsh web` starts (cockpit runs this overlay pre-exec): the
+# server holds the workspace unit open in memory and republishes the whole file
+# on every mutation, so a seed written to a live server is overwritten.
+echo "workspace seed:"
+python3 "$HERE/seed_workspace.py" --workspace "$PH_WORKSPACE" --dsh-home "${DSH_HOME:-$HOME/.dsh}" \
+  || echo "rebrand: WARNING workspace seed reported an issue; console still serves" >&2
+
+exit 0
