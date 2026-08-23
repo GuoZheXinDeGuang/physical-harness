@@ -97,9 +97,21 @@ CAMPAIGN_SCRIPTS: dict[str, Path] = {
 STATUS_MD = REPO_ROOT / "STATUS.md"
 
 
+#: The two session modes. EXECUTION is the fail-safe default: a real task run
+#: never triggers RSI. EVOLUTION is the only mode that may accept a campaign
+#: brief and let a campaign write the shared skills root.
+MODES = ("execution", "evolution")
+
+
 @dataclass(frozen=True)
 class Runtime:
-    """The booted state: the four intake dirs, the shared skills root, the log."""
+    """The booted state: the four intake dirs, the shared skills root, the log.
+
+    ``mode`` is fixed at first boot (write-once MODE file) and immutable across
+    restart. ``skills_manifest`` is the sorted content-digest stem set sealed in
+    the ``runtime.boot`` row -- the baseline the per-execution-task immutability
+    audit folds against, so an out-of-band skills-root mutation is machine-caught.
+    """
 
     inbox: Path
     processing: Path
@@ -107,10 +119,30 @@ class Runtime:
     failed: Path
     skills_root: Path
     log: SessionLog
+    mode: str = "execution"
+    skills_manifest: tuple[str, ...] = ()
 
 
-def boot(session_dir: str | Path, inbox: str | Path | None = None) -> Runtime:
-    """Load-or-fresh the session chain, make the intake dirs, re-queue crashes."""
+def _skills_manifest(skills_root: Path) -> list[str]:
+    """Sorted content-digest stems under the skills root. Filenames already ARE
+    content digests, so this list IS the skill set -- set-equality on it is the
+    immutability check, no rehash needed."""
+    return sorted(f.stem for f in skills_root.glob("*.json"))
+
+
+def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
+         mode: str = "execution") -> Runtime:
+    """Load-or-fresh the session chain, make the intake dirs, re-queue crashes.
+
+    The session's ``mode`` is written once to ``<session-dir>/MODE`` at first
+    boot and asserted on every re-boot -- a mismatched ``--mode`` is refused, not
+    overwritten (write-once). Boot also seals a ``runtime.boot`` row
+    ``{mode, skills_manifest, mount_plan_sha}``: row 0 of a fresh chain, or -- for
+    a session that predates MODE -- retrofitted at the tail with a ``migrated``
+    marker (appending never rewrites the existing chain, so no sealed sha moves).
+    """
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     session_dir = Path(session_dir)
     log_dir = session_dir / "session-log"
     skills_root = session_dir / "skills"
@@ -123,6 +155,17 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None) -> Runtime:
     for d in (log_dir, skills_root, inbox, processing, done, failed):
         d.mkdir(parents=True, exist_ok=True)
 
+    # write-once mode: fixed at first boot, immutable across restart.
+    mode_file = session_dir / "MODE"
+    if mode_file.exists():
+        recorded = mode_file.read_text().strip()
+        if recorded != mode:
+            raise ValueError(
+                f"{mode_file} is {recorded!r}; refusing to re-boot as {mode!r} "
+                "(MODE is write-once)")
+    else:
+        mode_file.write_text(mode)
+
     log = (SessionLog.load(log_dir) if (log_dir / "rows.jsonl").exists()
            else SessionLog(log_dir))
 
@@ -133,7 +176,23 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None) -> Runtime:
     for p in processing.glob("*.json"):
         os.replace(p, inbox / p.name)
 
-    return Runtime(inbox, processing, done, failed, skills_root, log)
+    # boot seal: the immutability baseline comes from the SEALED row (catches a
+    # skills-root mutation that happened between boots), not a fresh recompute.
+    # A fresh session seals row 0; a pre-MODE session gets it retrofitted at the
+    # tail (marked migrated) since row 0 is already spoken for.
+    boot_row = next((r for r in log.rows() if r["kind"] == "runtime.boot"), None)
+    if boot_row is None:
+        manifest = _skills_manifest(skills_root)
+        seal = {"mode": mode, "skills_manifest": manifest,
+                "mount_plan_sha": resolve_plan(base_profile()).sha()}
+        if log.rows():
+            seal["migrated"] = True  # predates MODE; not row 0
+        log.append("runtime.boot", seal)
+        baseline = tuple(manifest)
+    else:
+        baseline = tuple(boot_row["data"]["skills_manifest"])
+
+    return Runtime(inbox, processing, done, failed, skills_root, log, mode, baseline)
 
 
 def _mount_plan(task: str, skills_root: Path):
@@ -285,8 +344,26 @@ def _process(rt: Runtime, path: Path) -> None:
             # ride along ignored until some future reader starts honoring it.
             raise ValueError(f"unknown brief keys {sorted(unknown)}")
         if kind == "task":
+            # execution mounts a frozen skills root; a mid-session out-of-band
+            # mutation (some record added or removed since the boot seal) must
+            # fail loudly rather than let a task run against skills it wasn't
+            # admitted with. Evolution's _copy_skills legitimately grows the root,
+            # so the audit is execution-only.
+            if rt.mode == "execution":
+                current = _skills_manifest(rt.skills_root)
+                if set(current) != set(rt.skills_manifest):
+                    raise ValueError(
+                        "skills-root mutated mid-session (execution mode): "
+                        f"boot manifest {list(rt.skills_manifest)} != {current}")
             _run_task(brief, rt.log, rt.skills_root)
         elif kind == "campaign":
+            # v4.1 hard rule: a campaign brief is accepted ONLY in evolution mode.
+            # Rejection, not neutralization -- same pattern as the injected-key
+            # defense: a real task run provably triggers no RSI.
+            if rt.mode != "evolution":
+                raise ValueError(
+                    f"campaign briefs are accepted only in evolution mode "
+                    f"(session mode is {rt.mode!r})")
             _run_campaign(brief, rt, brief_id)
         else:
             raise ValueError(f"unknown brief kind {kind!r}")
@@ -311,9 +388,10 @@ def _pending(rt: Runtime) -> list[Path]:
 
 
 def main(session_dir: str | Path, inbox: str | Path | None = None, *,
-         drain: bool = False, poll_interval: float = 1.0) -> Runtime:
+         drain: bool = False, poll_interval: float = 1.0,
+         mode: str = "execution") -> Runtime:
     """Boot, then drain the inbox once (``drain``) or poll it forever."""
-    rt = boot(session_dir, inbox)
+    rt = boot(session_dir, inbox, mode=mode)
     if drain:
         while True:
             pending = _pending(rt)
@@ -332,12 +410,15 @@ def _cli() -> int:
     ap.add_argument("--session-dir", required=True)
     ap.add_argument("--inbox", default=None,
                     help="brief inbox dir (default <session-dir>/inbox)")
+    ap.add_argument("--mode", choices=MODES, default="execution",
+                    help="session mode, fixed write-once at first boot "
+                         "(default: execution -- campaigns rejected)")
     ap.add_argument("--drain", action="store_true",
                     help="process pending briefs then exit (default: poll forever)")
     ap.add_argument("--poll-interval", type=float, default=1.0)
     args = ap.parse_args()
     main(args.session_dir, args.inbox, drain=args.drain,
-         poll_interval=args.poll_interval)
+         poll_interval=args.poll_interval, mode=args.mode)
     return 0
 
 

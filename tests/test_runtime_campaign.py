@@ -9,6 +9,9 @@ FOLLOWING task's fresh mount re-globs them, and writes one
 whose declared dev∪heldout lands in a burned range is rejected to failed/ with a
 runtime.task_error note and never spawns.
 
+Campaigns are booted in EVOLUTION mode: the v4.1 hard rule accepts a campaign
+brief only there (execution-mode rejection is covered in tests/test_mode.py).
+
 # ponytail: real 15-40min campaign is a manual RECORD run, not a unit test.
 """
 
@@ -65,7 +68,7 @@ def test_campaign_publishes_skills_and_notes_the_chain(tmp_path, monkeypatch):
     _drop(inbox, "camp.json", {"kind": "campaign", "campaign": "stub",
                                "dev": [[90000, 90499]], "heldout": [[90500, 90599]]})
 
-    rt = runtime.main(session, drain=True)
+    rt = runtime.main(session, drain=True, mode="evolution")
 
     assert (rt.done / "camp.json").exists(), "a clean campaign lands in done/"
     assert (rt.skills_root / f"{_STUB_DIGEST}.json").exists(), "skills copied to shared root"
@@ -95,7 +98,7 @@ def test_second_campaign_is_idempotent_on_shared_skills(tmp_path, monkeypatch):
     _drop(inbox, "one.json", {"kind": "campaign", "campaign": "stub", "dev": [[90000, 90099]]})
     _drop(inbox, "two.json", {"kind": "campaign", "campaign": "stub", "dev": [[90100, 90199]]})
 
-    rt = runtime.main(session, drain=True)
+    rt = runtime.main(session, drain=True, mode="evolution")
 
     assert (rt.done / "one.json").exists() and (rt.done / "two.json").exists()
     assert list(rt.skills_root.glob("*.json")) == [rt.skills_root / f"{_STUB_DIGEST}.json"]
@@ -115,7 +118,7 @@ def test_burned_range_brief_is_rejected_without_spawning(tmp_path, monkeypatch):
     _drop(inbox, "burned.json", {"kind": "campaign", "campaign": "stack",
                                  "dev": [[41000, 41100]]})
 
-    rt = runtime.main(session, drain=True)
+    rt = runtime.main(session, drain=True, mode="evolution")
 
     assert (rt.failed / "burned.json").exists(), "a burned-range brief is rejected"
     assert not list(rt.skills_root.glob("*.json")), "the guard fires before any spawn"

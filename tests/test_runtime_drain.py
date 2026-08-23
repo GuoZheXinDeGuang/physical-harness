@@ -73,7 +73,9 @@ def test_malformed_brief_fails_without_a_note(tmp_path, monkeypatch):
     rt = runtime.main(session, drain=True)
 
     assert (rt.failed / "junk.json").exists()
-    assert rt.log.rows() == (), "a malformed brief has nothing to attribute a note to"
+    # only the boot seal is on the chain: a malformed brief has nothing to
+    # attribute a note to (no runtime.task_error).
+    assert [r["kind"] for r in rt.log.rows()] == ["runtime.boot"]
 
 
 def test_boot_requeues_processing_and_continues_chain(tmp_path, monkeypatch):
