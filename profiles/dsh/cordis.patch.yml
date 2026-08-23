@@ -5,23 +5,29 @@
 # ledger/rounds as mcp__physical-harness__<tool>, each a one-call passthrough to
 # board.store -- the same parse layer scripts/rsi_board.py serves over HTTP.
 #
-# how it is loaded: `dsh web` is a hardcoded shorthand for `--profile web`, so it
-# boots the `web` profile, NOT this one. we overlay this file onto that boot with
-# `dsh web --no-open --port 3080 --patch $DSH_HOME/profiles/physical-harness/cordis.patch.yml`
-# (--patch applies in argv order after the web profile's own layers). the
-# @deepseek-ai/dsh-mcp-client plugin ships with the CLI, so no per-profile pnpm
-# install is needed for this overlay.
+# how it is loaded: the published 0.1.1-rc.2 launcher has no --patch flag
+# (master-branch skew), so this file is DEPLOYED by copying it to
+# $DSH_HOME/cordis.patch.yml, which profile-boot layers onto every profile.
+# the @deepseek-ai/dsh-mcp-client plugin ships with the CLI, so no per-profile
+# pnpm install is needed.
+#
+# THE INSERT DIRECTIVE IS LOAD-BEARING: a bare `- id:` row is an OVERRIDE of an
+# existing row; when no row with that id exists, dsh drops it silently
+# ("patch: entry ... not found" in --dump-config) and the MCP client never
+# composes -- the agent then falls back to native bash, exactly the ungoverned
+# path we exist to prevent. a NEW plugin row must be wrapped in `- insert:`.
 #
 # the server imports board.store -> harness.events AND the `mcp` SDK, so it runs
 # under the repo venv python (not system python3 like the rung-0 echo server);
 # board/mcp_server.py inserts the repo root on sys.path itself, so no PYTHONPATH.
-- id: mcp-physical-harness
-  name: '@deepseek-ai/dsh-mcp-client'
-  config:
-    serverName: physical-harness
-    transport: stdio
-    command: /home/yusenzlabpc/Desktop/physical-harness/.venv/bin/python
-    args:
-      - /home/yusenzlabpc/Desktop/physical-harness/board/mcp_server.py
-      - --runs
-      - /home/yusenzlabpc/Desktop/physical-harness/runs
+- insert:
+    - id: mcp-physical-harness
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: physical-harness
+        transport: stdio
+        command: /home/yusenzlabpc/Desktop/physical-harness/.venv/bin/python
+        args:
+          - /home/yusenzlabpc/Desktop/physical-harness/board/mcp_server.py
+          - --runs
+          - /home/yusenzlabpc/Desktop/physical-harness/runs
