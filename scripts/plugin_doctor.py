@@ -254,6 +254,36 @@ def check(plugin_dir: str | Path) -> Report:
     return rep
 
 
+def verify(store: str | Path) -> Report:
+    """验货: read a published skill store and pass/fail the acceptance claim.
+
+    The counterpart to 体检 (``check``): 体检 is mode-agnostic and asks "does this
+    card mount and behave"; 验货 asks "did an evolution-mode campaign actually
+    earn a promotable skill here" and is the execution-mode admission ticket
+    (GOAL v4.1). No new statistics -- it only READS the ``SkillRecord``s the
+    existing evidence machine published to ``store`` (a flat ``<digest>.json``
+    graph.skill root -- ``rt.skills_root``, or an acceptance campaign's
+    ``<out>/skills``) and folds their fields into four checks: a prereg hash is
+    present, at least one skill was promoted (a record IS a promotion --
+    ``workload.run`` publishes only promoted generations), the held-out judgement
+    was established (``heldout_judgement_established`` True, i.e. p<alpha &
+    fixed>broken on the held-out block), and the transfer ablation was run.
+    """
+    store = Path(store)
+    rep = Report(f"{store.name} (验货)")
+    records = [json.loads(f.read_text()) for f in sorted(store.glob("*.json"))]
+    rep.add("V", "promoted skill", "PASS" if records else "FAIL",
+            f"{len(records)} published skill record(s)")
+    rep.add("V", "prereg_sha", "PASS" if records and all(r.get("prereg_sha") for r in records)
+            else "FAIL", "content hash present on every record")
+    established = [r for r in records if r.get("heldout_judgement_established") is True]
+    rep.add("V", "heldout judgement", "PASS" if established else "FAIL",
+            "established (p<alpha & fixed>broken on held-out)")
+    ablation = [r for r in records if (r.get("bundle_evidence") or {}).get("ablation")]
+    rep.add("V", "ablation", "PASS" if ablation else "FAIL", "transfer ablation curve present")
+    return rep
+
+
 def _fmt(rep: Report) -> str:
     lines = [f"plugin_doctor: {rep.plugin} -- {'GREEN' if rep.green else 'RED'}"]
     for r in rep.results:
@@ -263,9 +293,17 @@ def _fmt(rep: Report) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("plugin_dir", help="the card directory to check (holds manifest.toml)")
+    ap.add_argument("plugin_dir", nargs="?",
+                    help="the card directory to 体检 (holds manifest.toml)")
+    ap.add_argument("--verify", metavar="STORE",
+                    help="验货: pass/fail a published skill store instead of 体检 a card")
     args = ap.parse_args(argv)
-    rep = check(args.plugin_dir)
+    if args.verify is not None:
+        rep = verify(args.verify)
+    elif args.plugin_dir is not None:
+        rep = check(args.plugin_dir)
+    else:
+        ap.error("give a card directory to 体检, or --verify STORE to 验货")
     print(_fmt(rep))
     return 0 if rep.green else 1
 

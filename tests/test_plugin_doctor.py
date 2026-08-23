@@ -10,12 +10,13 @@ wrong-shaped provider, and one at the deliberately flaky provider below.
 
 from __future__ import annotations
 
+import json
 import random
 from pathlib import Path
 
 import pytest
 
-from scripts.plugin_doctor import check
+from scripts.plugin_doctor import check, verify
 
 _REPO = Path(__file__).resolve().parent.parent
 
@@ -110,6 +111,55 @@ def test_doctor_skips_a_task_only_card(tmp_path):
     rep = check(_card(tmp_path, "task_only", body))
     assert rep.green
     assert any(r.status == "SKIP" for r in rep.results)
+
+
+# ── 验货 (--verify): the acceptance reader over a published skill store ───────
+
+def _skill_record(**over) -> dict:
+    """A SkillRecord the shape ``plugins.rsi.workload.run`` publishes -- only the
+    four fields ``verify`` reads matter here (fakes)."""
+    rec = {"kind": "grasp_recovery", "prereg_sha": "deadbeef",
+           "heldout_judgement_established": True,
+           "bundle_evidence": {"ablation": [[0.0, {}], [0.02, {}]]}}
+    rec.update(over)
+    return rec
+
+
+def _store(tmp_path: Path, *records: dict) -> Path:
+    d = tmp_path / "skills"
+    d.mkdir()
+    for i, rec in enumerate(records):
+        (d / f"{i}.json").write_text(json.dumps(rec))
+    return d
+
+
+def test_verify_greens_a_store_with_an_established_skill(tmp_path):
+    rep = verify(_store(tmp_path, _skill_record()))
+    assert rep.green, _fails(rep)
+
+
+def test_verify_reddens_a_store_without_promotion(tmp_path):
+    rep = verify(_store(tmp_path))  # empty: a campaign that promoted nothing
+    assert not rep.green
+    assert any(r.name == "promoted skill" and r.status == "FAIL" for r in rep.results)
+
+
+def test_verify_reddens_unestablished_judgement(tmp_path):
+    rep = verify(_store(tmp_path, _skill_record(heldout_judgement_established=False)))
+    assert not rep.green
+    assert any(r.name == "heldout judgement" and r.status == "FAIL" for r in rep.results)
+
+
+def test_verify_reddens_missing_ablation(tmp_path):
+    rep = verify(_store(tmp_path, _skill_record(bundle_evidence={})))
+    assert not rep.green
+    assert any(r.name == "ablation" and r.status == "FAIL" for r in rep.results)
+
+
+def test_verify_reddens_missing_prereg_sha(tmp_path):
+    rep = verify(_store(tmp_path, _skill_record(prereg_sha=None)))
+    assert not rep.green
+    assert any(r.name == "prereg_sha" and r.status == "FAIL" for r in rep.results)
 
 
 @pytest.mark.robosuite
