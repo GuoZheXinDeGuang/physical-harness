@@ -55,6 +55,10 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
         (["heldout", "stack-g1"], bs.heldout_blocks(runs, "stack-g1")),
         (["sessions"], bs.discover_sessions(runs)),
         (["session", "session-main"], bs.read_session(runs / "session-main")),
+        # runtime_status: fixture session has no runtime_status.json, so this
+        # case is both the face-equivalence proof AND null-when-absent (both
+        # sides serialize to "null").
+        (["runtime_status", "session-main"], bs.read_runtime_status(runs / "session-main")),
         (["ledger"], bs.parse_ledger(status.read_text())),
         (["rounds"], bs.parse_rounds(progress.read_text())),
     ]
@@ -74,6 +78,8 @@ def test_traversal_name_rejected_by_shared_guard(tmp_path, capsys):
         code, out = _run(capsys, "store", name, *base)
         assert code == 3 and json.loads(out) == {"error": "unknown store"}
     code, out = _run(capsys, "session", "../session-main", *base)
+    assert code == 3 and json.loads(out) == {"error": "unknown session"}
+    code, out = _run(capsys, "runtime_status", "../session-main", *base)
     assert code == 3 and json.loads(out) == {"error": "unknown session"}
 
 

@@ -92,6 +92,14 @@ def session(name: str) -> dict:
 
 
 @mcp.tool()
+def runtime_status(name: str) -> dict | None:
+    """One runtime session's LIVE status (pid/render/mode/boot_ts/display), or null
+    when it has not booted since the file existed. Live state, not sealed evidence."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_status(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def ledger() -> list[dict]:
     """Seed-block burn map parsed from STATUS.md's budget section."""
     return bs.parse_ledger(_read(_Cfg.status))

@@ -72,6 +72,17 @@ def test_tampered_chain_is_flagged(tmp_path):
     assert d["kinds"]["task.plan_complete"] == 2
 
 
+def test_runtime_status_present_absent_and_partial(tmp_path):
+    sd = _session(tmp_path)  # a booted session, but no runtime_status.json yet
+    assert bs.read_runtime_status(sd) is None  # absent -> null
+    status = {"pid": 4321, "render": True, "mode": "execution",
+              "boot_ts": 1.5, "display": ":1"}
+    (sd / "runtime_status.json").write_text(json.dumps(status))
+    assert bs.read_runtime_status(sd) == status  # present -> parsed verbatim
+    (sd / "runtime_status.json").write_text('{"pid": 4321, "rend')  # mid-write
+    assert bs.read_runtime_status(sd) is None  # partial -> null, next poll recovers
+
+
 def test_partial_trailing_line_is_skipped(tmp_path):
     sd = _session(tmp_path)
     rows_path = sd / "session-log" / "rows.jsonl"

@@ -231,6 +231,15 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     else:
         baseline = tuple(boot_row["data"]["skills_manifest"])
 
+    # Live operational status: overwritten on EVERY boot (fresh and resumed).
+    # NOT a chain row -- render is live runtime state, not sealed evidence, so it
+    # cannot ride the write-once runtime.boot seal (which is blank for sessions
+    # that predate it). Sits at the session root, so chain verification (session-
+    # log/rows.jsonl only) never sees it.
+    (session_dir / "runtime_status.json").write_text(json.dumps({
+        "pid": os.getpid(), "render": render, "mode": mode,
+        "boot_ts": time.time(), "display": os.environ.get("DISPLAY")}))
+
     # The authority allowlists are the manifest union at boot (discover() raises
     # on an actuation:real card, so the sim runtime refuses to boot with one).
     registry = discover()

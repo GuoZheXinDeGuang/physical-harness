@@ -359,6 +359,20 @@ def read_session(session_dir: str | Path) -> dict:
             "kinds": {k: len(v) for k, v in by_kind.items()}, "rows": by_kind}
 
 
+def read_runtime_status(session_dir: str | Path) -> dict | None:
+    """The resident runtime's LIVE status for one session
+    (``<session>/runtime_status.json``: pid/render/mode/boot_ts/display),
+    overwritten each boot. ``None`` when absent (a session that has not booted
+    since the file existed) or mid-write -- a plain read, not a chain row: this
+    is live operational state, not sealed evidence, so no chain verify. The pid
+    is reported, never judged: liveness is the reader's call, not this layer's."""
+    path = Path(session_dir) / "runtime_status.json"
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once."""

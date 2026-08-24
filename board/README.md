@@ -16,8 +16,8 @@ MCP server below, and the exported deliverable is a self-contained HTML report.
   rounds feed. Headless, for cron. `--status` / `--progress` override the
   STATUS.md / progress.md paths (default: the files next to `runs/`).
 - **MCP server** — `board/mcp_server.py` is the stdio MCP server the dsh cockpit
-  connects to: seven read-only tools (`list_stores`, `store`, `heldout`,
-  `sessions`, `session`, `ledger`, `rounds`), each one call into `board.store`
+  connects to: eight read-only tools (`list_stores`, `store`, `heldout`,
+  `sessions`, `session`, `runtime_status`, `ledger`, `rounds`), each one call into `board.store`
   returning the same dicts, plus `submit_brief`, which drops a brief into the
   resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —
   the tool never becomes the authority).

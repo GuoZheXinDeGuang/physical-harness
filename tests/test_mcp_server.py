@@ -53,6 +53,9 @@ def test_tools_are_byte_identical_passthroughs(tmp_path):
     assert _same(ms.heldout("stack-g1"), bs.heldout_blocks(runs, "stack-g1"))
     assert _same(ms.sessions(), bs.discover_sessions(runs))
     assert _same(ms.session("session-main"), bs.read_session(runs / "session-main"))
+    # runtime_status: fixture session has no runtime_status.json, so this is both
+    # the face-equivalence proof AND null-when-absent (both sides are null).
+    assert _same(ms.runtime_status("session-main"), bs.read_runtime_status(runs / "session-main"))
     assert _same(ms.ledger(), bs.parse_ledger((tmp_path / "STATUS.md").read_text()))
     assert _same(ms.rounds(), bs.parse_rounds((tmp_path / "progress.md").read_text()))
     # non-trivial fixtures, so identity is not identity-of-empty
@@ -70,5 +73,6 @@ def test_traversal_name_rejected_by_shared_guard(tmp_path):
     assert ms.store("../etc") == {"error": "unknown store"}
     assert ms.store("..") == {"error": "unknown store"}
     assert ms.session("../session-main") == {"error": "unknown session"}
+    assert ms.runtime_status("../session-main") == {"error": "unknown session"}
     # the guard itself: a traversal name never resolves outside runs_dir
     assert bs.safe_child(tmp_path / "runs", "../STATUS.md", lambda p: True) is None
