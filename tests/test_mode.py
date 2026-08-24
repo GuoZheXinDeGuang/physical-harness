@@ -94,9 +94,23 @@ def test_boot_seal_is_chain_row_zero(tmp_path):
         "mode": "evolution",
         "skills_manifest": ["cafe"],
         "mount_plan_sha": resolve_plan(base_profile()).sha(),
+        "render": False,
     }
     assert rt.skills_manifest == ("cafe",)
     assert SessionLog.load(session / "session-log").verify()
+
+
+def test_boot_seal_records_render_flag(tmp_path, monkeypatch):
+    """The render flag lands in the sealed row so the status bar has a real source.
+    DISPLAY only (no window): _prepare_render arms globals, no MuJoCo window opens."""
+    monkeypatch.setenv("DISPLAY", ":1")
+    session = tmp_path / "session-main"
+    (session / "inbox").mkdir(parents=True)
+
+    rt = runtime.boot(session, mode="execution", render=True)
+
+    assert rt.log.rows()[0]["data"]["render"] is True
+    assert rt.render is True
 
 
 def test_out_of_band_skill_fails_next_execution_task(tmp_path):

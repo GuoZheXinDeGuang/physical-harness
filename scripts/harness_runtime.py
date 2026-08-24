@@ -173,7 +173,7 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     The session's ``mode`` is written once to ``<session-dir>/MODE`` at first
     boot and asserted on every re-boot -- a mismatched ``--mode`` is refused, not
     overwritten (write-once). Boot also seals a ``runtime.boot`` row
-    ``{mode, skills_manifest, mount_plan_sha}``: row 0 of a fresh chain, or -- for
+    ``{mode, skills_manifest, mount_plan_sha, render}``: row 0 of a fresh chain, or -- for
     a session that predates MODE -- retrofitted at the tail with a ``migrated``
     marker (appending never rewrites the existing chain, so no sealed sha moves).
     """
@@ -222,7 +222,8 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     if boot_row is None:
         manifest = _skills_manifest(skills_root)
         seal = {"mode": mode, "skills_manifest": manifest,
-                "mount_plan_sha": resolve_plan(base_profile()).sha()}
+                "mount_plan_sha": resolve_plan(base_profile()).sha(),
+                "render": render}
         if log.rows():
             seal["migrated"] = True  # predates MODE; not row 0
         log.append("runtime.boot", seal)

@@ -126,3 +126,16 @@ deselected : 27 robosuite-marked items
 
 Full-suite parity (card present): `461 passed, 3 skipped` (in-place run,
 working tree == this commit).
+
+## boot-seal render field snapshot (2026-08-24, isolated, robosuite blocked)
+
+```
+pass       : 432 passed   (+1: test_boot_seal_records_render_flag)
+skips      : 6 skipped    (same reasons as round-96)
+wall time  : ~3.8s
+AST green  : 17 passed (test_boundaries + test_kernel)
+deselected : 27 robosuite-marked items
+```
+
+Full-suite parity (card present): `462 passed, 3 skipped` (in-place run,
+working tree == this commit).
