@@ -304,6 +304,28 @@ def test_pick_catalogue_and_oracle_validate():
         workload._dispatch(node, seed=1, env_ref="bogus", policy_ref="bogus")
 
 
+def test_grasp_node_dispatches_the_lift_geometric_binding(monkeypatch):
+    """The geometric card's grasp node routes through the generic loop: SKILL_SPECS
+    gives it an execution binding (round 97 follow-up), so _dispatch builds a lift
+    spec with the pick grasp-stage chain instead of raising 'no execution binding'."""
+    from plugins.embodiment_robosuite.env import pick_stages
+
+    fake = _RolloutFake([True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+    node = {"id": "grasp-0", "skill": "grasp", "args": {"object": "cube"}, "after": []}
+
+    result = workload._dispatch(node, seed=0, env_ref="tests.fakes:env",
+                               policy_ref="tests.fakes:policy")
+
+    assert result["success"] is True
+    (spec,) = fake.specs
+    assert spec.task == "lift" and spec.seed == 0 and spec.terminal_label
+    assert spec.percept_noise == 0.012          # the card [claim] baseline
+    assert spec.stages == pick_stages()          # real lift criteria, not a fake gate
+    assert spec.env_provider == "tests.fakes:env"
+    assert spec.policy_provider == "tests.fakes:policy"
+
+
 def test_pick_stages_shape():
     from harness.spec import NOMINAL_SCHEDULE
     from plugins.embodiment_robosuite.env import pick_stages

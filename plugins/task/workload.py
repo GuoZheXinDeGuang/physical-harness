@@ -52,6 +52,16 @@ SKILL_SPECS: dict[str, dict[str, Any]] = {
              # 0.012 and the first real closed loop failed on the drift (round 86)
              "terminal_label": True,
              "stages": "plugins.embodiment_robosuite.env:pick_stages"},
+    # The geometric-grasp card's follow-up (skill_geometric_grasp/planner.py
+    # docstring): its single grasp node driven by the generic loop. Names its
+    # task directly like "stack" (one scene, the grasp IS the Lift task under
+    # the card-mounted lift_geometric_provider) -- not task_by_object, the node's
+    # object arg is card vocabulary the catalogue only types. Mirrors the card's
+    # own [claim] verbatim (task="lift", pick_stages, percept_noise 0.012,
+    # terminal_label): the pick grasp stage (finger_gap>0.01) plus lifted() on
+    # the terminal label ARE the real lift criteria, no separate success path.
+    "grasp": {"task": "lift", "percept_noise": 0.012, "terminal_label": True,
+              "stages": "plugins.embodiment_robosuite.env:pick_stages"},
 }
 
 
