@@ -3773,3 +3773,35 @@ reasoner)+ resolve(consumer=rsi)+ **rsi.campaign_complete(rules=[] skills=[] hel
 - qwen 臂 broken=1: 本族首次带破坏的规则, 早布防的代价面待复现块观察。
 - 工作区免选魔改进行中(另一 agent); 三臂期间 EGL 与 22GB sglang 并存无恙(Lift 无
   相机渲染, GPU 冲突担忧未兑现——但 lift_geometric 相机任务与大模型并存仍需实测)。
+
+## Round 99 - 2026-08-24 - ph-station: dsh 转正为自家仓 + 五面板 + cockpit 单命令
+
+### 做成了什么
+
+1. **ph-station 建仓(github.com/yusenthebot/ph-station, 私有)**: 从上游精确 tag
+   dsh-v0.1.1-rc.2 起家(四重对齐验证: tag→发布 PR/版本提交/npm tarball 逐字节),
+   保留 upstream remote 吸上游更新。品牌原生化进源码(pnpm run build 直出 PH 身份,
+   MIT 署名保留, official 构型不动), rebrand overlay 只剩 --npx 回退路径用。
+2. **数据面第三张脸(设计裁决 c)**: board/storecli.py = board.store 的 CLI 脸
+   (与 MCP 七工具镜像同源, 字节等价测试钉死); fork 侧 dsh-ph-board 桥 =
+   execFile→JSON.parse 逐字透传, 网关 POST /api/board/<fn>。TS 层零统计零业务
+   逻辑(对抗审计两轮全过)。新增 board/cards.py 机箱读源(manifest 纯数据折叠,
+   永不 import 卡代码), 同时上 CLI/MCP 双脸 + 等价测试。
+3. **五面板齐了**: 战报(配对门禁/McNemar/held-out 徽章) + 演进(代际 Δpp 条,
+   数字全 board.store 原文) + 机箱(9 卡网格, doctor 未接入就明标"未接入"不造假) +
+   账本(种子区块表, parse_ledger 没有的列不发明) + 状态条(MODE/心跳/桥连通,
+   render 窗与模型指示器无数据源故缺席)。
+4. **cockpit 单命令(UI-only 裁定落地)**: adopt-or-spawn 常驻运行时($DISPLAY 有则
+   带 --render), pidfile 精确 PID 收尸(--stop), 杀前复核 cmdline 防 PID 复用;
+   README 两屏配方塌缩成一条 scripts/cockpit。冷启动实证: 停净→一条命令→
+   :3080 + 单运行时带窗 + 网关应答 + MODE 不变。
+5. **快照纪律立碑**: 两片连犯"加测试不刷快照"——base-gate.md 立规: 动测试的
+   提交同 commit 刷快照。现值: 隔离 430/6/27, 全量 460/3 (HEAD 513dfd7)。
+
+### 什么没成 / 注意
+
+- 网关面数字表示一处无损差: JS JSON 把 0.0 渲成 0(sd/温度这类精确零浮点),
+  Python 双脸(CLI/MCP)字节等价不受影响; 有效数字全一致。
+- 机箱 doctor 状态、状态条 render/模型指示器: 缺读源, 属下一片(需要先给
+  board 加读函数, 不许 TS 越权)。overlay 退役等 parity 清单全绿后执行。
+- board/store.py + tests/test_store.py 的账本换行修复归另一会话, 全程未碰。
