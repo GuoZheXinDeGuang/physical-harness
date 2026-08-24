@@ -72,6 +72,7 @@ from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
 from harness.manifest import discover
+from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
 from profiles import base_profile
 
@@ -231,6 +232,22 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
         baseline = tuple(manifest)
     else:
         baseline = tuple(boot_row["data"]["skills_manifest"])
+
+    # Boot-time refusal of a record that cannot be assembled into the governance
+    # bundle it would steer under. Corrupt JSON already raised in
+    # InMemorySkillGraph(...) at mount; this second layer catches valid-JSON-but-
+    # unassemblable records (missing task/preconditions/recovery, unknown feature,
+    # non-invertible program) by DRY-RUNNING the exact task-time path
+    # (workload.assemble_bundle -> rule_from_canonical + privilege_cost) over each
+    # task present -- so "assemblable at boot" <=> "assemblable at task time" by
+    # construction, and the execution-mode skills-root immutability audit keeps the
+    # set fixed in between. Any exception here refuses the boot, never mid-episode.
+    # Execution only: evolution's records are campaign-produced (well-formed by
+    # construction) and inert until a later execution boot validates them.
+    if mode == "execution":
+        records = InMemorySkillGraph(root=str(skills_root)).skills()
+        for task in sorted({r.get("task") for r in records if r.get("task") is not None}):
+            workload.assemble_bundle(records, task)
 
     # Live operational status: overwritten on EVERY boot (fresh and resumed).
     # NOT a chain row -- render is live runtime state, not sealed evidence, so it

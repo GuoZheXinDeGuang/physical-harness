@@ -170,9 +170,11 @@ class _RolloutFake:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
         self.specs = []
+        self.bundles = []
 
-    def __call__(self, spec):
+    def __call__(self, spec, bundle=None):
         self.specs.append(spec)
+        self.bundles.append(bundle)
         return _rollout_result(self.outcomes.pop(0))
 
 
@@ -301,7 +303,7 @@ def test_pick_catalogue_and_oracle_validate():
     # fails loudly at dispatch, before any provider ref is even loaded
     node = {"id": "x", "skill": "pick", "args": {"object": "bottle"}, "after": []}
     with pytest.raises(ValueError, match="bottle"):
-        workload._dispatch(node, seed=1, env_ref="bogus", policy_ref="bogus")
+        workload._dispatch(node, seed=1, env_ref="bogus", policy_ref="bogus", skills=())
 
 
 def test_grasp_node_dispatches_the_lift_geometric_binding(monkeypatch):
@@ -315,7 +317,7 @@ def test_grasp_node_dispatches_the_lift_geometric_binding(monkeypatch):
     node = {"id": "grasp-0", "skill": "grasp", "args": {"object": "cube"}, "after": []}
 
     result = workload._dispatch(node, seed=0, env_ref="tests.fakes:env",
-                               policy_ref="tests.fakes:policy")
+                               policy_ref="tests.fakes:policy", skills=())
 
     assert result["success"] is True
     (spec,) = fake.specs

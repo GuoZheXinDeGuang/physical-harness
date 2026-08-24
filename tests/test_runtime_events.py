@@ -131,7 +131,7 @@ def test_faces_are_byte_identical(tmp_path):
                           tmp_path / "S.md", tmp_path / "p.md")
 
 
-def _ok_rollout(spec):
+def _ok_rollout(spec, bundle=None):
     return {"success": True, "steps": 10, "stages": [
         {"name": "grasp", "success": True}, {"name": "place", "success": True}]}
 

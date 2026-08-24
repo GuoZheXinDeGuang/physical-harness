@@ -32,7 +32,7 @@ from scripts import harness_runtime as runtime
 _SEALED_BASE_SHA = "b905a5119415de325c8c1d13f7c8a552eb3b2e8565e0a8af4ef7ca9c5f4c1a7c"
 
 
-def _ok_rollout(spec):
+def _ok_rollout(spec, bundle=None):
     return {"success": True, "steps": 10, "stages": [
         {"name": "grasp", "success": True}, {"name": "place", "success": True}]}
 

@@ -21,7 +21,7 @@ from plugins.task import workload
 from scripts import harness_runtime as runtime
 
 
-def _ok_rollout(spec):
+def _ok_rollout(spec, bundle=None):
     """governed_rollout's stages-on shape, always succeeding (no env built)."""
     return {"success": True, "steps": 10, "stages": [
         {"name": "grasp", "success": True}, {"name": "place", "success": True}]}

@@ -24,6 +24,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from harness import opstream
+from harness.config import sha_json
+from harness.features import privilege_cost
 from harness.kernel import Kernel
 from harness.registry import load_provider
 from harness.spec import EpisodeSpec
@@ -65,24 +67,76 @@ SKILL_SPECS: dict[str, dict[str, Any]] = {
 }
 
 
-def _governed_rollout(spec: EpisodeSpec) -> dict:
-    """One node, one plain governed rollout (no critic bundle).
+def _governed_rollout(spec: EpisodeSpec, bundle) -> dict:
+    """One node, one governed rollout under ``bundle`` (``None`` runs ungoverned).
 
     Reached by ref string, not import, for the same boundary reason as
     SKILL_SPECS above. Module-level so tests can monkeypatch the dispatch
     without touching the loop.
     """
-    return importlib.import_module("plugins.rsi.governed").governed_rollout(spec, None)
+    return importlib.import_module("plugins.rsi.governed").governed_rollout(spec, bundle)
 
 
-def _dispatch(node: Mapping, *, seed: int, env_ref: str, policy_ref: str) -> dict:
-    """Build the node's EpisodeSpec and run it, stage scorer aboard.
+def assemble_bundle(records, task):
+    """Reassemble a task's mounted SkillRecords into the governance Bundle whose
+    evidence they earned -- the SAME inversion + growth the campaign
+    rebuild/rescore/probe paths use (``rule_from_canonical`` + ``Bundle.append``),
+    never a second assembly implementation.
+
+    A record's ``preconditions`` IS a rule's canonical trigger and its
+    ``recovery`` IS the canonical recovery (plugins/rsi/workload.py), so the only
+    adaptation is a chain-position ``rule_id`` (g1..gN over ``records`` order --
+    ``skills()`` returns a content-digest sort, a deterministic total order; the
+    id only needs determinism+uniqueness because governed_rollout keys firing
+    state by list index, not id). Budgets are the MINIMUM admitting every rule's
+    declared reads, derived from the harness's own ``privilege_cost`` (the exact
+    function the episode's ``assert_privilege_budget`` measures against): the
+    critic budget SUMS distinct trigger features (one accumulating per-step view),
+    the action budget is the MAX recovery percept privilege (a fresh view per
+    fire, no cross-rule accumulation).
+
+    Only records whose held-out blind-twin judgement was ESTABLISHED may steer a
+    real run (charter: rules govern via the same governed_rollout that earned
+    their evidence); everything else is excluded. Zero matching records ->
+    ``(None, [])``, byte-identical to a bare ``governed_rollout(spec, None)``.
+
+    Reached by importlib, not import: plugins.task may not static-import
+    plugins.rsi (tests/test_boundaries.py) -- the same dodge ``_governed_rollout``
+    uses. Returns ``(bundle_or_None, [content_digest, ...])`` where the digests
+    ARE the skills-root filename stems / boot-seal ``skills_manifest`` entries, so
+    an auditor re-derives the identical bundle from exactly those records.
+    """
+    matching = [r for r in records
+                if r.get("task") == task
+                and r.get("heldout_judgement_established") is True]
+    if not matching:
+        return None, []
+    rebuild = importlib.import_module("plugins.rsi.rebuild")
+    Bundle = importlib.import_module("plugins.rsi.governed").Bundle
+    rules = [rebuild.rule_from_canonical(
+                {"rule_id": f"g{i + 1}", "trigger": rec["preconditions"],
+                 "recovery": rec["recovery"]})
+             for i, rec in enumerate(matching)]
+    critic_budget = privilege_cost(sorted({r.trigger.feature for r in rules}))
+    action_budget = max((r.recovery.percept_privilege for r in rules), default=0)
+    bundle = Bundle(rules=(), critic_budget=critic_budget, action_budget=action_budget)
+    for rule in rules:
+        bundle = bundle.append(rule)
+    return bundle, [sha_json(rec) for rec in matching]
+
+
+def _dispatch(node: Mapping, *, seed: int, env_ref: str, policy_ref: str,
+              skills) -> dict:
+    """Build the node's EpisodeSpec and run it, stage scorer aboard, under the
+    governance bundle its task's mounted skills assemble to.
 
     A binding either names its embodiment task directly ("stack": the policy
     is cubeA-on-cubeB by construction) or carries ``task_by_object`` mapping
     the node's object arg to a task ("pick"): the catalogue only types the
     arg, so an object with no scene binding fails loudly HERE, before any
-    actuation.
+    actuation. ``skills`` is the mounted SkillRecord set (``graph.skill``);
+    ``assemble_bundle`` selects the ones this node's task earned governance with,
+    or ``None`` when none match -- the ungoverned path, unchanged from before.
     """
     binding = SKILL_SPECS.get(node["skill"])
     if binding is None:
@@ -100,7 +154,19 @@ def _dispatch(node: Mapping, *, seed: int, env_ref: str, policy_ref: str) -> dic
     stages = load_provider(kwargs.pop("stages"))
     spec = EpisodeSpec(seed=seed, stages=stages, env_provider=env_ref,
                        policy_provider=policy_ref, **kwargs)
-    return _governed_rollout(spec)
+    bundle, digests = assemble_bundle(skills, spec.task)
+    result = _governed_rollout(spec, bundle)
+    # Seal WHICH rules governed this node and under what budgets: the content
+    # digests cross-check against runtime.boot's skills_manifest, bundle_sha pins
+    # the assembled chain's identity. Empty/None for a node no established skill
+    # matched (honest empty, byte-identical to today).
+    result["governance"] = {
+        "skills": digests,
+        "bundle_sha": bundle.sha() if bundle is not None else None,
+        "critic_budget": bundle.critic_budget if bundle is not None else 0,
+        "action_budget": bundle.action_budget if bundle is not None else 0,
+    }
+    return result
 
 
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
@@ -121,7 +187,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     scene = kernel.resolve("graph.scene", consumer=CONSUMER)
     # Accounted even while the catalogue is hand-declared: graph.skill is where
     # the measured-skill enrichment join lands when a multi-skill choice needs it.
-    kernel.resolve("graph.skill", consumer=CONSUMER)
+    # The handle is now load-bearing: its records assemble each node's governance.
+    skill_graph = kernel.resolve("graph.skill", consumer=CONSUMER)
     kernel.resolve("embodiment.env", consumer=CONSUMER)
     kernel.resolve("policy.driver", consumer=CONSUMER)
     # Intra-node fan-out lives behind exec.rollouts; the plan loop never does.
@@ -137,6 +204,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 "on an EpisodeSpec ref; use a parameter-free provider ref")
     env_ref = kernel.provider_ref("embodiment.env")
     policy_ref = kernel.provider_ref("policy.driver")
+    # The mounted sealed SkillRecords, frozen for the session (execution-mode
+    # skills-root immutability audit). Read once; assembled PER NODE, since a
+    # node's governance is the bundle its own task earned evidence with.
+    skills = skill_graph.skills()
     catalogue = brief["catalogue"]
     oracles = brief["oracles"]
 
@@ -185,7 +256,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                               actuation=actuations)
                 opstream.emit("actuation_start", node=node["id"], actuation=actuations)
                 result = _dispatch(node, seed=seed, env_ref=env_ref,
-                                   policy_ref=policy_ref)
+                                   policy_ref=policy_ref, skills=skills)
                 opstream.emit("actuation_end", node=node["id"], actuation=actuations,
                               success=bool(result.get("success")),
                               steps=result.get("steps"))
@@ -199,7 +270,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                              if v["after"] == node["id"] and not result["success"]]
                 nodes_out[node["id"]] = {"success": bool(result["success"]),
                                          "steps": result.get("steps"),
-                                         "stages": stages}
+                                         "stages": stages,
+                                         "governance": result["governance"]}
                 if left or bad_preds:
                     fault = {"kind": "node_failure", "node": node["id"],
                              "failed": left + bad_preds, "done": done, "left": left,
@@ -237,7 +309,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         "actuations": actuations, "faults": faults,
         "nodes": {nid: {"success": n["success"],
                         "stages": [{"name": s["name"], "success": s["success"]}
-                                   for s in n["stages"]]}
+                                   for s in n["stages"]],
+                        "governance": n["governance"]}
                   for nid, n in nodes_out.items()},
     })
     return out
