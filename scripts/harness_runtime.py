@@ -66,6 +66,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from board.store import parse_ledger
+from harness import opstream
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
@@ -239,6 +240,12 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     (session_dir / "runtime_status.json").write_text(json.dumps({
         "pid": os.getpid(), "render": render, "mode": mode,
         "boot_ts": time.time(), "display": os.environ.get("DISPLAY")}))
+
+    # Same live-state family: the operational event feed the execution-graph
+    # panel animates. Truncated per boot (this boot IS the feed's horizon);
+    # arm() failure leaves it unarmed and the runtime unharmed.
+    opstream.arm(session_dir / "runtime_events.jsonl")
+    opstream.emit("boot", pid=os.getpid(), mode=mode, render=render)
 
     # The authority allowlists are the manifest union at boot (discover() raises
     # on an actuation:real card, so the sim runtime refuses to boot with one).
@@ -443,6 +450,8 @@ def _process(rt: Runtime, path: Path) -> None:
         # malformed: nothing to attribute a note to (design: failed/ with no note)
         os.replace(claimed, rt.failed / brief_id)
         return
+    opstream.emit("task_claimed", brief=brief_id, task=brief.get("task"),
+                  campaign=brief.get("campaign"), seed=brief.get("seed"))
     try:
         kind = brief.get("kind", "task")
         unknown = set(brief) - _BRIEF_KEYS.get(kind, set())
@@ -479,8 +488,11 @@ def _process(rt: Runtime, path: Path) -> None:
         rt.log.append("runtime.task_error",
                       {"brief": brief_id, "task": brief.get("task"),
                        "error": repr(exc)})
+        opstream.emit("task_failed", brief=brief_id, task=brief.get("task"),
+                      error=repr(exc))
         os.replace(claimed, rt.failed / brief_id)
         return
+    opstream.emit("task_done", brief=brief_id, task=brief.get("task"))
     try:
         os.replace(claimed, rt.done / brief_id)
     except OSError as exc:

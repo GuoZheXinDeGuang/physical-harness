@@ -390,6 +390,42 @@ def read_runtime_status(session_dir: str | Path) -> dict | None:
         return None
 
 
+def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
+    """The resident runtime's OPERATIONAL event feed for one session
+    (``<session>/runtime_events.jsonl``, written by harness.opstream: truncated
+    per boot, one JSON line per event) -- events with ``seq > after_seq`` plus
+    ``last_seq``, the newest seq in the file. Live state, not sealed evidence:
+    no chain verify, absent file reads as an empty feed.
+
+    Cursor contract: a poller passes its last-seen seq and appends the returned
+    events; ``last_seq < after_seq`` means the runtime re-booted (the file was
+    truncated and seq restarted), so the poller resets its cursor to 0 and
+    re-reads. Same partial-tolerant line loop as the other jsonl readers: a
+    half-written trailing line is skipped and picked up whole on the next poll.
+    """
+    path = Path(session_dir) / "runtime_events.jsonl"
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return {"events": [], "last_seq": 0}
+    events: list[dict] = []
+    last_seq = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not (isinstance(row, dict) and isinstance(row.get("seq"), int)):
+            continue
+        last_seq = max(last_seq, row["seq"])
+        if row["seq"] > after_seq:
+            events.append(row)
+    return {"events": events, "last_seq": last_seq}
+
+
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once."""

@@ -101,6 +101,17 @@ def runtime_status(name: str) -> dict | None:
 
 
 @mcp.tool()
+def runtime_events(name: str, after_seq: int = 0) -> dict:
+    """One runtime session's OPERATIONAL event feed (runtime_events.jsonl):
+    events with seq > after_seq plus last_seq. last_seq < after_seq means the
+    runtime re-booted (feed truncated); reset the cursor to 0 and re-read.
+    Live progress (task_claimed/plan_built/node/stage/replan), never chain
+    evidence."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_events(path, after_seq) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def ledger() -> list[dict]:
     """Seed-block burn map parsed from STATUS.md's budget section."""
     return bs.parse_ledger(_read(_Cfg.status))

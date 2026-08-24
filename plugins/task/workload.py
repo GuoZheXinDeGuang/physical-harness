@@ -23,6 +23,7 @@ import importlib
 from collections.abc import Mapping
 from typing import Any
 
+from harness import opstream
 from harness.kernel import Kernel
 from harness.registry import load_provider
 from harness.spec import EpisodeSpec
@@ -142,6 +143,15 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                  "budget": max_actuations - actuations}
         plan = planner.plan(brief)
         ok, msg = validate_plan(plan, catalogue, oracles)
+        # Operational feed (harness.opstream; never chain evidence): the FULL
+        # node graph, the moment it exists, so the execution-graph panel draws
+        # the plan while the first node is still running.
+        nodes = list(plan.get("nodes") or []) if ok else []
+        opstream.emit("plan_built", replan=replans, valid=ok, msg=None if ok else msg,
+                      goal=plan.get("goal") if isinstance(plan, Mapping) else None,
+                      nodes=[{"id": n.get("id"), "skill": n.get("skill"),
+                              "args": dict(n.get("args") or {})} for n in nodes],
+                      verify=[dict(v) for v in (plan.get("verify") or [])] if ok else [])
         fault: dict | None = None
         if not ok:
             fault = {"kind": "invalid_plan", "msg": msg}
@@ -161,8 +171,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                                      f"before dispatching node {node['id']!r}")}
                     break
                 actuations += 1
+                opstream.emit("node_start", node=node["id"], skill=node["skill"],
+                              actuation=actuations)
+                opstream.emit("actuation_start", node=node["id"], actuation=actuations)
                 result = _dispatch(node, seed=seed, env_ref=env_ref,
                                    policy_ref=policy_ref)
+                opstream.emit("actuation_end", node=node["id"], actuation=actuations,
+                              success=bool(result.get("success")),
+                              steps=result.get("steps"))
                 stages = result.get("stages", [])
                 done = [s["name"] for s in stages if s["success"]]
                 left = [s["name"] for s in stages if not s["success"]]
@@ -179,7 +195,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                              "failed": left + bad_preds, "done": done, "left": left,
                              "msg": (f"node {node['id']!r} failed: stages {left}, "
                                      f"predicates {bad_preds}; done {done}")}
+                    opstream.emit("node_failed", node=node["id"],
+                                  failed=left + bad_preds, done=done)
                     break
+                opstream.emit("node_verified", node=node["id"], stages=done)
             if fault is not None:
                 # Node-id-level attribution alongside the stage-level
                 # done/left above: the planner keeps finished NODES too.
@@ -194,11 +213,15 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         if fault["kind"] == "budget" or replans >= max_replans:
             break
         replans += 1
+        opstream.emit("replan", replan=replans, fault_kind=fault["kind"],
+                      node=fault.get("node"), msg=fault.get("msg"))
         brief = {**brief, "fault": fault}
 
     goal = plan.get("goal") if isinstance(plan, Mapping) else None
     out = {"success": success, "goal": goal, "replans": replans,
            "actuations": actuations, "nodes": nodes_out, "faults": faults}
+    opstream.emit("plan_complete", success=success, goal=goal,
+                  replans=replans, actuations=actuations)
     kernel.note("task.plan_complete", {
         "success": success, "goal": goal, "replans": replans,
         "actuations": actuations, "faults": faults,

@@ -31,6 +31,7 @@ import numpy as np
 # vocabulary: driver construction is the policy.driver capability, reached
 # through the governor shell until the shared vocabulary refactor lands.
 from governor.policy import make_driver
+from harness import opstream
 from harness.episode_log import chain_start, chain_step
 from harness.invariant import (
     assert_privilege_budget,
@@ -268,6 +269,12 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
                     "success": stages[stage_idx].holds(sv), "reached": True,
                     "privilege_used": sv.privilege_used(),
                 })
+                # Operational feed only (no-op outside the resident runtime;
+                # campaigns run in an unarmed subprocess). Fires at stage
+                # cadence, never per step, so the hot loop stays cheap.
+                opstream.emit("stage_transition", stage=stages[stage_idx].name,
+                              success=stage_results[-1]["success"],
+                              entered_step=stage_entered, exited_step=exited_step)
                 stage_entered = k
                 stage_idx += 1
 
