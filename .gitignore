@@ -6,3 +6,9 @@ runs/
 .ruff_cache/
 *.egg-info/
 .DS_Store
+
+# local-only iteration record (worklog + archived round docs); never pushed.
+# progress.md must stay resolvable at repo root: the live cockpit rounds feed
+# reads it there (board.parse_rounds), it is just not tracked.
+local-archive/
+progress.md

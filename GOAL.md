@@ -1,7 +1,7 @@
 # GOAL v3 - 从单技能治理到 agentic 骨架
 
 (2026-08-22 重定向, 4090 冷启动后。phase 2 的 GOAL v2 与其 5 条验收已达成并以双策略
-parity 收口, 记录在 STATUS.md 与 docs/l2-inventory.md; v2 全文在 git 历史。)
+parity 收口, 记录在 STATUS.md; v2 全文与 l2 盘点在 git 历史。)
 
 ## 背景变化
 
