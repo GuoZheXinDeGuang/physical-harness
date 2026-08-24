@@ -2,9 +2,8 @@
 
 Point it at a `runs/` directory to read every campaign store, the runtime
 session chains, the seed ledger and the rounds feed — all read-only over the
-sealed evidence in `runs/`. The hand-rolled HTTP server + single-page front end
-retired at round 95; the live cockpit is now DeepSeek Harness (dsh) driving the
-MCP server below, and the exported deliverable is a self-contained HTML report.
+sealed evidence in `runs/`. The live cockpit is ph-station driving the MCP
+server below; the exported deliverable is a self-contained HTML report.
 
 ## Surfaces
 
@@ -15,8 +14,8 @@ MCP server below, and the exported deliverable is a self-contained HTML report.
   badge (verified / broken / not verifiable), the seed-ledger burn map, and the
   rounds feed. Headless, for cron. `--status` / `--progress` override the
   STATUS.md / progress.md paths (default: the files next to `runs/`).
-- **MCP server** — `board/mcp_server.py` is the stdio MCP server the dsh cockpit
-  connects to: eight read-only tools (`list_stores`, `store`, `heldout`,
+- **MCP server** — `board/mcp_server.py` is the stdio MCP server the ph-station
+  cockpit connects to: eight read-only tools (`list_stores`, `store`, `heldout`,
   `sessions`, `session`, `runtime_status`, `ledger`, `rounds`), each one call into `board.store`
   returning the same dicts, plus `submit_brief`, which drops a brief into the
   resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —

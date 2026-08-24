@@ -184,11 +184,15 @@ def test_verify_reddens_missing_prereg_sha(tmp_path):
 def test_verify_claim_greens_the_committed_stack_card():
     """The stack skill card (plugins/task) claims runs/stack-g1: --verify-claim
     reads the [claim.sealed] table and greens it against the sealed store."""
+    if not (_REPO / "runs" / "stack-g1").is_dir():
+        pytest.skip("runs/stack-g1 sealed store not present in this checkout")
     rep = verify_claim(_REPO / "plugins" / "task")
     assert rep.green, _fails(rep)
 
 
 def test_verify_claim_greens_the_committed_place_card():
+    if not (_REPO / "runs" / "place-g2").is_dir():
+        pytest.skip("runs/place-g2 sealed store not present in this checkout")
     rep = verify_claim(_REPO / "plugins" / "skill_place")
     assert rep.green, _fails(rep)
     # both sealed place digests are pinned and the rescore blocks are present.

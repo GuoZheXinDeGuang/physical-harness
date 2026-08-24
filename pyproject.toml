@@ -13,8 +13,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-timeout>=2", "ruff==0.16.4"]
-# cockpit: the dsh (round-95 adoption) MCP seam. `mcp` is the standard MCP Python
+# dev carries mcp too: the both-faces equivalence tests import board/mcp_server.
+dev = ["pytest>=8", "pytest-timeout>=2", "ruff==0.16.4", "mcp==2.0.0"]
+# cockpit: the console MCP seam. `mcp` is the standard MCP Python
 # SDK, scoped to board/mcp_server.py alone -- justified over hand-rolling the
 # stdio JSON-RPC handshake/framing (correctness on the edge cases). Pinned: dsh
 # is an RC, so the wire (this SDK) is the piece we hold stable.

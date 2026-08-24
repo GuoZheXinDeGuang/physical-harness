@@ -691,7 +691,7 @@ def _maybe_search_recovery(rule: Rule, parent: Bundle, dev_specs, prereg: Prereg
     # The recovery gate must not include the seeds the recovery was searched on.
     # It did until round 8, and the consequence was measurable: the same searched
     # program cleared the half-in-sample dev gate at +5.8% p=0.039 while a clean
-    # held-out comparison put it at +4.0% p=0.096 (docs/round6-recovery-search.md).
+    # held-out comparison put it at +4.0% p=0.096 (round-6 sweep, local archive).
     all_dev = list(dev_specs)
     subset = all_dev[: prereg.recovery_search_n]
     gate_specs = all_dev[prereg.recovery_search_n:]

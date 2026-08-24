@@ -52,3 +52,15 @@ manifest fold reproduces the old hard-coded mounts.
 
 **Discipline: a commit that adds or removes tests refreshes this snapshot + the
 two README counts IN THE SAME COMMIT.**
+
+## fresh-clone variance
+
+The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
+(not in git). A fresh clone legitimately shows MORE skips, never failures:
+
+- +2 `test_plugin_doctor.py` verify-claim tests skip (sealed stores absent)
+- +2 more skips where tests read sealed rescore/campaign artifacts
+- the two 30-秒上手 commands in README work as written: the `dev` extra carries
+  everything collection needs (including `mcp` for the both-faces tests)
+
+A fresh clone that shows a FAILURE (not a skip) is a real regression.
