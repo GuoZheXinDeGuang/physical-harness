@@ -97,3 +97,19 @@ Full-suite parity (card present): `457 passed, 3 skipped`. Measured at HEAD
 `a7e74ed` in a throwaway `git worktree` — note the gate needs `runs/` present
 (symlink it in): the two `verify_claim` tests read sealed stores and FAIL (not
 skip) without them.
+
+## ph-station slice-3 snapshot (2026-08-24, isolated, robosuite blocked)
+
+```
+pass       : 430 passed   (+3 over slice-2: tests/test_cards.py 机箱 both-faces)
+skips      : 6 skipped    (same reasons as round-96)
+wall time  : ~4.2s
+AST green  : 17 passed (test_boundaries + test_kernel)
+deselected : 27 robosuite-marked items
+```
+
+Full-suite parity (card present): `460 passed, 3 skipped`. Measured at HEAD
+`513dfd7`, throwaway worktree + `runs/` symlink.
+
+**Discipline (two slices missed it in a row): a commit that adds or removes
+tests refreshes this snapshot + the two README counts IN THE SAME COMMIT.**
