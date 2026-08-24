@@ -1,5 +1,14 @@
 # dsh 驾驶舱采纳施工图 (round 95 design, 2026-08-23)
 
+> **STATUS 2026-08-24 — OVERLAY HALF RETIRED.** The npx + `rebrand.sh`
+> string-patching overlay described below (the "PH 上牌" chrome patches and the
+> `cockpit runs rebrand.sh on every launch` re-apply story) is **superseded and
+> deleted**: branding is now native in the `ph-station` fork source and served
+> from the fork build. See `docs/ph-station-design.md` (esp. §1 + §6). The MCP
+> seam, the `_BRIEF_KEYS` server-side guard, and `profiles/dsh/seed_workspace.py`
+> (the one surviving overlay piece — now called directly by `scripts/cockpit`)
+> all still stand. Read the rest as the historical round-95 record.
+
 用户裁定: GUI/CLI 不再自建, 改用 deepseek-harness。三个开放问题的裁决:
 1. 工具链: nvm 局部 Node 22 + pnpm 11.7, 不碰系统 node。
 2. RC 风险: pin 0.1.1-rc.2; rungs 1-3 证对等后 rung 4 才删自建 GUI; profile 接受随版本重同步。

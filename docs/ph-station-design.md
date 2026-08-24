@@ -308,6 +308,15 @@ Everything else → §7 roadmap.
 
 ## 6. Migration — npx+overlay → fork build
 
+> **STATUS 2026-08-24 — MIGRATION COMPLETE, OVERLAY RETIRED.** The parity
+> checklist below passed against the running fork build (all 7 green), so the
+> retirement was executed: `profiles/dsh/rebrand.sh` deleted, and the `--npx`
+> branch + `DSH_PKG` pin removed from `scripts/cockpit`. The fork build is now
+> the **sole** path (no `--npx` fallback). `profiles/dsh/seed_workspace.py` and
+> the `~/.dsh/cordis.patch.yml` deploy overlay (MCP row only) are **kept**. The
+> bullets and `--npx` mechanics below are retained as the historical record of
+> how the switchover was designed and verified.
+
 Edit `/home/yusenzlabpc/Desktop/physical-harness/scripts/cockpit`.
 
 **New default = fork build; `--npx` = fallback.**
@@ -327,10 +336,12 @@ Edit `/home/yusenzlabpc/Desktop/physical-harness/scripts/cockpit`.
 - **`--npx` path (fallback, unchanged):** run `rebrand.sh` (+ its seed tail) then
   `exec npx --yes @deepseek-ai/dsh@0.1.1-rc.2 web --no-open --port "$PORT"`.
 
-**Rollback:** `scripts/cockpit --npx` restores the exact round-95 behavior. The
-`0.1.1-rc.2` pin and `profiles/dsh/rebrand.sh` stay in the tree, unmodified, until
-the parity checklist passes. Only then do they retire (delete plan below —
-**not yet executed**).
+**Rollback (historical):** while the overlay lived, `scripts/cockpit --npx`
+restored the exact round-95 behavior, and the `0.1.1-rc.2` pin + `rebrand.sh`
+stayed in-tree until the parity checklist passed. That gate is now met, so the
+`--npx` path, the pin, and `rebrand.sh` have been removed (see the STATUS banner
+above and the Retire plan below). Reverting is a `git revert` of the retirement
+commit, not a runtime flag.
 
 **Single entry — runtime adopt-or-spawn (round 98, ✅ landed).** The operator is
 UI-only, so `scripts/cockpit` now starts *everything*: before serving the console
@@ -353,7 +364,7 @@ and fork paths concurrently on the same `DSH_HOME`; expect symlink churn when
 alternating. Both are version `0.1.1-rc.2` so `profiles/web/package.json`
 normalizes cleanly.
 
-### parity_checklist (all must pass before `rebrand.sh` + the npx pin retire)
+### parity_checklist (all must pass before `rebrand.sh` + the npx pin retire) — ✅ ALL PASSED 2026-08-24 (fork build, running :3080)
 
 1. `curl localhost:3080/` on the **fork** build → `<title>physical-harness 控制台</title>`; PWA manifest name/short = `physical-harness 控制台`/`PH`; favicon is the PH monogram.
 2. Served client bundles carry the native hero headline + placeholder (`对物理测试台下达任务…`); no `探索未至之境` / `Into the Unknown` / `DSH Local Build` / `HARNESS` / `FishLogo` whale anywhere in the running UI (sidebar mark, hero mark, boot splash).
@@ -368,11 +379,12 @@ normalizes cleanly.
    so the published dsh never meets a host package its tree cannot resolve.
 7. Fork build is green (`pnpm run build`) and the box can rebuild from clean.
 
-### Retire plan (after parity, separate PR — not executed by this task)
+### Retire plan — ✅ EXECUTED 2026-08-24
 
-Delete `profiles/dsh/rebrand.sh`; delete the `DSH_PKG=@deepseek-ai/dsh@0.1.1-rc.2`
-pin and the `--npx` branch from `scripts/cockpit`; keep `profiles/dsh/seed_workspace.py`
-(user-data seed, still used) and `~/.dsh/cordis.patch.yml` (MCP row only — the
+Done: deleted `profiles/dsh/rebrand.sh`; removed the `DSH_PKG=@deepseek-ai/dsh@0.1.1-rc.2`
+pin and the `--npx` branch from `scripts/cockpit`. Kept `profiles/dsh/seed_workspace.py`
+(user-data seed — the fork cockpit path already calls it directly, so it was never
+coupled to the deleted overlay) and `~/.dsh/cordis.patch.yml` (MCP row only — the
 BoardBridge row lives in the fork bundle, see §3).
 
 ---

@@ -30,8 +30,8 @@ TIMING
     The dsh server holds this unit open in memory and republishes the whole file
     on every mutation, so a seed written while the server is running is
     overwritten by the running process. Seed BEFORE the server starts (the
-    cockpit runs the rebrand overlay, which calls this, before `exec dsh web`)
-    or restart the server after seeding.
+    cockpit calls this directly, pre-`exec node ... web`) or restart the server
+    after seeding.
 
 USAGE
     seed_workspace.py --workspace /abs/dir --dsh-home ~/.dsh
@@ -70,7 +70,8 @@ def seed(workspace: str, dsh_home: str, *, log=print) -> int:
     Returns 0 when the workspace is present after the call (seeded or already
     there), 1 on a skip/drift that left the goal unmet (bad path, unreadable
     file, or a foreign unit version). Never raises for those conditions -- a
-    partly-native console still serves, same contract as the rebrand overlay.
+    console with no pre-seeded workspace still serves (the cockpit warns and
+    continues), so a seed hiccup never blocks the launch.
     """
     ws_path = os.path.realpath(workspace) if workspace else ""
     if not ws_path or not os.path.isdir(ws_path):
