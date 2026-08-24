@@ -303,16 +303,16 @@ def is_session(session_dir: str | Path) -> bool:
     return (Path(session_dir) / "session-log" / "rows.jsonl").exists()
 
 
-def _session_rows(log_dir: Path) -> tuple[dict[str, list[dict]], int]:
-    """Row ``data`` payloads grouped by kind, plus a skip count -- same partial-
-    tolerant line loop as _index_rows: the runtime appends rows.jsonl line by
-    line, so a live poll can catch a half-written trailing line. Skip it (and
+def _chain_rows(log_dir: Path) -> tuple[list[dict], int]:
+    """Whole rows in seq order + a mid-write skip count -- same partial-tolerant
+    line loop as _index_rows: the runtime appends rows.jsonl line by line, so a
+    live poll can catch a half-written trailing (or non-row) line. Skip it (and
     count it) rather than crash; the next poll gets the whole row."""
-    by_kind: dict[str, list[dict]] = {}
+    rows: list[dict] = []
     skipped = 0
     path = log_dir / "rows.jsonl"
     if not path.exists():
-        return by_kind, skipped
+        return rows, skipped
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line:
@@ -323,10 +323,27 @@ def _session_rows(log_dir: Path) -> tuple[dict[str, list[dict]], int]:
             skipped += 1
             continue
         if isinstance(row, dict) and "kind" in row and "data" in row:
-            by_kind.setdefault(row["kind"], []).append(row["data"])
+            rows.append(row)
         else:
             skipped += 1
+    return rows, skipped
+
+
+def _session_rows(log_dir: Path) -> tuple[dict[str, list[dict]], int]:
+    """Row ``data`` payloads grouped by kind, plus a skip count. Thin regroup
+    over _chain_rows (which does the partial-tolerant read)."""
+    rows, skipped = _chain_rows(log_dir)
+    by_kind: dict[str, list[dict]] = {}
+    for row in rows:
+        by_kind.setdefault(row["kind"], []).append(row["data"])
     return by_kind, skipped
+
+
+def chain_rows(session_dir: str | Path) -> list[dict]:
+    """Whole session chain rows (seq/kind/data/...) in order, mid-write tolerant.
+    read_session groups payloads by kind and drops seq; this keeps rows whole so
+    a reader can attribute one to a brief (used by mcp_server.run_task)."""
+    return _chain_rows(Path(session_dir) / "session-log")[0]
 
 
 def _session_mtime(log_dir: Path) -> float:

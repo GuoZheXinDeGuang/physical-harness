@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -134,6 +135,80 @@ def submit_brief(brief: dict) -> dict:
     name = f"brief-{uuid.uuid4().hex}.json"
     drop(_Cfg.inbox, name, json.dumps(brief))
     return {"submitted": name, "inbox": str(_Cfg.inbox)}
+
+
+def _outcome(status: str, brief_id: str, session_dir: Path, baseline: int,
+             elapsed: float) -> dict:
+    """Copy THIS brief's sealed chain row into a compact result. The runtime is
+    the SOLE authority on success -- fields are copied verbatim, nothing here
+    interprets them. failed/ carries a runtime.task_error whose ``brief`` matches
+    (unambiguous); done/ carries a task.plan_complete, which carries no brief_id.
+    ponytail: attribute the done row as the last plan_complete after our baseline
+    seq -- exact for serial briefs (the interactive MCP case). Add a brief_id to
+    plan_complete and match it if concurrent submitters ever misattribute."""
+    new = [r for r in bs.chain_rows(session_dir) if r.get("seq", -1) > baseline]
+    if status == "failed":
+        row = next((r for r in reversed(new)
+                    if r["kind"] == "runtime.task_error"
+                    and r["data"].get("brief") == brief_id), None)
+        out = {"status": "failed", "brief_id": brief_id, "elapsed_s": elapsed}
+        if row is not None:
+            out["error"] = row["data"].get("error")
+            out["chain_seq"] = row["seq"]
+        return out
+    row = next((r for r in reversed(new) if r["kind"] == "task.plan_complete"), None)
+    out = {"status": "done", "brief_id": brief_id, "elapsed_s": elapsed}
+    if row is not None:
+        d = row["data"]
+        out["success"] = d.get("success")
+        out["nodes"] = d.get("nodes")
+        out["chain_seq"] = row["seq"]
+        if d.get("faults"):
+            out["failure"] = d["faults"]
+    return out
+
+
+@mcp.tool()
+def run_task(task: str, seed: int, max_replans: int | None = None,
+             max_actuations: int | None = None, timeout_s: float = 120) -> dict:
+    """Submit a task brief and BLOCK until the resident runtime finishes it.
+
+    Kills the submit -> bash-poll -> read-session ceremony: one call drops the
+    brief (the SAME atomic path submit_brief uses -- no second implementation),
+    watches the runtime's own inbox/processing -> done/|failed/ protocol
+    (read-only, ~0.5s poll), then returns the sealed chain row for THIS brief.
+
+    The runtime stays the SOLE authority: this does NO _BRIEF_KEYS validation
+    (an injected key still hard-fails in the runtime, surfacing here as
+    status:failed) and copies task.plan_complete / runtime.task_error fields
+    verbatim -- it never decides success itself. Returns
+    ``{status: done|failed|timeout, brief_id, ...}``: done carries
+    success/nodes (+failure faults when the goal was missed), failed carries
+    error, timeout carries guidance (the brief keeps running; poll the session
+    later with session()).
+    """
+    brief = {"kind": "task", "task": task, "seed": seed}
+    if max_replans is not None:
+        brief["max_replans"] = max_replans
+    if max_actuations is not None:
+        brief["max_actuations"] = max_actuations
+    session_dir = _Cfg.inbox.parent
+    baseline = max((r.get("seq", -1) for r in bs.chain_rows(session_dir)), default=-1)
+    brief_id = submit_brief(brief)["submitted"]
+
+    done_dir, failed_dir = session_dir / "done", session_dir / "failed"
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_s:
+        if (done_dir / brief_id).exists():
+            return _outcome("done", brief_id, session_dir, baseline,
+                            round(time.monotonic() - start, 3))
+        if (failed_dir / brief_id).exists():
+            return _outcome("failed", brief_id, session_dir, baseline,
+                            round(time.monotonic() - start, 3))
+        time.sleep(0.5)
+    return {"status": "timeout", "brief_id": brief_id,
+            "elapsed_s": round(time.monotonic() - start, 3),
+            "guidance": f"brief still running; poll session({session_dir.name!r}) later"}
 
 
 def main(argv=None) -> int:

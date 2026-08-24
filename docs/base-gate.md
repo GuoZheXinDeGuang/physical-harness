@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-24, isolated, robosuite blocked)
 
 ```
-pass       : 433 passed
+pass       : 437 passed
 skips      : 6 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -46,7 +46,7 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 27 robosuite-marked items
 ```
 
-Full-suite parity (card present): `463 passed, 3 skipped`. base_profile sha is
+Full-suite parity (card present): `467 passed, 3 skipped`. base_profile sha is
 byte-stable at `b905a5…` (folds to the value sealed in runs/round25-rerun) — the
 manifest fold reproduces the old hard-coded mounts.
 

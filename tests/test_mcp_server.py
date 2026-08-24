@@ -14,6 +14,7 @@ on-disk shapes, not a hand-mocked one.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from test_read_session import _session
@@ -21,6 +22,7 @@ from test_store import _campaign, _mkstore, _paired
 
 from board import mcp_server as ms
 from board import store as bs
+from harness.events import SessionLog
 
 
 def _same(a, b) -> bool:
@@ -76,3 +78,92 @@ def test_traversal_name_rejected_by_shared_guard(tmp_path):
     assert ms.runtime_status("../session-main") == {"error": "unknown session"}
     # the guard itself: a traversal name never resolves outside runs_dir
     assert bs.safe_child(tmp_path / "runs", "../STATUS.md", lambda p: True) is None
+
+
+# --- run_task: submit + wait + read, one call ------------------------------
+#
+# The fake runtime is a monkeypatched time.sleep: on each poll tick it does the
+# real runtime's move+append (inbox -> done|failed, seal one chain row) for the
+# one pending brief. So run_task's real submit/poll/read loop runs synchronously
+# with no threads and no MuJoCo -- the runtime is faked, the tool under test is not.
+
+
+def _run_task_session(tmp_path: Path) -> Path:
+    """A fake session: one pre-existing chain row (so baseline is nonzero and the
+    tool must skip it) + an empty inbox. Returns the session dir."""
+    session = tmp_path / "session-main"
+    (session / "inbox").mkdir(parents=True)
+    SessionLog(session / "session-log").append("runtime.boot", {"mode": "execution"})
+    ms.configure(tmp_path, inbox=session / "inbox")
+    return session
+
+
+def _fake_runtime(session: Path, dest: str, kind: str, data: dict):
+    """Seal one chain row then os.replace the one pending brief inbox -> dest,
+    exactly the move+append scripts/harness_runtime.py:_process does."""
+    briefs = list((session / "inbox").glob("*.json"))
+    if not briefs:
+        return
+    SessionLog.load(session / "session-log").append(kind, data)
+    (session / dest).mkdir(exist_ok=True)
+    os.replace(briefs[0], session / dest / briefs[0].name)
+
+
+def test_run_task_done_reads_plan_complete(tmp_path, monkeypatch):
+    session = _run_task_session(tmp_path)
+    nodes = {"stack-0": {"success": True, "stages": []}}
+    monkeypatch.setattr(ms.time, "sleep", lambda _: _fake_runtime(
+        session, "done", "task.plan_complete",
+        {"success": True, "goal": "stacked", "faults": [], "nodes": nodes}))
+
+    res = ms.run_task("stack", 90000)
+
+    assert res["status"] == "done"
+    assert res["success"] is True          # copied verbatim, not re-decided
+    assert res["nodes"] == nodes
+    assert res["chain_seq"] == 1           # after the seq-0 boot row
+    assert "failure" not in res            # no faults -> no failure key
+    assert res["brief_id"].startswith("brief-") and "elapsed_s" in res
+
+
+def test_run_task_done_carries_faults_as_failure(tmp_path, monkeypatch):
+    session = _run_task_session(tmp_path)
+    faults = [{"kind": "budget", "msg": "out of actuations"}]
+    monkeypatch.setattr(ms.time, "sleep", lambda _: _fake_runtime(
+        session, "done", "task.plan_complete",
+        {"success": False, "faults": faults, "nodes": {}}))
+
+    res = ms.run_task("clear_table", 90003)
+
+    assert res["status"] == "done" and res["success"] is False
+    assert res["failure"] == faults        # goal missed -> faults surface verbatim
+
+
+def test_run_task_failed_reads_task_error(tmp_path, monkeypatch):
+    session = _run_task_session(tmp_path)
+
+    def fake_sleep(_):
+        briefs = list((session / "inbox").glob("*.json"))
+        if briefs:
+            _fake_runtime(session, "failed", "runtime.task_error",
+                          {"brief": briefs[0].name, "task": "stack",
+                           "error": "ValueError('unknown brief keys')"})
+    monkeypatch.setattr(ms.time, "sleep", fake_sleep)
+
+    res = ms.run_task("stack", 90001)
+
+    assert res["status"] == "failed"
+    assert "unknown brief keys" in res["error"]
+    assert res["chain_seq"] == 1
+    assert "success" not in res and "nodes" not in res
+
+
+def test_run_task_timeout_leaves_brief_pending(tmp_path, monkeypatch):
+    session = _run_task_session(tmp_path)
+    monkeypatch.setattr(ms.time, "sleep", lambda _: None)  # runtime never claims it
+
+    res = ms.run_task("stack", 90002, timeout_s=0.05)
+
+    assert res["status"] == "timeout"
+    assert "guidance" in res and res["brief_id"].startswith("brief-")
+    assert (session / "inbox" / res["brief_id"]).exists()  # still queued, keeps running
