@@ -426,6 +426,59 @@ def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
     return {"events": events, "last_seq": last_seq}
 
 
+def session_progress(session_dir: str | Path) -> dict:
+    """Mission-progress aggregate over one session's ``task.plan_complete`` rows.
+
+    The mission→task→stage tree already lives in ``read_session``'s rows; this is
+    the one place that FOLDS it into counts (task tallies, total replans/faults,
+    stage pass-rate) so the cockpit's progress panel renders numbers it never
+    computes -- the charter's hard rule that statistics live in board/, not the
+    fork's TypeScript. Same mid-write-tolerant read as read_session (a live poll
+    can land between appended rows); a partial trailing row is skipped, not fatal.
+
+    ``stage_pass_rate`` is ``stages_passed / stages`` over every stage of every
+    task node, or ``None`` when no stage has run yet (an empty tree is honest
+    "no rate", never a fabricated 0/0). ``latest`` is the newest plan_complete
+    row (append order) shaped for the pipeline view -- its goal, node tree, and
+    run tallies -- or ``None`` before the first task seals, so the panel shows an
+    idle state rather than inventing one. ``task_errors`` counts
+    ``runtime.task_error`` rows (rejected briefs), a fault class distinct from a
+    node failure inside a sealed plan.
+    """
+    session_dir = Path(session_dir)
+    by_kind, _skipped = _session_rows(session_dir / "session-log")
+    runs = by_kind.get("task.plan_complete", [])
+    succeeded = sum(1 for r in runs if r.get("success"))
+    stages = stages_passed = 0
+    for r in runs:
+        for node in (r.get("nodes") or {}).values():
+            for stage in node.get("stages") or []:
+                stages += 1
+                if stage.get("success"):
+                    stages_passed += 1
+    latest = runs[-1] if runs else None
+    return {
+        "name": session_dir.name,
+        "tasks": len(runs),
+        "succeeded": succeeded,
+        "failed": len(runs) - succeeded,
+        "replans": sum(int(r.get("replans") or 0) for r in runs),
+        "faults": sum(len(r.get("faults") or []) for r in runs),
+        "task_errors": len(by_kind.get("runtime.task_error", [])),
+        "stages": stages,
+        "stages_passed": stages_passed,
+        "stage_pass_rate": (stages_passed / stages) if stages else None,
+        "latest": None if latest is None else {
+            "goal": latest.get("goal"),
+            "nodes": latest.get("nodes") or {},
+            "success": latest.get("success"),
+            "replans": latest.get("replans"),
+            "actuations": latest.get("actuations"),
+            "faults": latest.get("faults") or [],
+        },
+    }
+
+
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once."""

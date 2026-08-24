@@ -93,6 +93,14 @@ def session(name: str) -> dict:
 
 
 @mcp.tool()
+def session_progress(name: str) -> dict:
+    """One session's mission-progress aggregate over its task.plan_complete rows
+    (task tallies, total replans/faults, stage pass-rate, latest task tree)."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.session_progress(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def runtime_status(name: str) -> dict | None:
     """One runtime session's LIVE status (pid/render/mode/boot_ts/display), or null
     when it has not booted since the file existed. Live state, not sealed evidence."""

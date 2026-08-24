@@ -78,12 +78,17 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         if path is None:
             raise ValueError("unknown session")
         return bs.read_runtime_events(path, after)
+    if fn == "session_progress":
+        path = bs.safe_child(runs, name or "", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        return bs.session_progress(path)
     raise KeyError(fn)
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|runtime_status|runtime_events|ledger|rounds|cards")
+    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|session_progress|runtime_status|runtime_events|ledger|rounds|cards")
     parser.add_argument("name", nargs="?", default=None, help="store/session name for the name-addressed fns")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
