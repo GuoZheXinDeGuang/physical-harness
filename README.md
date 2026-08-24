@@ -17,9 +17,9 @@ uv venv && uv pip install -e ".[dev]"
 PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest tests/
 ```
 
-当前全量: **460 通过, 3 跳过**(跳过 = Mac 归档 campaign 与 BC 权重不在 git, 预期)。
+当前全量: **461 通过, 3 跳过**(跳过 = Mac 归档 campaign 与 BC 权重不在 git, 预期)。
 
-底座快道(W6, 改底座前后各跑一遍、变差不许合入)= 隔离进程(robosuite 卡缺席)里 `pytest -m "not robosuite"`: **430 通过, 6 跳过, 27 弃**。快照格式与隔离跑法见 [docs/base-gate.md](docs/base-gate.md)。
+底座快道(W6, 改底座前后各跑一遍、变差不许合入)= 隔离进程(robosuite 卡缺席)里 `pytest -m "not robosuite"`: **431 通过, 6 跳过, 27 弃**。快照格式与隔离跑法见 [docs/base-gate.md](docs/base-gate.md)。
 
 - `mujoco==3.3.7` + `robosuite==1.5.2` 是硬 pin: mujoco>=3.4 把 `qM` 改名 `M`, robosuite 1.5.2 会崩。
 - robosuite/mujoco 进 `[embodiment_robosuite]` 可选 extra; 不装这块卡, 底座仍能开机、跑通自己的测试(纯假件)。

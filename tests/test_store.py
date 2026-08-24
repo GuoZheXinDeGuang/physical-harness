@@ -133,9 +133,8 @@ def test_partial_write_is_skipped_not_fatal(tmp_path):
 
 def test_parse_ledger():
     # Mirrors STATUS.md's real markdown wrapping: the plan spans several lines,
-    # and the reserved keyword ("留后续") lands on its own line -- so the
-    # per-line classifier only tags open-ended budgets reserved, never a range
-    # on another line.
+    # each **bullet** classified independently, strongest state winning on
+    # repeat mentions.
     text = (
         "**PHASE 3 区块预算(round 78 起):** phase 1/2 已烧段 held-out 1000-1999;\n"
         "**标定 40000-40999**(pass A 座高 40000-40199);\n"
@@ -156,6 +155,28 @@ def test_parse_ledger():
     # frontier line excluded
     assert (99999, 99998) not in by  # also hi<=lo would be dropped anyway
     assert all(r["lo"] < r["hi"] for r in ranges)
+
+
+def test_parse_ledger_wrapped_entry():
+    # A **已烧** bullet wrapped across physical lines (the round-96 STATUS.md
+    # entry): ranges on continuation lines inherit the bullet's state instead
+    # of reading planned. A continuation clause with its own 留 keyword
+    # overrides the inherited burn, and the next **bullet** resets the carry.
+    text = (
+        "区块预算\n"
+        "**已烧(round 96 夜)**: 复现块 #2 = 47400-47599(判定确立),\n"
+        "#3 = 48000-48199(判定确立)。\n"
+        "**已烧(round 90):** 41581-41880(探针);\n"
+        "41881-41999 留 smoke/后续 bring-up。\n"
+        "**held-out 50000-50199**;\n"
+        "frontier\n"
+    )
+    by = {(r["lo"], r["hi"]): r["state"] for r in bs.parse_ledger(text)}
+    assert by[(47400, 47599)] == "burned"
+    assert by[(48000, 48199)] == "burned"  # wrapped line inherits 已烧
+    assert by[(41581, 41880)] == "burned"
+    assert by[(41881, 41999)] == "reserved"  # own 留 beats inherited burn
+    assert by[(50000, 50199)] == "planned"  # new bullet resets the carry
 
 
 def test_parse_rounds():

@@ -382,10 +382,14 @@ def parse_ledger(text: str) -> list[dict]:
 
     The ledger is prose, not a table, so this is a best-effort extraction: pull
     every ``NNNN-NNNN`` range from the budget section, classify each by the
-    keyword in its sentence (已烧 -> burned, 留/预留/后续/需要时 -> reserved,
-    else planned), and keep the strongest state when a range recurs (a held-out
-    block first planned then later burned reads as burned). The source line is
-    carried for a tooltip so a fuzzy classification is always auditable.
+    keyword in its sentence (已烧 -> burned, 留/需要时 -> reserved, else
+    planned), and keep the strongest state when a range recurs (a held-out
+    block first planned then later burned reads as burned). A bullet wrapped
+    onto continuation lines keeps its classification: lines without a keyword
+    inherit the last keyword seen since the bullet started (a ``**`` line or a
+    blank line resets it), and a line's own keyword takes precedence over the
+    inherited one. The source line is carried for a tooltip so a fuzzy
+    classification is always auditable.
     """
     lines = text.splitlines()
     start = next((i for i, ln in enumerate(lines) if "区块预算" in ln), None)
@@ -397,14 +401,19 @@ def parse_ledger(text: str) -> list[dict]:
             break
         seg.append(ln)
     found: dict[tuple[int, int], dict] = {}
+    carry = ""  # state inherited by wrapped continuation lines of one **...** bullet
     for ln in seg:
+        if not ln.strip() or ln.lstrip().startswith("**"):
+            carry = ""
         burned = "已烧" in ln
-        reserved = any(k in ln for k in ("预留", "留后续", "需要时", "留复现", "留后"))
+        reserved = "留" in ln or "需要时" in ln
+        state = "burned" if burned else "reserved" if reserved else carry or "planned"
+        if burned or reserved:
+            carry = state
         for m in _RANGE.finditer(ln):
             lo, hi = int(m.group(1)), int(m.group(2))
             if hi <= lo:
                 continue
-            state = "burned" if burned else "reserved" if reserved else "planned"
             key = (lo, hi)
             prev = found.get(key)
             if prev is None or _STATE_ORDER[state] > _STATE_ORDER[prev["state"]]:

@@ -113,3 +113,16 @@ Full-suite parity (card present): `460 passed, 3 skipped`. Measured at HEAD
 
 **Discipline (two slices missed it in a row): a commit that adds or removes
 tests refreshes this snapshot + the two README counts IN THE SAME COMMIT.**
+
+## ledger wrapped-line snapshot (2026-08-24, isolated, robosuite blocked)
+
+```
+pass       : 431 passed   (+1: test_parse_ledger_wrapped_entry)
+skips      : 6 skipped    (same reasons as round-96)
+wall time  : ~3.8s
+AST green  : 17 passed (test_boundaries + test_kernel)
+deselected : 27 robosuite-marked items
+```
+
+Full-suite parity (card present): `461 passed, 3 skipped` (in-place run,
+working tree == this commit).
