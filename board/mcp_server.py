@@ -28,6 +28,7 @@ from mcp.server import MCPServer
 
 from board import cards as bc
 from board import store as bs
+from board import vault as bv
 from scripts.brief_drop import drop
 
 
@@ -135,6 +136,27 @@ def rounds() -> list[dict]:
 def list_cards() -> list[dict]:
     """Every installed 机箱 card (plugins/*/manifest.toml), manifest read as data."""
     return bc.list_cards()
+
+
+@mcp.tool()
+def vault() -> dict:
+    """The Skill Vault: the whole typed wiki graph (skill/package/capability nodes
+    + the 9-relation edge vocabulary), a deterministic fold over sealed runs/ +
+    manifests. Read it before planning: which tasks have a *promoted* skill."""
+    return bv.build_graph(_Cfg.runs)
+
+
+@mcp.tool()
+def vault_node(id: str) -> dict:
+    """One vault node as a wiki page: the node plus its ``out`` edges and
+    ``backlinks`` (in-edges). Unknown id -> {"error": "unknown node"}."""
+    return bv.node(bv.build_graph(_Cfg.runs), id)
+
+
+@mcp.tool()
+def vault_neighbors(id: str, relation: str | None = None) -> dict:
+    """Adjacency (both directions) for one vault node, optionally one ``rel``."""
+    return bv.neighbors(bv.build_graph(_Cfg.runs), id, relation)
 
 
 @mcp.tool()

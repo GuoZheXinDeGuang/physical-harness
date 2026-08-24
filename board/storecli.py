@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from board import cards as bc
 from board import store as bs
+from board import vault as bv
 
 
 def _read(path: Path) -> str:
@@ -36,7 +37,7 @@ def _read(path: Path) -> str:
 
 
 def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path,
-             after: int = 0):
+             after: int = 0, relation: str | None = None):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -47,6 +48,12 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         return bs.list_stores(runs)
     if fn == "cards":
         return bc.list_cards()
+    if fn == "vault":
+        return bv.build_graph(runs)
+    if fn == "vault_node":
+        return bv.node(bv.build_graph(runs), name or "")
+    if fn == "vault_neighbors":
+        return bv.neighbors(bv.build_graph(runs), name or "", relation)
     if fn == "sessions":
         return bs.discover_sessions(runs)
     if fn == "ledger":
@@ -88,8 +95,9 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|session_progress|runtime_status|runtime_events|ledger|rounds|cards")
-    parser.add_argument("name", nargs="?", default=None, help="store/session name for the name-addressed fns")
+    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|session_progress|runtime_status|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
+    parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
     parser.add_argument("--progress", type=Path, default=None, help="progress.md for the rounds feed (default: <runs>/../progress.md)")
@@ -99,7 +107,7 @@ def main(argv=None) -> int:
     status = args.status.resolve() if args.status else runs.parent / "STATUS.md"
     progress = args.progress.resolve() if args.progress else runs.parent / "progress.md"
     try:
-        result = dispatch(args.fn, args.name, runs, status, progress, args.after)
+        result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2
