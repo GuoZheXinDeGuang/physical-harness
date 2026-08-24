@@ -51,6 +51,9 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
        cockpit -h|--help
 
   --port N       port to serve the console on (default: 3080)
+  --trusted-host H  also trust gateway requests arriving via host H (dsh binds
+                 127.0.0.1 only; pair this with a LAN forward like socat when
+                 the operator's browser is on another machine)
   --no-render    spawn the runtime headless even with a display attached
                  (default: --render IFF \$DISPLAY is set; the runtime refuses
                  --render without a display)
@@ -76,6 +79,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --port)   PORT="${2:?--port needs a value}"; shift 2;;
     --port=*) PORT="${1#*=}"; shift;;
+    --trusted-host)   TRUSTED_HOST="${2:?--trusted-host needs a value}"; shift 2;;
+    --trusted-host=*) TRUSTED_HOST="${1#*=}"; shift;;
     --stop)   DO_STOP=1; shift;;
     --no-runtime) NO_RUNTIME=1; shift;;
     --no-render)  NO_RENDER=1; shift;;
@@ -222,4 +227,4 @@ export PH_BOARD_REPO="${PH_BOARD_REPO:-$REPO}"
 export PH_BOARD_RUNS="${PH_BOARD_RUNS:-$REPO/runs}"
 
 echo "cockpit: serving physical-harness console (fork build) at http://127.0.0.1:$PORT" >&2
-exec node "$BIN" web --no-open --port "$PORT"
+exec node "$BIN" web --no-open --port "$PORT" ${TRUSTED_HOST:+--trusted-host "$TRUSTED_HOST"}
