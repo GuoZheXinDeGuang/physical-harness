@@ -36,12 +36,13 @@ Two ways:
 
 ```
 pass       : 522 passed
-skips      : 12 skipped
+skips      : 20 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
              [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
+             [8] test_robocasa_drivers.py      robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
 wall time  : ~4.2s
@@ -49,9 +50,11 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-Full-suite parity (card present): `553 passed, 9 skipped` (the 6 robocasa-marked
+Full-suite parity (card present): `553 passed, 17 skipped` (the 14 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
-run only in sims/robocasa-venv via `pytest -m robocasa` → `6 passed, 556 deselected`).
+run only in sims/robocasa-venv via `pytest -m robocasa` → `11 passed, 3 xfailed,
+556 deselected`; the 3 xfails are the phase-3 driver failure surfaces —
+close-door / carry-transport / place — see local-archive/robocasa-adapt/phase3.md).
 base_profile sha is byte-stable at `b905a5…` (folds to the value sealed in
 runs/round25-rerun) — the manifest fold reproduces the old hard-coded mounts, and
 the inactive embodiment_robocasa card (enabled=false) folds no mount.
