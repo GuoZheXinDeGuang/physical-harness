@@ -14,11 +14,15 @@ mixed predicates (``lifted`` / ``pick_success`` / ``stack_success``) are already
 admitted node-by-node -- the workload scores ``result["success"]`` per node
 regardless of predicate name, so no workload change is needed.
 
-Node order encodes the clear-then-build narrative (grasp, clear the can, clear
-the milk, build the tower). Governance touches only the stack node; ordering it
-LAST maximizes the narrative but dilutes measurable power by ``q_pre`` = P(the
-three earlier nodes all succeed) -- the calibration block measures it and the
-go/no-go gate is on it (docs/long-horizon-design.md §4).
+Node order puts the GOVERNED stack node FIRST (the design §1/§4.1 lever, taken on
+the calibration number not on taste). The v1 clear-then-build order ran stack
+LAST; its calibration (runs/clear-build-cal) tripped the §4.3 gate -- chains died
+mostly at the ungoverned grasp-cube first node (52 ungoverned deaths vs 31 at the
+governed stack node), so stack governance could not touch the headline. Ordering
+stack first makes every chain reach it (no ``q_pre`` dilution on the governed
+node) and makes it the node chains actually die at, which is the precondition
+the §4.3 go/no-go gate checks before any dev burn (docs/long-horizon-design.md
+§1, §4.1, §4.3). The clear-then-build narrative is the deliberate cost.
 """
 
 from __future__ import annotations
@@ -51,29 +55,28 @@ class ClearBuildPlanner:
         # Round-trip through sorted JSON, same as StackPlanner: the emitted
         # mapping is exactly its canonical byte form.
         return json.loads(json.dumps({
-            "goal": "clear the can and the milk, then build the tower",
+            "goal": "build the tower first, then grasp the cube and clear the can and milk",
             "nodes": [
+                {"id": "build-stack", "skill": "stack",
+                 "args": {"object": "cubeA", "target": "cubeB"}, "after": []},
                 {"id": "grasp-cube", "skill": "grasp",
-                 "args": {"object": "cube"}, "after": []},
+                 "args": {"object": "cube"}, "after": ["build-stack"]},
                 {"id": "pick-can", "skill": "pick",
-                 "args": {"object": "can"}, "after": []},
+                 "args": {"object": "can"}, "after": ["grasp-cube"]},
                 {"id": "pick-milk", "skill": "pick",
                  "args": {"object": "milk"}, "after": ["pick-can"]},
-                {"id": "build-stack", "skill": "stack",
-                 "args": {"object": "cubeA", "target": "cubeB"},
-                 "after": ["pick-milk"]},
             ],
             "verify": [
+                {"after": "build-stack", "predicate": "stack_success"},
                 {"after": "grasp-cube", "predicate": "lifted"},
                 {"after": "pick-can", "predicate": "pick_success"},
                 {"after": "pick-milk", "predicate": "pick_success"},
-                {"after": "build-stack", "predicate": "stack_success"},
             ],
         }, sort_keys=True))
 
     @property
     def identity(self) -> str:
-        return "clear_build_planner@v1"
+        return "clear_build_planner@v2"
 
 
 def provider(**params: Any) -> ClearBuildPlanner:
@@ -92,13 +95,14 @@ if __name__ == "__main__":
     # byte-identical replay
     assert json.dumps(plan, sort_keys=True) == \
         json.dumps(planner.plan(brief), sort_keys=True)
-    # four nodes, three distinct skills, the stack node gated behind the milk pick
+    # four nodes, three distinct skills, the governed stack node ordered FIRST
     assert [n["id"] for n in plan["nodes"]] == \
-        ["grasp-cube", "pick-can", "pick-milk", "build-stack"]
+        ["build-stack", "grasp-cube", "pick-can", "pick-milk"]
     assert {n["skill"] for n in plan["nodes"]} == {"grasp", "pick", "stack"}
-    assert plan["nodes"][3]["after"] == ["pick-milk"]
+    assert plan["nodes"][0]["after"] == []
+    assert plan["nodes"][3]["after"] == ["pick-can"]
     assert [v["predicate"] for v in plan["verify"]] == \
-        ["lifted", "pick_success", "pick_success", "stack_success"]
+        ["stack_success", "lifted", "pick_success", "pick_success"]
     try:
         planner.plan({"task": "stack"})
     except ValueError:

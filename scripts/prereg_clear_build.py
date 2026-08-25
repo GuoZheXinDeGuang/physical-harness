@@ -117,7 +117,7 @@ def _chain_battery_plan(prereg_sha: str) -> dict:
     """The 3-arm battery, preregistered alongside the prereg (design §3a/§4)."""
     return {
         "preregistration_sha": prereg_sha,
-        "task": "clear_build", "planner": "clear_build_planner@v1",
+        "task": "clear_build", "planner": "clear_build_planner@v2",
         "hypotheses": {
             "a_chain_success": "chain rate = prod(node rates); delta(governed-baseline) "
                 "= (n4 delta) x q_pre; report 3 arms on >=2 held-out blocks, paired "

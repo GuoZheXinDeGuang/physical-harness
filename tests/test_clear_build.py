@@ -38,16 +38,17 @@ def test_plan_validates_and_is_the_four_node_graph():
     assert ok and msg == ""
     assert plan["goal"]
     assert [n["id"] for n in plan["nodes"]] == \
-        ["grasp-cube", "pick-can", "pick-milk", "build-stack"]
+        ["build-stack", "grasp-cube", "pick-can", "pick-milk"]
     # three DISTINCT skill bindings over the four nodes
-    assert [n["skill"] for n in plan["nodes"]] == ["grasp", "pick", "pick", "stack"]
+    assert [n["skill"] for n in plan["nodes"]] == ["stack", "grasp", "pick", "pick"]
     assert {n["skill"] for n in plan["nodes"]} == {"grasp", "pick", "stack"}
-    # the stack node is gated behind the milk pick behind the can pick
-    assert plan["nodes"][2]["after"] == ["pick-can"]
-    assert plan["nodes"][3]["after"] == ["pick-milk"]
+    # the governed stack node runs first (design §4.3 lever); the rest chain after it
+    assert plan["nodes"][0]["after"] == []
+    assert plan["nodes"][2]["after"] == ["grasp-cube"]
+    assert plan["nodes"][3]["after"] == ["pick-can"]
     # one verify edge per node, mixed predicates admitted by the card oracles
     assert [v["predicate"] for v in plan["verify"]] == \
-        ["lifted", "pick_success", "pick_success", "stack_success"]
+        ["stack_success", "lifted", "pick_success", "pick_success"]
 
 
 def test_same_brief_yields_byte_identical_json():
@@ -64,7 +65,7 @@ def test_planner_satisfies_the_contract_through_the_kernel():
     from harness.contracts import TaskPlanner
 
     p = load_provider("plugins.clear_build.planner:provider")
-    assert isinstance(p, TaskPlanner) and p.identity == "clear_build_planner@v1"
+    assert isinstance(p, TaskPlanner) and p.identity == "clear_build_planner@v2"
 
 
 # ── the composite policy: one mount, driver chosen by spec.task ──────────────
@@ -202,28 +203,28 @@ def test_four_node_chain_closes(monkeypatch):
     out = workload.run(dict(WBRIEF), kernel, seed=42, max_actuations=6)
 
     assert out["success"] is True and out["replans"] == 0 and out["actuations"] == 4
-    assert [s.task for s in fake.specs] == ["lift", "pickcan", "pickmilk", "stack"]
-    assert list(out["nodes"]) == ["grasp-cube", "pick-can", "pick-milk", "build-stack"]
+    assert [s.task for s in fake.specs] == ["stack", "lift", "pickcan", "pickmilk"]
+    assert list(out["nodes"]) == ["build-stack", "grasp-cube", "pick-can", "pick-milk"]
     assert all(n["success"] for n in out["nodes"].values())
 
 
-def test_stack_node_failure_replans_and_skips_done_nodes(monkeypatch):
+def test_node_failure_replans_and_skips_done_nodes(monkeypatch):
     planner = _CountingPlanner()
     kernel = _task_kernel(planner)
-    # grasp, can, milk succeed; the stack node fails once, then succeeds on replan
+    # stack, grasp, can succeed; the milk pick fails once, then succeeds on replan
     fake = _RolloutFake([True, True, True, False, True])
     monkeypatch.setattr(workload, "_governed_rollout", fake)
 
     out = workload.run(dict(WBRIEF), kernel, seed=1, max_replans=2, max_actuations=6)
 
     assert out["success"] is True and out["replans"] == 1 and out["actuations"] == 5
-    # the three finished nodes are never re-dispatched; only the stack node re-runs
+    # the three finished nodes are never re-dispatched; only the milk pick re-runs
     assert [s.task for s in fake.specs] == \
-        ["lift", "pickcan", "pickmilk", "stack", "stack"]
+        ["stack", "lift", "pickcan", "pickmilk", "pickmilk"]
     fault = planner.briefs[1]["fault"]
-    assert fault["kind"] == "node_failure" and fault["node"] == "build-stack"
-    assert fault["nodes_done"] == ["grasp-cube", "pick-can", "pick-milk"]
-    assert fault["nodes_left"] == ["build-stack"]
+    assert fault["kind"] == "node_failure" and fault["node"] == "pick-milk"
+    assert fault["nodes_done"] == ["build-stack", "grasp-cube", "pick-can"]
+    assert fault["nodes_left"] == ["pick-milk"]
 
 
 def test_ungoverned_stack_node_carries_empty_governance(monkeypatch):
