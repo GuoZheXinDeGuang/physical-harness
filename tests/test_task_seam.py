@@ -390,3 +390,205 @@ def test_mounted_params_on_actuating_capabilities_are_refused():
     kernel.provide("exec.rollouts", _FakeExecutor(), ref="tests.fakes:executor")
     with pytest.raises(ValueError, match="parameter-free"):
         workload.run(dict(WBRIEF), kernel, seed=1)
+
+
+# =====================================================================
+# generic node kinds (m6-mission-design §2): perceive / decide / verify
+# over the SAME loop that runs manipulate, oracles machine-checked, replan
+# routing free across heterogeneous nodes. No simulation: predicates are
+# pure fakes resolved by ref (the same load_provider crossing as `stages`).
+# =====================================================================
+
+# Card-authored predicate FACTORIES (load_provider calls each, returns the
+# callable predicate(node, ctx)). Referenced by ref from the tables below and
+# from the plugin_doctor tests -- exactly the cross-plugin crossing the base uses.
+
+def survey_pred():
+    """perceive: reads the seed-deterministic scene, declares the privilege it
+    read (one privileged pose + one observable), seals facts for a later decide."""
+    def _run(node, ctx):
+        return {"success": True,
+                "facts": {"objects": ["cube", "can"], "seed": ctx.seed},
+                "privilege": ["privileged.object_z", "observable.finger_gap"]}
+    return _run
+
+
+def decide_order_pred():
+    """decide: PURE fn of ctx.nodes_out (the survey node's sealed facts)."""
+    def _run(node, ctx):
+        objs = ctx.nodes_out["survey"]["facts"]["objects"]
+        return {"success": True, "decision": {"order": sorted(objs)}}
+    return _run
+
+
+def verify_survey_pred():
+    """verify: a machine predicate over a prior node's sealed success."""
+    def _run(node, ctx):
+        return {"success": bool(ctx.nodes_out["survey"]["success"])}
+    return _run
+
+
+def flaky_gate_pred():
+    """verify that fails its FIRST attempt then passes -- keyed off its OWN sealed
+    prior entry (the loop seals a failed node before the fault), so the cross-kind
+    replan is deterministic with no global state."""
+    def _run(node, ctx):
+        return {"success": node["id"] in ctx.nodes_out}
+    return _run
+
+
+def bad_priv_pred():
+    """perceive declaring a feature the harness catalog does not know -- the base's
+    privilege_cost must refuse it (a card cannot invent privileged reads)."""
+    def _run(node, ctx):
+        return {"success": True, "privilege": ["privileged.made_up"]}
+    return _run
+
+
+HET_PREDICATES = {
+    "survey": "tests.test_task_seam:survey_pred",
+    "check": "tests.test_task_seam:verify_survey_pred",
+    "order": "tests.test_task_seam:decide_order_pred",
+    "gate": "tests.test_task_seam:flaky_gate_pred",
+}
+#: a table with a dead value -- the doctor must redden on it.
+HET_PREDICATES_DEAD = {"survey": "tests.test_task_seam:does_not_exist"}
+
+HET_CATALOGUE = {"survey": {}, "check": {}, "order": {}, "gate": {},
+                 "grasp": {"object": str}}
+HET_ORACLES = ["lifted"]
+
+
+class _FixedPlanner:
+    """Returns a fixed heterogeneous graph (deep-copied each call so the loop's
+    mutations never leak), capturing every brief for replan assertions."""
+
+    def __init__(self, plan):
+        self._plan = plan
+        self.briefs: list[dict] = []
+
+    def plan(self, brief):
+        self.briefs.append(dict(brief))
+        return json.loads(json.dumps(self._plan))
+
+
+# survey(perceive) -> check(verify) -> order(decide) -> grasp(manipulate)
+HET_PLAN = {
+    "goal": "inventory build",
+    "nodes": [
+        {"id": "survey", "kind": "perceive", "skill": "survey", "args": {}, "after": []},
+        {"id": "check-survey", "kind": "verify", "skill": "check", "args": {},
+         "after": ["survey"]},
+        {"id": "order", "kind": "decide", "skill": "order", "args": {},
+         "after": ["check-survey"]},
+        {"id": "grasp-0", "skill": "grasp", "args": {"object": "cube"},
+         "after": ["order"]},  # no kind -> defaults to manipulate
+    ],
+    "verify": [{"after": "grasp-0", "predicate": "lifted"}],
+}
+
+# survey(perceive) -> gate(verify, fails once) -> grasp(manipulate)
+REPLAN_PLAN = {
+    "goal": "gated build",
+    "nodes": [
+        {"id": "survey", "kind": "perceive", "skill": "survey", "args": {}, "after": []},
+        {"id": "gate", "kind": "verify", "skill": "gate", "args": {}, "after": ["survey"]},
+        {"id": "grasp-0", "skill": "grasp", "args": {"object": "cube"}, "after": ["gate"]},
+    ],
+    "verify": [{"after": "grasp-0", "predicate": "lifted"}],
+}
+
+HBRIEF = {"task": "inventory", "catalogue": HET_CATALOGUE, "oracles": HET_ORACLES,
+          "predicates": HET_PREDICATES}
+
+
+def test_each_node_kind_dispatches_on_its_own_honest_oracle(monkeypatch):
+    kernel = _task_kernel(_FixedPlanner(HET_PLAN))
+    fake = _RolloutFake([True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run({**HBRIEF}, kernel, seed=7, max_actuations=6)
+
+    assert out["success"] is True and out["replans"] == 0 and out["actuations"] == 4
+    # perceive: facts sealed, and the BASE metered the privilege it declared
+    assert out["nodes"]["survey"]["facts"]["objects"] == ["cube", "can"]
+    assert out["nodes"]["survey"]["governance"] == {
+        "privilege_features": ("privileged.object_z", "observable.finger_gap"),
+        "privilege_cost": 1}  # object_z is privileged (1), finger_gap observable (0)
+    # decide: a pure route over the survey node's sealed facts
+    assert out["nodes"]["order"]["decision"] == {"order": ["can", "cube"]}
+    assert out["nodes"]["order"]["governance"]["privilege_cost"] == 0
+    # verify: machine predicate over the prior sealed success
+    assert out["nodes"]["check-survey"]["success"] is True
+    # manipulate: still routed through _dispatch to a real EpisodeSpec (grasp=lift)
+    (spec,) = fake.specs
+    assert spec.task == "lift" and spec.seed == 7
+
+
+def test_replan_routes_across_heterogeneous_kinds(monkeypatch):
+    planner = _FixedPlanner(REPLAN_PLAN)
+    kernel = _task_kernel(planner)
+    fake = _RolloutFake([True])  # the manipulate node only runs after the gate passes
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run({**HBRIEF}, kernel, seed=3, max_actuations=6)
+
+    assert out["success"] is True and out["replans"] == 1
+    # the verify NODE's own False folded a node_failure that drove the replan --
+    # no new routing code, the existing fault->replan loop carried a non-manipulate
+    # node's failure exactly as it carries a manipulate node's.
+    fault = planner.briefs[1]["fault"]
+    assert fault["kind"] == "node_failure" and fault["node"] == "gate"
+    assert fault["failed"] == ["gate"], "a kindful node names itself when it has no stages"
+    # survey (perceive) succeeded first pass -> skipped on replan; the manipulate
+    # node ran exactly once, after the gate passed.
+    assert len(fake.specs) == 1
+    assert out["nodes"]["survey"]["success"] and out["nodes"]["grasp-0"]["success"]
+
+
+def test_kind_handler_table_covers_every_validator_kind():
+    from plugins.task.validate import NODE_KINDS
+    assert set(workload._KIND_HANDLERS) == set(NODE_KINDS)
+
+
+def test_perceive_privilege_is_metered_by_the_base_not_the_card():
+    ctx = workload.NodeCtx(seed=1, env_ref="e", policy_ref="p", skills=(),
+                           nodes_out={}, predicates=HET_PREDICATES)
+    node = {"id": "survey", "kind": "perceive", "skill": "survey", "args": {}, "after": []}
+    res = workload._perceive(node, ctx)
+    assert res["governance"]["privilege_cost"] == 1
+
+
+def test_perceive_refuses_an_undeclared_privileged_feature():
+    ctx = workload.NodeCtx(seed=1, env_ref="e", policy_ref="p", skills=(),
+                           nodes_out={},
+                           predicates={"x": "tests.test_task_seam:bad_priv_pred"})
+    node = {"id": "x", "kind": "perceive", "skill": "x", "args": {}, "after": []}
+    with pytest.raises(KeyError, match="made_up"):
+        workload._perceive(node, ctx)
+
+
+def test_a_kindful_node_with_no_predicate_ref_fails_loudly():
+    ctx = workload.NodeCtx(seed=1, env_ref="e", policy_ref="p", skills=(),
+                           nodes_out={}, predicates={})
+    node = {"id": "d", "kind": "decide", "skill": "unbound", "args": {}, "after": []}
+    with pytest.raises(ValueError, match="no ref in the card's PREDICATES"):
+        workload._decide(node, ctx)
+
+
+def test_validate_admits_the_optional_kind_and_refuses_an_unknown_one():
+    plan = json.loads(json.dumps(HET_PLAN))
+    ok, msg = validate_plan(plan, HET_CATALOGUE, HET_ORACLES)
+    assert ok and msg == ""
+    plan["nodes"][0]["kind"] = "telepathy"
+    ok, msg = validate_plan(plan, HET_CATALOGUE, HET_ORACLES)
+    assert not ok and "telepathy" in msg and "known kinds" in msg
+
+
+def test_a_manipulate_only_plan_needs_no_predicates_table():
+    # stack/clear_table carry no `kind` and no `predicates`: the machinery is
+    # inert for them -- byte-identical to before node kinds existed.
+    plan = StackPlanner().plan({**BRIEF, "scene": {}})
+    assert all("kind" not in n for n in plan["nodes"])
+    ok, _ = validate_plan(plan, CATALOGUE, ORACLES)
+    assert ok

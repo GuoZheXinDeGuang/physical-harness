@@ -228,6 +228,17 @@ def check(plugin_dir: str | Path) -> Report:
             for attr_key in ("catalogue", "oracles"):
                 module_name, attr = binding[attr_key].split(":", 1)
                 getattr(importlib.import_module(module_name), attr)
+            # Heterogeneous-mission binding kind: a PREDICATES table (predicate
+            # name -> "module:factory" ref) for perceive/decide/verify nodes.
+            # Every ref must load_provider-resolve HERE -- a dead predicate ref is
+            # a malformed declaration that must redden at mount, not mid-brief when
+            # a kindful node reaches for its oracle. Symmetric with the policy/
+            # planner load above (GOAL v4.2: 不合格在 mount 报错而非任务中失败).
+            if "predicates" in binding:
+                mod, attr = binding["predicates"].split(":", 1)
+                table = getattr(importlib.import_module(mod), attr)
+                for ref in table.values():
+                    load_provider(ref)
         except Exception as exc:  # noqa: BLE001 -- any dead ref is a red
             rep.add("A", f"task:{task}", "FAIL", f"{type(exc).__name__}: {exc}")
             continue

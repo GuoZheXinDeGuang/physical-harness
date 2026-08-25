@@ -15,6 +15,13 @@ from collections.abc import Collection, Mapping
 #: cockpit renders is the same JSON this validator admits.
 _NODE_KEYS = frozenset({"id", "skill", "args", "after"})
 
+#: The node KINDS the loop can dispatch. This frozenset is the single source of
+#: truth for the NAMES; ``workload._KIND_HANDLERS`` maps exactly these to their
+#: generic handlers and self-checks coverage against this set at import. A node
+#: with no ``kind`` defaults to ``"manipulate"`` -- so existing cards (no kind on
+#: any node) validate byte-identically, sealed plan shas unmoved.
+NODE_KINDS = frozenset({"manipulate", "perceive", "decide", "verify"})
+
 
 def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
                   oracles: Collection[str]) -> tuple[bool, str]:
@@ -34,14 +41,19 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
         return False, "plan.nodes must be a non-empty list of skill calls"
     ids: list[str] = []
     for i, node in enumerate(nodes):
-        if not isinstance(node, Mapping) or set(node) != _NODE_KEYS:
+        keys = set(node) if isinstance(node, Mapping) else set()
+        if not isinstance(node, Mapping) or keys - {"kind"} != _NODE_KEYS:
             return False, (f"node[{i}] must be an object with exactly "
-                           f"{sorted(_NODE_KEYS)}")
+                           f"{sorted(_NODE_KEYS)} (optional 'kind')")
         nid = node["id"]
         if not isinstance(nid, str) or not nid:
             return False, f"node[{i}].id must be a non-empty string"
         if nid in ids:
             return False, f"duplicate node id {nid!r}"
+        kind = node.get("kind", "manipulate")
+        if kind not in NODE_KINDS:
+            return False, (f"node {nid!r} declares unknown kind {kind!r}; "
+                           f"known kinds: {sorted(NODE_KINDS)}")
         skill = node["skill"]
         if skill not in catalogue:
             return False, (f"node {nid!r} names unknown skill {skill!r}; "

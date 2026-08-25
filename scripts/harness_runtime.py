@@ -317,6 +317,11 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render))
     wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
               "oracles": _load_attr(binding["oracles"])}
+    # A heterogeneous mission (perceive/decide/verify nodes) declares a PREDICATES
+    # table by ref beside catalogue/oracles; thread it so the loop can resolve each
+    # kindful node's machine oracle. Manipulate-only bindings omit it.
+    if "predicates" in binding:
+        wbrief["predicates"] = _load_attr(binding["predicates"])
     return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations)
 

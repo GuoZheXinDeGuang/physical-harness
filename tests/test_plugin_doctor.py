@@ -130,6 +130,33 @@ def test_doctor_greens_a_task_binding_with_live_refs(tmp_path):
     assert any(r.name == "task:toy" and r.status == "PASS" for r in rep.results)
 
 
+# ── the new binding kind: a heterogeneous mission's PREDICATES table ──────────
+# (m6-mission-design §2b) A perceive/decide/verify node names a predicate the
+# card's PREDICATES table maps to a "module:factory" ref. A dead predicate ref is
+# a malformed declaration that must redden at 体检, not mid-brief.
+
+_PRED_BINDING = ('[task_bindings.het]\n'
+                 'policy = "plugins.policies:stack_scripted_provider"\n'
+                 'planner = "plugins.task.planner_stack:provider"\n'
+                 'catalogue = "plugins.task.planner_stack:CATALOGUE"\n'
+                 'oracles = "plugins.task.planner_stack:ORACLES"\n'
+                 'predicates = "{ref}"\n')
+
+
+def test_doctor_greens_a_binding_with_a_live_predicate_table(tmp_path):
+    body = _PRED_BINDING.format(ref="tests.test_task_seam:HET_PREDICATES")
+    rep = check(_card(tmp_path, "het_live", body))
+    assert rep.green, _fails(rep)
+    assert any(r.name == "task:het" and r.status == "PASS" for r in rep.results)
+
+
+def test_doctor_reddens_a_binding_with_a_dead_predicate_ref(tmp_path):
+    body = _PRED_BINDING.format(ref="tests.test_task_seam:HET_PREDICATES_DEAD")
+    rep = check(_card(tmp_path, "het_dead", body))
+    assert not rep.green
+    assert any(r.name == "task:het" and r.status == "FAIL" for r in rep.results)
+
+
 # ── 验货 (--verify): the acceptance reader over a published skill store ───────
 
 def _skill_record(**over) -> dict:

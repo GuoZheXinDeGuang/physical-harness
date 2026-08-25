@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from harness import opstream
@@ -29,7 +30,7 @@ from harness.features import privilege_cost
 from harness.kernel import Kernel
 from harness.registry import load_provider
 from harness.spec import EpisodeSpec
-from plugins.task.validate import validate_plan
+from plugins.task.validate import NODE_KINDS, validate_plan
 
 #: The kernel consumer name every capability this workload resolves is
 #: accounted under (harness/kernel.py per-resolution audit trail).
@@ -169,6 +170,103 @@ def _dispatch(node: Mapping, *, seed: int, env_ref: str, policy_ref: str,
     return result
 
 
+# ── generic node-kind machinery (m6-mission-design §2) ───────────────────────
+# The base owns the KINDS (generic handlers); a card owns the PREDICATES (the
+# machine oracles they resolve). A mission is pure data: nodes carry an optional
+# ``kind`` and name a predicate in their ``skill`` slot; the card's PREDICATES
+# table maps that name -> a "module:factory" ref whose factory returns the
+# callable ``predicate(node, ctx) -> {"success": bool, ...}``. Every handler
+# returns the SAME ``{"success": bool, "governance": {...}}`` shape the loop
+# already reads, and the truth is ALWAYS a machine predicate, never a model claim.
+
+@dataclass(frozen=True)
+class NodeCtx:
+    """What a node-kind handler may read. ``manipulate`` uses only the refs;
+    ``perceive`` also resets the same-seed env by ref; ``decide``/``verify`` read
+    only ``nodes_out`` (accumulated prior sealed results). ``nodes_out`` is the
+    loop's live dict passed by reference, so a later node sees earlier facts."""
+
+    seed: int
+    env_ref: str
+    policy_ref: str
+    skills: tuple
+    nodes_out: Mapping[str, dict]
+    predicates: Mapping[str, str]  # predicate name -> "module:factory" ref
+
+
+#: A non-manipulate node seals zero privilege: decide/verify read only sealed
+#: prior facts, never a raw pose. Perceive overrides this with a measured budget.
+_ZERO_PRIV = {"privilege_features": (), "privilege_cost": 0}
+
+
+def _predicate(node: Mapping, ctx: NodeCtx):
+    """Resolve a non-manipulate node's card-authored predicate by ref.
+
+    The ``skill`` slot names the predicate; the card's PREDICATES table (folded
+    into the task binding, threaded onto the brief) maps it to a "module:factory"
+    ref. Same sanctioned crossing as ``stages`` -- ``load_provider`` calls the
+    factory and returns the callable, so plugins never import each other. A node
+    whose predicate is undeclared fails loudly HERE, before any oracle runs."""
+    ref = ctx.predicates.get(node["skill"])
+    if ref is None:
+        raise ValueError(
+            f"node {node['id']!r} (kind {node.get('kind')!r}) names predicate "
+            f"{node['skill']!r} with no ref in the card's PREDICATES table; "
+            f"declared predicates: {sorted(ctx.predicates)}")
+    return load_provider(ref)
+
+
+def _manipulate(node: Mapping, ctx: NodeCtx) -> dict:
+    """The TODAY handler, byte-identical: a governed rollout under the node's
+    task's assembled bundle. Ignores ``ctx.nodes_out``/``predicates``."""
+    return _dispatch(node, seed=ctx.seed, env_ref=ctx.env_ref,
+                     policy_ref=ctx.policy_ref, skills=ctx.skills)
+
+
+def _perceive(node: Mapping, ctx: NodeCtx) -> dict:
+    """Read the seed-deterministic scene through a card predicate; seal the
+    privilege it declares it read. The predicate resets the same-seed task env by
+    ref and reads poses; it returns ``{"success", "facts", "privilege": [feature
+    names]}``. The base -- not the card -- meters the budget through the harness's
+    own ``privilege_cost`` (the exact function the episode's privilege gate
+    measures against), so a perceive node pays the SAME accounting a critic pays;
+    an undeclared feature raises in ``privilege_cost``."""
+    raw = _predicate(node, ctx)(node, ctx)
+    features = tuple(raw.get("privilege", ()))
+    return {"success": bool(raw["success"]), "facts": raw.get("facts"),
+            "governance": {"privilege_features": features,
+                           "privilege_cost": privilege_cost(features)}}
+
+
+def _decide(node: Mapping, ctx: NodeCtx) -> dict:
+    """A PURE function of ``ctx.nodes_out`` (prior facts + faults) -> a route.
+    Zero privilege, deterministic in seed -> byte-identical replay."""
+    raw = _predicate(node, ctx)(node, ctx)
+    return {"success": bool(raw["success"]), "decision": raw.get("decision"),
+            "governance": dict(_ZERO_PRIV)}
+
+
+def _verify(node: Mapping, ctx: NodeCtx) -> dict:
+    """A predicate over a prior node's sealed result (a privileged stage residual
+    thresholded, or a boolean AND of prior successes). Truth = machine predicate
+    over sealed residuals; on ``False`` the loop's existing fault->replan fires."""
+    raw = _predicate(node, ctx)(node, ctx)
+    return {"success": bool(raw["success"]), "governance": dict(_ZERO_PRIV)}
+
+
+#: kind -> handler ``(node, ctx) -> {"success", "governance", ...}``. The names
+#: are validate.NODE_KINDS verbatim; the assert makes a drifted table a loud
+#: import error, never a silent KeyError mid-brief.
+_KIND_HANDLERS = {
+    "manipulate": _manipulate,
+    "perceive": _perceive,
+    "decide": _decide,
+    "verify": _verify,
+}
+assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
+    "node-kind handler table drifted from validate.NODE_KINDS"
+
+
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
         max_replans: int = 3, max_actuations: int = 3) -> dict[str, Any]:
     """Run one plan -> validate -> act -> verify -> replan loop through the kernel.
@@ -210,6 +308,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     skills = skill_graph.skills()
     catalogue = brief["catalogue"]
     oracles = brief["oracles"]
+    # The card's PREDICATES table (predicate name -> "module:factory" ref),
+    # threaded onto the brief from the task binding. Empty for a manipulate-only
+    # mission (stack/clear_table): those nodes never touch it.
+    predicates = brief.get("predicates") or {}
 
     plan: Mapping = {}
     nodes_out: dict[str, dict] = {}
@@ -217,6 +319,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     actuations = 0
     replans = 0
     success = False
+    # Built ONCE: nodes_out is passed by reference, so a decide/verify node
+    # reached later in the loop reads the facts earlier nodes have sealed.
+    ctx = NodeCtx(seed=seed, env_ref=env_ref, policy_ref=policy_ref,
+                  skills=skills, nodes_out=nodes_out, predicates=predicates)
     while True:
         # Pre-episode there is no obs; the empty snapshot is the honest scene
         # until M2's World bridge feeds a live one.
@@ -252,11 +358,15 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                                      f"before dispatching node {node['id']!r}")}
                     break
                 actuations += 1
+                # ponytail: every dispatched node (any kind) counts one actuation
+                # against the model-independent floor; a heterogeneous mission sets
+                # max_actuations to cover its node count. Split into a separate
+                # counter only if a pure-fn node exhausting the floor ever bites.
+                kind = node.get("kind", "manipulate")
                 opstream.emit("node_start", node=node["id"], skill=node["skill"],
-                              actuation=actuations)
+                              node_kind=kind, actuation=actuations)
                 opstream.emit("actuation_start", node=node["id"], actuation=actuations)
-                result = _dispatch(node, seed=seed, env_ref=env_ref,
-                                   policy_ref=policy_ref, skills=skills)
+                result = _KIND_HANDLERS[kind](node, ctx)
                 opstream.emit("actuation_end", node=node["id"], actuation=actuations,
                               success=bool(result.get("success")),
                               steps=result.get("steps"))
@@ -268,13 +378,27 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 # second oracle dialect arrives with a second skill provider.
                 bad_preds = [v["predicate"] for v in plan["verify"]
                              if v["after"] == node["id"] and not result["success"]]
-                nodes_out[node["id"]] = {"success": bool(result["success"]),
-                                         "steps": result.get("steps"),
-                                         "stages": stages,
-                                         "governance": result["governance"]}
-                if left or bad_preds:
+                entry = {"success": bool(result["success"]),
+                         "steps": result.get("steps"),
+                         "stages": stages,
+                         "governance": result["governance"]}
+                # A perceive/decide node's payload (facts / chosen route) is sealed
+                # so a later decide/verify node -- reading ctx.nodes_out -- routes on
+                # it. Manipulate nodes carry neither; the keys stay absent.
+                for extra in ("facts", "decision"):
+                    if extra in result:
+                        entry[extra] = result[extra]
+                nodes_out[node["id"]] = entry
+                # A node faults when its own oracle says False, whatever its kind:
+                # a manipulate node surfaces a failed terminal STAGE in `left`; a
+                # perceive/decide/verify node has no stages, so its own
+                # result["success"] IS the signal. `failed` names the offender for
+                # the fold-back brief -- the failed stages+predicates, or the
+                # predicate/skill itself when a kindful node has neither.
+                if left or bad_preds or not result["success"]:
+                    failed = left + bad_preds or [node["skill"]]
                     fault = {"kind": "node_failure", "node": node["id"],
-                             "failed": left + bad_preds, "done": done, "left": left,
+                             "failed": failed, "done": done, "left": left,
                              "msg": (f"node {node['id']!r} failed: stages {left}, "
                                      f"predicates {bad_preds}; done {done}")}
                     opstream.emit("node_failed", node=node["id"],
