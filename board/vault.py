@@ -57,7 +57,7 @@ def _skill_records(runs: Path):
     Mid-write/unreadable records are skipped, never fatal (board.store discipline).
     """
     records: dict[str, dict] = {}
-    evidenced: dict[str, str] = {}
+    candidates: dict[str, list[str]] = {}
     store_digests: dict[str, list[str]] = {}
     for skills_dir in sorted(runs.glob("*/skills")):
         store_dir = skills_dir.parent
@@ -70,8 +70,25 @@ def _skill_records(runs: Path):
                 continue
             records.setdefault(digest, rec)
             if is_store:
-                evidenced.setdefault(digest, store_dir.name)
+                candidates.setdefault(digest, []).append(store_dir.name)
                 store_digests.setdefault(store_dir.name, []).append(digest)
+    # A digest can live in several stores (campaigns copy records in as seeds).
+    # EVIDENCED_BY must point at the MINTING store, not a seed copy: a store
+    # that sealed generation artifacts is an origin; seed-only copies (e.g. a
+    # calibration store's skills/) have none. Sorted-first keeps it byte-stable.
+    # ponytail: store-level minting test; go digest-level (match the generation
+    # rows to the digest) if a generation-bearing store ever carries foreign
+    # seed copies in its skills/.
+    minting: dict[str, bool] = {}
+    for name in sorted(store_digests):
+        try:
+            minting[name] = bool((bs.store_detail(str(runs / name)) or {}).get("generations"))
+        except Exception:  # unreadable store: treat as non-minting, never fatal
+            minting[name] = False
+    evidenced: dict[str, str] = {}
+    for digest, stores in candidates.items():
+        minted = [s for s in stores if minting.get(s)]
+        evidenced[digest] = sorted(minted)[0] if minted else sorted(stores)[0]
     return records, evidenced, store_digests
 
 
@@ -217,6 +234,11 @@ def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR) 
         parent_name = Path(parent).name
         for pdig in store_digests.get(parent_name, []):
             for cdig in digs:
+                # Prereg ancestry applies to records this store MINTED. Seed
+                # copies keep their own lineage; linking them here fabricates
+                # descent (and self-edges) that falsely retires the parents.
+                if evidenced.get(cdig) != store or cdig == pdig:
+                    continue
                 add("DESCENDS_FROM", cdig, pdig, "prereg.parent_store+parent_final_sha",
                     f"runs/{store}/prereg")
 
@@ -271,7 +293,9 @@ def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR) 
 
     edge_list = [{"rel": rel, "src": src, "dst": dst, "rule": rule, "via": via}
                  for (rel, src, dst, rule, via) in edges]
-    edge_list.sort(key=lambda e: (e["rel"], e["src"], e["dst"]))
+    # Full-tuple key: (rel,src,dst) can repeat with different rule/via, and the
+    # collection set's iteration order varies per process (hash randomization).
+    edge_list.sort(key=lambda e: (e["rel"], e["src"], e["dst"], e["rule"], e["via"]))
 
     mtimes = {s: bs.store_mtime(runs / s) for s in sorted(store_digests)}
     return {
