@@ -36,13 +36,13 @@ Two ways:
 
 ```
 pass       : 551 passed
-skips      : 22 skipped
+skips      : 24 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
              [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
-             [9] test_robocasa_drivers.py      robocasa unimportable (robocasa venv only)
+             [11] test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
@@ -50,6 +50,13 @@ wall time  : ~4.3s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +2 skips over the frames-overlay snapshot (22→24) are the carry-probe
+driver tests (`test_robocasa_drivers.py` 9→11 items): +1 secure-grasp GREEN
+(seed 11), +1 loaded-transport GREEN (seed 11), +2 false-latch xfails (seeds
+4/5), −2 former grasp "GREEN"s that the carry-probe proved were false-positive
+latches (the fingers never enclosed the meat — local-archive/robocasa-adapt/
+carry-probe.md). Base-lane PASS count untouched (all robocasa-marked).
 
 The +7 over the phase-5 snapshot (544→551) is the frames overlay
 (`test_runtime_frame.py`: the never-raise dump contract, the step-interval
@@ -64,12 +71,13 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `582 passed, 19 skipped` (the 16 robocasa-marked
+Full-suite parity (card present): `582 passed, 21 skipped` (the 18 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
-run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 3 xfailed`;
-the 3 xfails are the phase-3 driver honest-failure surfaces —
-nav-microwave (fridge blocks the aisle) / close-door / place — see
-local-archive/robocasa-adapt/phase3.md). The kitchen_thaw mission card (phase 4)
+run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
+the 5 xfails are the measured driver honest-failure surfaces —
+nav-microwave unloaded (fridge blocks the seed-7 aisle) / close-door /
+place-from-standoff / false-latch grasps on seeds 4 and 5 — see
+local-archive/robocasa-adapt/phase3.md and carry-probe.md). The kitchen_thaw mission card (phase 4)
 adds no robocasa-marked test — its live proof is the runtime E2E
 (local-archive/robocasa-adapt/phase4.md), not a pytest; it contributes 7 base-lane
 tests (2 heterogeneous-segment runner tests + 5 mission-card structural tests).

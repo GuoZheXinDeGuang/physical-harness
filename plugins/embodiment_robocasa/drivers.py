@@ -138,12 +138,46 @@ class NavigateDriver:
     Success mirrors NavigateKitchen: base within NAV_POS_TOL (0.20 m) of the dock
     xy AND facing it (cos(dyaw) >= 0.98). No path planning -- straight velocity
     servo; if furniture blocks the line, that is the honest failure surface.
+
+    carry=True is the loaded-transport variant (carry-probe, local-archive/
+    robocasa-adapt/carry-probe.md): a saturated base command whips the extended
+    arm and strips even a REAL grasp within ~10 steps, so the loaded leg (1)
+    STOWS -- a gentle, command-capped arm retract toward a body-hugging carry
+    pose -- then (2) ARC-drives with base velocity and yaw-rate capped while the
+    arm channels actively counter-sweep the eef back to the carry pose each
+    step, and (3) stops at a STANDOFF instead of docking. This recipe carried
+    seed 11 the whole fridge->microwave leg, grasped at arrival (295 steps).
+    Mode-flip itself is safe: HybridMobileBase sets the arm OSC to
+    goal_update_mode="desired" in base mode, so the arm HOLDS its last desired
+    goal under translation (measured: 60 zero-velocity base steps drift the eef
+    <2 cm) -- but that goal is world-anchored under ROTATION, hence the
+    counter-sweep.
     """
+
+    #: carry calibration knobs (probe-measured on seed 11; re-tune if the
+    #: arm/base geometry changes, not per scene).
+    CARRY_FWD = 0.40   # stow target this far in front of base centre
+    CARRY_LAT = -0.15  # ... on the arm's mount side
+    CARRY_Z = 1.00     # carry height: the arm cannot pull inside ~0.7 m at shelf
+                       # height (stalls, meat leads the base into the target
+                       # fixture and strips) but reaches ~0.36 m once lowered --
+                       # above counter tops, below the shelf lips
+    STOW_TOL = 0.06
+    STOW_STEPS = 80    # stow is best-effort: converge or spend this, then drive
+    ARM_CAP = 0.3      # per-step arm command cap while stowing (gentle)
+    VCAP = 0.35        # base velocity cap while loaded
+    WARC = 0.15        # loaded yaw-rate cap: turn only as a slow ARC while
+                       # translating (wheels moving -> no stiction dead-zone)
+    CARRY_STOP = 0.50  # loaded standoff from the dock: driving the last ~0.4 m
+                       # rams the carried object into the target appliance's
+                       # face (measured drop at dist~0.39); the place stage's
+                       # ARM covers that final reach, the base need not
 
     def __init__(self, fixture_name, carry=False):
         self.fixture_name = fixture_name
         self.carry = carry          # hold the gripper closed to keep a grasped object
         self._goal = None
+        self._stow_left = self.STOW_STEPS if carry else 0
 
     def _target(self, env):
         if self._goal is None:
@@ -154,19 +188,71 @@ class NavigateDriver:
             self._goal = (np.asarray(pos[:2], float), float(ori[2]))
         return self._goal
 
+    def _stow_action(self, env):
+        """One gentle arm step toward the carry pose; None once stowed/spent."""
+        if self._stow_left <= 0:
+            return None
+        xy, psi = _base_pose(env)
+        c, s = np.cos(psi), np.sin(psi)
+        txy = xy + np.array([c * self.CARRY_FWD - s * self.CARRY_LAT,
+                             s * self.CARRY_FWD + c * self.CARRY_LAT])
+        eef = _eef(env)
+        if (np.linalg.norm(eef[:2] - txy) < self.STOW_TOL
+                and abs(eef[2] - self.CARRY_Z) < self.STOW_TOL):
+            self._stow_left = 0
+            return None
+        self._stow_left -= 1
+        a = _arm_action(env, np.array([txy[0], txy[1], self.CARRY_Z]),
+                        GRIP_CLOSE, kp=6.0)
+        a[0:3] = np.clip(a[0:3], -self.ARM_CAP, self.ARM_CAP)
+        return a
+
     def act(self, env, obs):
-        xy, yaw = self._target(env)
-        return _base_action(env, xy, yaw, grip=GRIP_CLOSE if self.carry else GRIP_OPEN)
+        gxy, gyaw = self._target(env)
+        if not self.carry:
+            return _base_action(env, gxy, gyaw, grip=GRIP_OPEN)
+
+        # Loaded transport. Measured (carry-probe traces): in base mode the
+        # arm's held goal is world-anchored under ROTATION -- translation
+        # carries the eef along (rel-base pose steady), but yaw sweeps the eef
+        # laterally on the ~0.7 m lever and levers the object out of the
+        # fingers. No passive yaw rate works (0.5 whips it off in ~30 steps,
+        # 0.25 still sweeps ~0.5 m over the slow turn, 0.12 is under the
+        # wheels' stiction) and the non-holonomic base cannot strafe to a dock
+        # 90 degrees off its heading with yaw locked (stalls 1.2 m short). So:
+        # stow first, then a slow ARC (translation keeps the wheels out of the
+        # stiction dead-zone) with an ACTIVE arm counter-sweep each step.
+        stow = self._stow_action(env)
+        if stow is not None:
+            return stow
+        xy, psi = _base_pose(env)
+        vec = np.asarray(gxy, float) - xy
+        heading = float(np.arctan2(vec[1], vec[0]))
+        a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
+        a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
+        a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
+        # active counter-sweep: in base mode the arm channels still ADD deltas
+        # to the held (base-frame) goal, so pull the swept eef back toward the
+        # carry pose WHILE driving -- the poor-man's whole-body coordination.
+        rel = _rot_world_to_base(_eef(env)[:2] - xy, psi)
+        err = np.array([self.CARRY_FWD, self.CARRY_LAT]) - rel
+        a[0:2] = np.clip(err * 4.0, -self.ARM_CAP, self.ARM_CAP)
+        return a
 
     def done(self, env):
         (gxy, gyaw), (xy, psi) = self._target(env), _base_pose(env)
-        return bool(np.linalg.norm(gxy - xy) <= NAV_POS_TOL
-                    and np.cos(gyaw - psi) >= NAV_ORI_COS)
+        d = np.linalg.norm(gxy - xy)
+        if self.carry:
+            # loaded: position-only at the STANDOFF (facing/final approach
+            # would ram the cargo into the appliance -- see act/CARRY_STOP).
+            return bool(d <= self.CARRY_STOP)
+        return bool(d <= NAV_POS_TOL and np.cos(gyaw - psi) >= NAV_ORI_COS)
 
 
 class GraspDriver:
     """Base-align to the arm's reach sweet spot, then a direct diagonal approach
-    onto the object -> close -> lift. Done == OU.check_obj_grasped.
+    onto the object -> chase-close -> in-place squeeze -> gentle lift. Done ==
+    check_obj_grasped AND the object actually risen off its entry z (see done).
 
     Two things the naive "hover-above then descend" driver got wrong, both forced
     by the mobile manipulator's real workspace (measured this venv, seed 7):
@@ -187,8 +273,15 @@ class GraspDriver:
     LAT = -0.15       # ... and this far to the arm side (right-arm mount offset)
     ALIGN_TOL = 0.04  # base-park tolerance (P-tail floors ~0.03 on this base)
     GRASP_TOL = 0.045 # eef-to-grasp-point distance that triggers the close
-    CLOSE_TICKS = 12  # steps to hold the close before lifting
+    CLOSE_TICKS = 12   # chase-close ticks onto the object (original)
+    SQUEEZE_TICKS = 25 # then squeeze IN PLACE (kp=0) -- the probe-proven settle
+                       # that turns a touching latch into a real enclosure
     LIFT_DZ = 0.20    # how far to raise after closing
+    SECURE_DZ = 0.08  # the OBJECT must rise this far off its entry z to count
+                      # (0.04 verified too low: the meat cleared the latch but not
+                      # the shelf lip, and the stow drag stripped it -- carry-probe;
+                      # measured achievable lift at full extension is ~+0.09)
+    LIFT_CAP = 0.3    # per-step arm command cap in the lift (gentle raise)
 
     def __init__(self, obj_name):
         self.obj_name = obj_name
@@ -196,6 +289,7 @@ class GraspDriver:
         self._psi = None       # approach yaw, locked at entry (the dock yaw)
         self._ticks = 0
         self._lift_z = None
+        self._obj_z0 = None    # object z at entry: the secure-lift reference
 
     def _base_target(self, env):
         m = _obj_pos(env, self.obj_name)
@@ -222,16 +316,47 @@ class GraspDriver:
         if self.phase == "close":
             self._ticks += 1
             if self._ticks > self.CLOSE_TICKS:
+                self.phase = "squeeze"
+                self._ticks = 0
+            return _arm_action(env, gp, GRIP_CLOSE)
+        if self.phase == "squeeze":
+            # hold position (kp=0), keep closing: chasing the object centre at
+            # full gain while the fingers close shoves the object instead of
+            # enclosing it (carry-probe: the in-place settle is what turned the
+            # seed-11 touching latch into a real, finger-holding enclosure).
+            self._ticks += 1
+            if self._ticks > self.SQUEEZE_TICKS:
                 self.phase = "lift"
                 self._lift_z = _eef(env)[2] + self.LIFT_DZ
-            return _arm_action(env, gp, GRIP_CLOSE)
-        # lift
-        return _arm_action(env, np.array([eef[0], eef[1], self._lift_z]), GRIP_CLOSE)
+            return _arm_action(env, eef, GRIP_CLOSE, kp=0.0)
+        # lift -- GENTLY (carry-probe: a saturated 0.05 m/step lift accelerates
+        # the just-enclosed object out of the fingers; capped 0.015 m/step keeps
+        # the seed-11 enclosure through the whole raise).
+        a = _arm_action(env, np.array([eef[0], eef[1], self._lift_z]), GRIP_CLOSE)
+        a[0:3] = np.clip(a[0:3], -self.LIFT_CAP, self.LIFT_CAP)
+        return a
 
     def done(self, env):
+        """Grasped AND the object has actually risen off its entry pose.
+
+        check_obj_grasped alone is a FALSE-POSITIVE latch (carry-probe diag,
+        local-archive/robocasa-adapt/carry-probe.md): finger_joint2 is
+        mirror-negative so its <0.035 test always passes, and joint1 passes with
+        the gripper wide OPEN merely touching the object -- on seeds 4/5/8 the
+        latch fired while the fingers then closed onto AIR and the object never
+        left the shelf, sealing a fake segment success that doomed every later
+        node. Requiring the object's own z to rise SECURE_DZ above its entry
+        value is the relational proof of a real enclosure (the object moves with
+        the hand); a false pinch can never satisfy it, so the segment honestly
+        burns its cap and fails at grasp -- the node that is actually broken.
+        """
         import robocasa.utils.object_utils as OU
 
-        return bool(OU.check_obj_grasped(env, self.obj_name))
+        if self._obj_z0 is None:
+            self._obj_z0 = float(_obj_pos(env, self.obj_name)[2])
+        return bool(OU.check_obj_grasped(env, self.obj_name)
+                    and float(_obj_pos(env, self.obj_name)[2])
+                    > self._obj_z0 + self.SECURE_DZ)
 
 
 class PlaceDriver:

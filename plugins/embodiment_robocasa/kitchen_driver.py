@@ -34,11 +34,13 @@ from plugins.embodiment_robocasa import drivers as D
 #: per-stage smoke budgets (tests/test_robocasa_drivers.py): a stalled nav or an
 #: unreachable push spends its cap then hands back an honest failed sub-goal, never
 #: the whole horizon. Calibration knobs, not scene values -- tune here if the
-#: arm/base geometry or a stage's convergence changes.
+#: arm/base geometry or a stage's convergence changes. nav_micro carries loaded:
+#: its cap covers the stow prelude + the velocity-capped drive (carry-probe:
+#: seed 11 needed >250 capped steps for the same leg the empty base does in ~80).
 _STAGES: dict[str, tuple[Any, int]] = {
     "nav_fridge":  (lambda: D.NavigateDriver("fridge"), 250),
     "grasp_meat":  (lambda: D.GraspDriver("meat"), 260),
-    "nav_micro":   (lambda: D.NavigateDriver("microwave", carry=True), 250),
+    "nav_micro":   (lambda: D.NavigateDriver("microwave", carry=True), 450),
     "place_meat":  (lambda: D.PlaceDriver("meat", "microwave"), 300),
     "close_door":  (lambda: D.CloseDoorDriver("microwave"), 250),
     "press_start": (lambda: D.PressStartDriver("microwave"), 200),
