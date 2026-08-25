@@ -135,6 +135,16 @@ def runtime_status(name: str = _DEFAULT_SESSION) -> dict | None:
 
 
 @mcp.tool()
+def runtime_frame(name: str = _DEFAULT_SESSION) -> dict:
+    """One runtime session's LIVE viewport frame (runs/<session>/frame.jpg,
+    dumped offscreen by the frames overlay while a task runs): {jpeg_b64, ts,
+    age_s}, or {"error": "no frame"} when none has been dumped. Live state,
+    never chain evidence. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_frame(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
     """One runtime session's OPERATIONAL event feed (runtime_events.jsonl):
     events with seq > after_seq plus last_seq. last_seq < after_seq means the

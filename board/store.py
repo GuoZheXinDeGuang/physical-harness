@@ -14,8 +14,10 @@ retries on the next tick rather than crashing.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
+import time
 from pathlib import Path
 
 from harness.events import SessionLog
@@ -401,6 +403,28 @@ def read_runtime_status(session_dir: str | Path) -> dict | None:
         return json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def read_runtime_frame(session_dir: str | Path) -> dict:
+    """The resident runtime's LIVE viewport frame for one session
+    (``<session>/frame.jpg``, written by scripts/frame_dump.py: overwritten in
+    place, ~4fps while a task runs). Same live-state family as runtime_status:
+    a plain read, never a chain row, no verify.
+
+    Returns ``{"jpeg_b64": ..., "ts": <mtime>, "age_s": <now - mtime>}`` -- the
+    b64 is encoded HERE so every face ships the same dict and the TS side only
+    decodes (zero business logic downstream). ``age_s`` lets a poller show a
+    stale-frame placeholder without trusting its own clock against the file's.
+    Absent or unreadable file (including mid-replace) -> ``{"error": "no frame"}``.
+    """
+    path = Path(session_dir) / "frame.jpg"
+    try:
+        raw = path.read_bytes()
+        ts = path.stat().st_mtime
+    except OSError:
+        return {"error": "no frame"}
+    return {"jpeg_b64": base64.b64encode(raw).decode("ascii"),
+            "ts": round(ts, 3), "age_s": round(max(time.time() - ts, 0.0), 3)}
 
 
 def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:

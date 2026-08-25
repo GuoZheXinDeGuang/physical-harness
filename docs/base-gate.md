@@ -35,8 +35,8 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 544 passed
-skips      : 21 skipped
+pass       : 551 passed
+skips      : 22 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
@@ -44,11 +44,19 @@ skips      : 21 skipped
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
              [9] test_robocasa_drivers.py      robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
+             [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
 wall time  : ~4.3s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +7 over the phase-5 snapshot (544→551) is the frames overlay
+(`test_runtime_frame.py`: the never-raise dump contract, the step-interval
+frame write, the frames mount overlay as pure config, and runtime_frame's
+three-face equivalence). All sim-free and unmarked but one (the robocasa live
+frame proof, marked), so 7 add to both lanes and 1 skips outside the robocasa
+venv.
 
 The +15 over the phase-4 snapshot (529→544) is phase 5's routing tests:
 `test_session_routing.py` (9: the session param across board fn / storecli / mcp
@@ -56,10 +64,10 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `575 passed, 18 skipped` (the 15 robocasa-marked
+Full-suite parity (card present): `582 passed, 19 skipped` (the 16 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
-run only in sims/robocasa-venv via `pytest -m robocasa` → `12 passed, 3 xfailed,
-577 deselected`; the 3 xfails are the phase-3 driver honest-failure surfaces —
+run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 3 xfailed`;
+the 3 xfails are the phase-3 driver honest-failure surfaces —
 nav-microwave (fridge blocks the aisle) / close-door / place — see
 local-archive/robocasa-adapt/phase3.md). The kitchen_thaw mission card (phase 4)
 adds no robocasa-marked test — its live proof is the runtime E2E
@@ -79,6 +87,8 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
 
 - +2 `test_plugin_doctor.py` verify-claim tests skip (sealed stores absent)
 - +2 more skips where tests read sealed rescore/campaign artifacts
+- +1 `test_runtime_frame.py` JPEG-write test skips when Pillow is absent (it
+  rides the sim extras, not the base deps; dump() itself degrades to no-frames)
 - the two 30-秒上手 commands in README work as written: the `dev` extra carries
   everything collection needs (including `mcp` for the both-faces tests)
 

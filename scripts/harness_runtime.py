@@ -88,6 +88,12 @@ RENDER_ENV_REF = "scripts.watch_stack:viewer_provider"
 #: watch_stack's default per-step pacing is 0.02s of extra sleep; 1/50 == 0.02.
 DEFAULT_RENDER_FPS = 50.0
 
+#: The frames overlay: the offscreen-viewport wrapper (scripts/frame_dump.py),
+#: mounted OUTERMOST on ``embodiment.env`` per task when frames are on -- it
+#: wraps the sim override and the --render viewer alike (the base ref it wraps
+#: travels via frame_dump module globals, same in-process channel as watch_stack).
+FRAMES_ENV_REF = "scripts.frame_dump:frames_provider"
+
 
 def _load_attr(ref: str):
     """Import ``module:attr`` and return the ATTRIBUTE (not call it).
@@ -128,6 +134,10 @@ class Runtime:
     #: env provider on each task so the operator watches the MuJoCo window live.
     #: Composes with mode; campaigns spawn a headless subprocess regardless.
     render: bool = False
+    #: Per-BOOT operator flag, render's remote-browser sibling: overlay the
+    #: frame-dump env provider on each task so the ph-station 取景窗 shows the
+    #: sim. Auto-on for a headless-GL CLI boot; composes with render and mode.
+    frames: bool = False
     skills_manifest: tuple[str, ...] = ()
     #: task STRING -> {policy, planner, catalogue, oracles} and campaign name ->
     #: script, both folded from the installed manifests at boot -- the
@@ -169,7 +179,7 @@ def _prepare_render(fps: float) -> None:
 
 def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
          mode: str = "execution", render: bool = False,
-         render_fps: float = DEFAULT_RENDER_FPS) -> Runtime:
+         render_fps: float = DEFAULT_RENDER_FPS, frames: bool = False) -> Runtime:
     """Load-or-fresh the session chain, make the intake dirs, re-queue crashes.
 
     The session's ``mode`` is written once to ``<session-dir>/MODE`` at first
@@ -255,8 +265,15 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     # that predate it). Sits at the session root, so chain verification (session-
     # log/rows.jsonl only) never sees it.
     (session_dir / "runtime_status.json").write_text(json.dumps({
-        "pid": os.getpid(), "render": render, "mode": mode,
+        "pid": os.getpid(), "render": render, "frames": frames, "mode": mode,
         "boot_ts": time.time(), "display": os.environ.get("DISPLAY")}))
+
+    # Same live-state family: arm (or disarm) the frames overlay's destination.
+    # runs/<session>/frame.jpg is overwritten in place, never a chain row; a
+    # failing dump is swallowed inside frame_dump.dump, so a broken GL stack
+    # loses the viewport, never a task.
+    from scripts import frame_dump
+    frame_dump.arm(session_dir / "frame.jpg" if frames else None)
 
     # Same live-state family: the operational event feed the execution-graph
     # panel animates. Truncated per boot (this boot IS the feed's horizon);
@@ -268,10 +285,12 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     # on an actuation:real card, so the sim runtime refuses to boot with one).
     registry = discover()
     return Runtime(inbox, processing, done, failed, skills_root, log, mode,
-                   render, baseline, registry.task_bindings, registry.campaigns)
+                   render, frames, baseline, registry.task_bindings,
+                   registry.campaigns)
 
 
-def _mount_plan(binding: dict, skills_root: Path, render: bool = False):
+def _mount_plan(binding: dict, skills_root: Path, render: bool = False,
+                frames: bool = False):
     """A fresh MountPlan for this task: base profile + the task's sim policy +
     planner + the shared skills root (so a fresh graph.skill mount re-globs RSI's
     output). policy and planner come from the task binding (a manifest), so
@@ -300,6 +319,17 @@ def _mount_plan(binding: dict, skills_root: Path, render: bool = False):
         # wins over a sim override -- render+second-sim is unsupported (E2E is egl
         # headless). Wrap the sim ref here only once a windowed second sim is needed.
         override.append(Mount("embodiment.env", RENDER_ENV_REF))
+    if frames:
+        # OUTERMOST overlay: the frame dump wraps whatever ref stands after the
+        # sim/render overrides -- so the 取景窗 watches ANY task on ANY sim, with
+        # or without a window. The wrapped ref rides frame_dump's module global
+        # (in-process only, same channel as watch_stack's _RENDER_BASE_REF).
+        from scripts import frame_dump
+        frame_dump._BASE_REF = (
+            RENDER_ENV_REF if render
+            else binding.get("env",
+                             resolve_plan(base_profile()).ref("embodiment.env")))
+        override.append(Mount("embodiment.env", FRAMES_ENV_REF))
     return resolve_plan(base_profile(), patches=(
         Patch("runtime", override=tuple(override)),))
 
@@ -325,7 +355,8 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     max_actuations = int(brief.get("max_actuations",
                                    4 if task == "clear_table" else 3))
     kernel = Kernel(CAPABILITIES, log=rt.log)
-    kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render))
+    kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render,
+                             frames=rt.frames))
     wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
               "oracles": _load_attr(binding["oracles"])}
     # A heterogeneous mission (perceive/decide/verify nodes) declares a PREDICATES
@@ -551,9 +582,10 @@ def _pending(rt: Runtime) -> list[Path]:
 def main(session_dir: str | Path, inbox: str | Path | None = None, *,
          drain: bool = False, poll_interval: float = 1.0,
          mode: str = "execution", render: bool = False,
-         render_fps: float = DEFAULT_RENDER_FPS) -> Runtime:
+         render_fps: float = DEFAULT_RENDER_FPS, frames: bool = False) -> Runtime:
     """Boot, then drain the inbox once (``drain``) or poll it forever."""
-    rt = boot(session_dir, inbox, mode=mode, render=render, render_fps=render_fps)
+    rt = boot(session_dir, inbox, mode=mode, render=render, render_fps=render_fps,
+              frames=frames)
     if drain:
         while True:
             pending = _pending(rt)
@@ -587,10 +619,21 @@ def _cli() -> int:
     ap.add_argument("--render-fps", type=float, default=DEFAULT_RENDER_FPS,
                     help=f"render pacing when --render is set: added per-step sleep "
                          f"= 1/fps (default {DEFAULT_RENDER_FPS:g}, watch_stack's 0.02s)")
+    ap.add_argument("--frames", action="store_true",
+                    help="overlay the offscreen frame dump on each task so the "
+                         "ph-station 取景窗 shows the sim (runs/<session>/frame.jpg, "
+                         "~4fps by step interval). Auto-ON when MUJOCO_GL is a "
+                         "headless GL (egl/osmesa); pass explicitly for a windowed "
+                         "--render boot. A per-boot deployment choice, never a brief.")
     args = ap.parse_args()
+    # Headless-GL auto-enable (CLI only, so library callers and tests stay
+    # explicit): an egl/osmesa runtime has no window, so the frame dump is the
+    # only way an operator sees the sim at all.
+    frames = args.frames or (
+        os.environ.get("MUJOCO_GL", "").lower() in ("egl", "osmesa"))
     main(args.session_dir, args.inbox, drain=args.drain,
          poll_interval=args.poll_interval, mode=args.mode,
-         render=args.render, render_fps=args.render_fps)
+         render=args.render, render_fps=args.render_fps, frames=frames)
     return 0
 
 
