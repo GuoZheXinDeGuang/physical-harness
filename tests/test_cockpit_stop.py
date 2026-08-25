@@ -88,6 +88,21 @@ def test_stop_leaves_adopted_runtime_running(tmp_path):
         _cleanup(proc)
 
 
+def test_stop_leaves_adopted_web_running(tmp_path):
+    """An ADOPTED web (web_adopted=1: it predates this cockpit) is left up,
+    even though its cmdline matches the 'web --no-open' kill guard."""
+    repo = _repo(tmp_path)
+    proc = _spawn("node bin.js web --no-open --port 3080")
+    try:
+        _pidfile(repo, "session-main", web_pid=proc.pid, web_adopted=1, port=3080)
+        res = _stop(repo)
+        assert res.returncode == 0
+        assert proc.poll() is None, "an ADOPTED web must be left running"
+        assert "ADOPTED" in res.stderr
+    finally:
+        _cleanup(proc)
+
+
 def test_stop_skips_pid_whose_cmdline_no_longer_matches(tmp_path):
     """PID reuse guard: a recorded pid now running something ELSE is NOT killed."""
     repo = _repo(tmp_path)

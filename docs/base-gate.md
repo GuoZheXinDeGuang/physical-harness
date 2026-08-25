@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 543 passed
+pass       : 544 passed
 skips      : 21 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -50,13 +50,13 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +14 over the phase-4 snapshot (529→543) is phase 5's routing tests:
+The +15 over the phase-4 snapshot (529→544) is phase 5's routing tests:
 `test_session_routing.py` (9: the session param across board fn / storecli / mcp
-faces — default / whitelist / traversal) + `test_cockpit_stop.py` (5: per-session
---stop reaping by exact pid). All are sim-free and unmarked, so they add to both
-lanes and skip in neither.
+faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-session
+--stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
+unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `574 passed, 18 skipped` (the 15 robocasa-marked
+Full-suite parity (card present): `575 passed, 18 skipped` (the 15 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `12 passed, 3 xfailed,
 577 deselected`; the 3 xfails are the phase-3 driver honest-failure surfaces —

@@ -193,15 +193,22 @@ if [ "$DO_STOP" -eq 1 ]; then
   # main session: web server + its runtime
   if [ -f "$PIDFILE" ]; then
     stopped_any=1
-    web_pid=""; runtime_pid=""; runtime_adopted="1"
+    web_pid=""; web_adopted="0"; runtime_pid=""; runtime_adopted="1"
     while IFS='=' read -r k v; do
       case "$k" in
         web_pid) web_pid="$v";;
+        web_adopted) web_adopted="$v";;
         runtime_pid) runtime_pid="$v";;
         runtime_adopted) runtime_adopted="$v";;
       esac
     done < "$PIDFILE"
-    [ -n "$web_pid" ] && kill_recorded "$web_pid" "web --no-open" "web server"
+    if [ -n "$web_pid" ]; then
+      if [ "$web_adopted" = "1" ]; then
+        echo "cockpit: web server (pid $web_pid) was ADOPTED; leaving it up" >&2
+      else
+        kill_recorded "$web_pid" "web --no-open" "web server"
+      fi
+    fi
     stop_recorded_runtime "$runtime_pid" "$runtime_adopted" "runtime ($SESSION_DIR)"
     rm -f "$PIDFILE"
   fi
@@ -243,10 +250,24 @@ if [ "$NO_RUNTIME" -eq 0 ]; then
   runtime_up "$SESSION_DIR" ".venv/bin/python" 1
 fi
 
-# record PIDs for --stop. web_pid=$$: this shell is replaced by the web server
-# via exec below, so $$ is the server's PID after exec.
+# --- web: adopt-or-spawn (same discipline as the runtime). A server already
+# on $PORT (a previous cockpit, or a deploy session's live web) is ADOPTED:
+# record its REAL pid so the pidfile never lies, and --stop leaves it up
+# (web_adopted=1) exactly like an adopted runtime. Without this, a second
+# cockpit start spawn-crashes on EADDRINUSE and records a dead web pid.
+WEB_ADOPTED=0
+WEB_PID=""
+if curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then
+  WEB_PID="$(fuser "$PORT/tcp" 2>/dev/null | awk '{print $1}')"
+  WEB_ADOPTED=1
+  echo "cockpit: adopting web server already on :$PORT (pid ${WEB_PID:-unknown}); not restarting" >&2
+fi
+
+# record PIDs for --stop. Spawned web_pid=$$: this shell is replaced by the web
+# server via exec below, so $$ is the server's PID after exec.
 {
-  echo "web_pid=$$"
+  if [ "$WEB_ADOPTED" -eq 1 ]; then echo "web_pid=$WEB_PID"; else echo "web_pid=$$"; fi
+  echo "web_adopted=$WEB_ADOPTED"
   echo "port=$PORT"
   if [ -n "$RT_PID" ]; then
     echo "runtime_pid=$RT_PID"
@@ -269,6 +290,11 @@ if [ "$NO_RUNTIME" -eq 0 ] && [ "$WITH_ROBOCASA" -eq 1 ]; then
     echo "runtime_pid=$RT_PID"
     echo "runtime_adopted=$RT_ADOPTED"
   } > "$REPO/$ROBOCASA_SESSION_DIR/cockpit.pids"
+fi
+
+# adopted web: runtimes are up and recorded; nothing left to serve.
+if [ "$WEB_ADOPTED" -eq 1 ]; then
+  exit 0
 fi
 
 # --- serve the ph-station fork build -----------------------------------------
