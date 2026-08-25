@@ -45,7 +45,7 @@ skips      : 21 skipped
              [9] test_robocasa_drivers.py      robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.2s
+wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
@@ -77,3 +77,13 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
   everything collection needs (including `mcp` for the both-faces tests)
 
 A fresh clone that shows a FAILURE (not a skip) is a real regression.
+
+## repeat-offender: keep this snapshot + the two README counts in lockstep
+
+This count has drifted before — the robocasa-marked tally slipped 5→6 (commit
+38fe596) and had to be chased down after the fact. So the rule above is a
+STANDING one, not a nicety: any commit touching `tests/` re-runs the isolated
+base lane and the parity suite and updates, in the SAME commit, (1) the snapshot
+`pass` line here, (2) the parity line here, (3) README's 全量 count, (4) README's
+底座快道 count. A snapshot that lags the tests is the bug this section exists to
+prevent from recurring a fourth time.

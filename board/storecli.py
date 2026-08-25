@@ -70,23 +70,26 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         if path is None:
             raise ValueError("unknown store")
         return bs.heldout_blocks(runs, name)
+    # Session-addressed reads default to session-main when no name is given (the
+    # resident runtime), so a caller can omit it; an explicit name still routes
+    # to that session, and a ``../`` name is rejected by the shared guard.
     if fn == "session":
-        path = bs.safe_child(runs, name or "", bs.is_session)
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
         return bs.read_session(path)
     if fn == "runtime_status":
-        path = bs.safe_child(runs, name or "", bs.is_session)
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
         return bs.read_runtime_status(path)
     if fn == "runtime_events":
-        path = bs.safe_child(runs, name or "", bs.is_session)
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
         return bs.read_runtime_events(path, after)
     if fn == "session_progress":
-        path = bs.safe_child(runs, name or "", bs.is_session)
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
         return bs.session_progress(path)

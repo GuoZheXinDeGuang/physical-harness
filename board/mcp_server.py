@@ -32,22 +32,43 @@ from board import vault as bv
 from scripts.brief_drop import drop
 
 
+#: The default routing session -- the resident runtime cockpit always brings up.
+#: submit_brief/run_task and the session-addressed reads fall back to it, so the
+#: pre-routing single-runtime behavior is byte-identical when no session is named.
+_DEFAULT_SESSION = "session-main"
+
+
 class _Cfg:
-    """Server config: the runs/ tree, the two markdown feeds, and the resident
-    runtime's session inbox that submit_brief drops into. Set once by configure()
+    """Server config: the runs/ tree, the two markdown feeds, the default routing
+    session, and its inbox that submit_brief drops into. Set once by configure()
     (main, or a test); the tools read it. Read defaults mirror rsi_board."""
 
     runs = Path("runs").resolve()
     status = runs.parent / "STATUS.md"
     progress = runs.parent / "progress.md"
-    inbox = runs / "session-main" / "inbox"
+    session = _DEFAULT_SESSION
+    inbox = runs / _DEFAULT_SESSION / "inbox"
 
 
-def configure(runs, status=None, progress=None, inbox=None) -> None:
+def configure(runs, status=None, progress=None, inbox=None,
+              session=_DEFAULT_SESSION) -> None:
     _Cfg.runs = Path(runs).resolve()
     _Cfg.status = Path(status).resolve() if status else _Cfg.runs.parent / "STATUS.md"
     _Cfg.progress = Path(progress).resolve() if progress else _Cfg.runs.parent / "progress.md"
-    _Cfg.inbox = Path(inbox).resolve() if inbox else _Cfg.runs / "session-main" / "inbox"
+    _Cfg.session = session
+    _Cfg.inbox = Path(inbox).resolve() if inbox else _Cfg.runs / session / "inbox"
+
+
+def _route_inbox(session: str) -> Path | None:
+    """The inbox a per-call ``session`` routes into, or ``None`` for an unknown
+    one. The server's default session returns the configured inbox verbatim (zero
+    behavior change plus the configure(inbox=) override tests rely on, and no
+    is_session gate so a first submit can precede the runtime's first boot); any
+    OTHER session is validated against runs/ (a real booted session, ``../``
+    rejected) through the shared board.store guard and routed to <session>/inbox."""
+    if session == _Cfg.session:
+        return _Cfg.inbox
+    return bs.session_inbox(_Cfg.runs, session)
 
 
 def _read(path: Path) -> str:
@@ -87,30 +108,34 @@ def sessions() -> list[dict]:
 
 
 @mcp.tool()
-def session(name: str) -> dict:
-    """One runtime session: note payloads by kind plus chain_ok (hash-chain verify)."""
+def session(name: str = _DEFAULT_SESSION) -> dict:
+    """One runtime session: note payloads by kind plus chain_ok (hash-chain verify).
+    ``name`` defaults to the resident session-main; pass another to read a second
+    runtime's session (a ``../`` name is rejected by the shared guard)."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.read_session(path) if path else {"error": "unknown session"}
 
 
 @mcp.tool()
-def session_progress(name: str) -> dict:
+def session_progress(name: str = _DEFAULT_SESSION) -> dict:
     """One session's mission-progress aggregate over its task.plan_complete rows
-    (task tallies, total replans/faults, stage pass-rate, latest task tree)."""
+    (task tallies, total replans/faults, stage pass-rate, latest task tree).
+    ``name`` defaults to session-main."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.session_progress(path) if path else {"error": "unknown session"}
 
 
 @mcp.tool()
-def runtime_status(name: str) -> dict | None:
+def runtime_status(name: str = _DEFAULT_SESSION) -> dict | None:
     """One runtime session's LIVE status (pid/render/mode/boot_ts/display), or null
-    when it has not booted since the file existed. Live state, not sealed evidence."""
+    when it has not booted since the file existed. Live state, not sealed evidence.
+    ``name`` defaults to session-main."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.read_runtime_status(path) if path else {"error": "unknown session"}
 
 
 @mcp.tool()
-def runtime_events(name: str, after_seq: int = 0) -> dict:
+def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
     """One runtime session's OPERATIONAL event feed (runtime_events.jsonl):
     events with seq > after_seq plus last_seq. last_seq < after_seq means the
     runtime re-booted (feed truncated); reset the cursor to 0 and re-read.
@@ -160,22 +185,30 @@ def vault_neighbors(id: str, relation: str | None = None) -> dict:
 
 
 @mcp.tool()
-def submit_brief(brief: dict) -> dict:
-    """Drop a brief into the resident runtime's session inbox for it to claim.
+def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
+    """Drop a brief into a runtime session's inbox for it to claim.
 
     A brief is a pure selector+budgets, e.g.
-    ``{"kind":"task","task":"stack","seed":90000}``. This tool does NO
+    ``{"kind":"task","task":"stack","seed":90000}``. This tool does NO brief
     validation and names NO provider: it only performs the shared atomic drop
     (brief_drop.drop -- temp write + os.replace) so the runtime never claims a
     half-written brief. The resident runtime re-validates ``_BRIEF_KEYS``
     server-side on claim and stays the SOLE authority, so an injected extra key
     rides through unchanged and hard-fails to failed/ there -- the MCP seam puts
     the LLM in front of the inbox but not in front of the guard.
+
+    ``session`` only ROUTES (which runtime's inbox); it never touches the brief.
+    It defaults to the resident session-main, so single-runtime behavior is
+    unchanged. A non-default session is validated against runs/ (a real booted
+    session, ``../`` rejected); an unknown one returns ``{"error": ...}``.
     """
-    _Cfg.inbox.mkdir(parents=True, exist_ok=True)
+    inbox = _route_inbox(session)
+    if inbox is None:
+        return {"error": f"unknown session {session!r}"}
+    inbox.mkdir(parents=True, exist_ok=True)
     name = f"brief-{uuid.uuid4().hex}.json"
-    drop(_Cfg.inbox, name, json.dumps(brief))
-    return {"submitted": name, "inbox": str(_Cfg.inbox)}
+    drop(inbox, name, json.dumps(brief))
+    return {"submitted": name, "inbox": str(inbox)}
 
 
 def _outcome(status: str, brief_id: str, session_dir: Path, baseline: int,
@@ -211,7 +244,8 @@ def _outcome(status: str, brief_id: str, session_dir: Path, baseline: int,
 
 @mcp.tool()
 def run_task(task: str, seed: int, max_replans: int | None = None,
-             max_actuations: int | None = None, timeout_s: float = 120) -> dict:
+             max_actuations: int | None = None, timeout_s: float = 120,
+             session: str = _DEFAULT_SESSION) -> dict:
     """Submit a task brief and BLOCK until the resident runtime finishes it.
 
     Kills the submit -> bash-poll -> read-session ceremony: one call drops the
@@ -227,15 +261,21 @@ def run_task(task: str, seed: int, max_replans: int | None = None,
     success/nodes (+failure faults when the goal was missed), failed carries
     error, timeout carries guidance (the brief keeps running; poll the session
     later with session()).
+
+    ``session`` routes to a second runtime (default session-main); an unknown one
+    returns ``{"status": "error"}`` before any submit.
     """
+    inbox = _route_inbox(session)
+    if inbox is None:
+        return {"status": "error", "error": f"unknown session {session!r}"}
     brief = {"kind": "task", "task": task, "seed": seed}
     if max_replans is not None:
         brief["max_replans"] = max_replans
     if max_actuations is not None:
         brief["max_actuations"] = max_actuations
-    session_dir = _Cfg.inbox.parent
+    session_dir = inbox.parent
     baseline = max((r.get("seq", -1) for r in bs.chain_rows(session_dir)), default=-1)
-    brief_id = submit_brief(brief)["submitted"]
+    brief_id = submit_brief(brief, session=session)["submitted"]
 
     done_dir, failed_dir = session_dir / "done", session_dir / "failed"
     start = time.monotonic()
@@ -260,13 +300,15 @@ def main(argv=None) -> int:
                         help="STATUS.md for the seed ledger (default: <runs>/../STATUS.md)")
     parser.add_argument("--progress", type=Path, default=None,
                         help="progress.md for the rounds feed (default: <runs>/../progress.md)")
-    parser.add_argument("--session", default="session-main",
-                        help="resident runtime session whose inbox submit_brief drops into")
+    parser.add_argument("--session", default=_DEFAULT_SESSION,
+                        help="default runtime session for submit_brief/run_task "
+                             "when no per-call session is named (routes still "
+                             "reach any other session by name)")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
     if not runs.is_dir():
         parser.error(f"runs directory not found: {runs}")
-    configure(runs, args.status, args.progress, inbox=runs / args.session / "inbox")
+    configure(runs, args.status, args.progress, session=args.session)
     mcp.run(transport="stdio")
     return 0
 
