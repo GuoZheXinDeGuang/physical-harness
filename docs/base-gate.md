@@ -32,21 +32,22 @@ Two ways:
   `import sys; sys.modules["robosuite"] = sys.modules["mujoco"] = None`, on
   `PYTHONPATH`, then `pytest -m "not robosuite"`.
 
-## current snapshot (2026-08-25, isolated, robosuite blocked)
+## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
 pass       : 522 passed
-skips      : 6 skipped
+skips      : 7 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
+             [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
 wall time  : ~4.2s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-Full-suite parity (card present): `553 passed, 3 skipped`. base_profile sha is
+Full-suite parity (card present): `553 passed, 4 skipped`. base_profile sha is
 byte-stable at `b905a5…` (folds to the value sealed in runs/round25-rerun) — the
 manifest fold reproduces the old hard-coded mounts.
 

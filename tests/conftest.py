@@ -18,14 +18,28 @@ def pytest_configure(config):
         "robosuite: needs the embodiment_robosuite card (robosuite+mujoco); "
         "auto-skipped when it is unimportable",
     )
+    config.addinivalue_line(
+        "markers",
+        "robocasa: needs the robocasa venv (robocasa+robosuite-master); "
+        "auto-skipped when robocasa is unimportable (harness .venv)",
+    )
+
+
+def _auto_skip(items, pkg, marker, reason):
+    if find_spec(pkg) is not None:
+        return
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if marker in item.keywords:
+            item.add_marker(skip)
 
 
 def pytest_collection_modifyitems(config, items):
-    if find_spec("robosuite") is not None:
-        return
-    skip = pytest.mark.skip(
-        reason="robosuite unimportable (embodiment_robosuite extra not installed)"
+    _auto_skip(
+        items, "robosuite", "robosuite",
+        "robosuite unimportable (embodiment_robosuite extra not installed)",
     )
-    for item in items:
-        if "robosuite" in item.keywords:
-            item.add_marker(skip)
+    _auto_skip(
+        items, "robocasa", "robocasa",
+        "robocasa unimportable (robocasa venv only)",
+    )
