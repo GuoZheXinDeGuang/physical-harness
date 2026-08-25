@@ -117,6 +117,13 @@ def _chain_battery_plan(prereg_sha: str) -> dict:
     """The 3-arm battery, preregistered alongside the prereg (design §3a/§4)."""
     return {
         "preregistration_sha": prereg_sha,
+        "revision": "v2 (stack-first reorder): v1 (stack-last, runs/clear-build-cal) "
+            "tripped §4.3 (52 ungoverned deaths at grasp-cube vs 31 at the governed "
+            "stack node) -> proceed=false. The §1/§4.1 node-order lever orders the "
+            "governed build-stack node first; the v2 calibration (71 governed vs 12 "
+            "ungoverned deaths, build-stack reached by 150/150) clears every §4 gate "
+            "-> proceed=true. The stack-task preregistration is unchanged by the "
+            "reorder (identical sha); only the chain plan + calibration are re-sealed.",
         "task": "clear_build", "planner": "clear_build_planner@v2",
         "hypotheses": {
             "a_chain_success": "chain rate = prod(node rates); delta(governed-baseline) "
