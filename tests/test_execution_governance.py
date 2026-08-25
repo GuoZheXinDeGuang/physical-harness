@@ -213,7 +213,11 @@ def test_real_root_assembles_to_sealed_b026831_chain():
     assert bundle.critic_budget == 1 and bundle.action_budget == 0
     assert bundle.sha() == \
         "b026831c833aa6d8c47ea2270f670074aa7e0ffca126788a7718472c203bc2c9"
-    assert set(digests) == {f.stem for f in SKILLS_ROOT.glob("*.json")}
+    # Every stack digest names a real content-addressed file on disk (the auditor
+    # re-derives the bundle from exactly those stems). SUBSET, not equality: the
+    # live root also carries the lift-task grasp-cube record (14c435, round 108),
+    # which assemble_bundle("stack") correctly excludes.
+    assert set(digests) <= {f.stem for f in SKILLS_ROOT.glob("*.json")}
 
 
 # --- integration: the assembled bundle rescues a real episode -----------------
