@@ -36,10 +36,12 @@ Two ways:
 
 ```
 pass       : 522 passed
-skips      : 7 skipped
+skips      : 12 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
+             [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
+             [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
 wall time  : ~4.2s
@@ -47,9 +49,12 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-Full-suite parity (card present): `553 passed, 4 skipped`. base_profile sha is
-byte-stable at `b905a5…` (folds to the value sealed in runs/round25-rerun) — the
-manifest fold reproduces the old hard-coded mounts.
+Full-suite parity (card present): `553 passed, 9 skipped` (the 5 robocasa-marked
+items also skip in the harness .venv — robocasa is not installed there either; they
+run only in sims/robocasa-venv via `pytest -m robocasa` → `6 passed, 556 deselected`).
+base_profile sha is byte-stable at `b905a5…` (folds to the value sealed in
+runs/round25-rerun) — the manifest fold reproduces the old hard-coded mounts, and
+the inactive embodiment_robocasa card (enabled=false) folds no mount.
 
 **Discipline: a commit that adds or removes tests refreshes this snapshot + the
 two README counts IN THE SAME COMMIT.**

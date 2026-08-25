@@ -259,3 +259,18 @@ def test_doctor_greens_the_robosuite_card():
     assert ("A", "percept.model", "PASS") in got
     assert ("B", "embodiment.env", "PASS") in got
     assert ("B", "percept.model", "PASS") in got
+
+
+@pytest.mark.robocasa
+def test_doctor_greens_the_robocasa_card():
+    # The SECOND simulator behind the same two seams, checked in the robocasa venv
+    # (its third_party -- robocasa/robosuite/mujoco -- importable there). The card
+    # is enabled=false, but check() reads the manifest directly (card_mounts),
+    # ignoring enabled, so the doctor greens it regardless of the base fold.
+    rep = check(_REPO / "plugins" / "embodiment_robocasa")
+    assert rep.green, _fails(rep)
+    got = {(r.tier, r.name, r.status) for r in rep.results}
+    assert ("A", "embodiment.env", "PASS") in got
+    assert ("A", "percept.model", "PASS") in got
+    assert ("B", "embodiment.env", "PASS") in got
+    assert ("B", "percept.model", "PASS") in got

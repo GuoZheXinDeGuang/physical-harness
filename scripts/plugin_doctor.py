@@ -92,6 +92,13 @@ def _build_ctx(providers: dict, needs_sim: bool) -> _Ctx:
         spec = SimpleNamespace(seed=90001, task="fake", horizon=5)
     env = providers.get("embodiment.env")
     if env is not None:
+        # The canonical spec asks for "lift"; a card that does not offer it (a
+        # robocasa card whose only task is "kitchen_thaw") gets its OWN first
+        # task instead, so the smoke builds a world the card can actually make.
+        # robosuite keeps "lift" (it IS in its table) -- byte-identical there.
+        known = env.tasks()
+        if needs_sim and known and getattr(spec, "task", None) not in known:
+            spec = EpisodeSpec(seed=spec.seed, task=known[0])
         handle = env.make_env(spec)
         obs = handle.reset()
         getattr(handle, "close", lambda: None)()

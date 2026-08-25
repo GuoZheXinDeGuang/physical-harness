@@ -1,0 +1,26 @@
+# The RoboCasa embodiment card: a SECOND simulator behind the same two seams the
+# robosuite card owns (embodiment.env + percept.model). It rides a separate venv
+# (sims/robocasa-venv: robocasa 1.0.1 + robosuite master + numpy 2.x) and a
+# separate resident runtime -- the base is sim-agnostic, so a sim is just a card.
+#
+# enabled = false -> installed but INACTIVE. It re-claims embodiment.env and
+# percept.model, which plugins/embodiment_robosuite already owns, so discover()
+# keeps it OUT of the folded base plan (the base_profile sha is untouched) while
+# plugin_doctor still checks it at this path (card_mounts reads the file directly,
+# ignoring enabled). Its runtime activation is a session choice (docs/sim-adaptation.md
+# §1), not a base edit: the robocasa runtime mounts this card, session-main never does.
+enabled = false
+
+actuation = "sim"
+needs_sim = true
+# The third-party surface no OTHER card may import (test_boundaries reads this;
+# an rsi/policies module reaching for robocasa would be an embodiment leak).
+# discover() records third_party even for a disabled card -- its .py files still
+# sit in plugins/ and the boundary AST test scans them regardless of enabled.
+third_party = ["robocasa", "robosuite", "mujoco"]
+
+[mounts."embodiment.env"]
+ref = "plugins.embodiment_robocasa:provider"
+
+[mounts."percept.model"]
+ref = "plugins.embodiment_robocasa.percept:provider"

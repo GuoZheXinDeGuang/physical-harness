@@ -120,6 +120,14 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
             raise ValueError(
                 f"plugin {plugin!r} declares actuation:real; the sim runtime "
                 "refuses it (a real actuator needs a separate authenticated runtime)")
+        # third_party OWNERSHIP is declared even for a disabled card: its .py files
+        # still sit in plugins/ and test_boundaries scans them (AST, not import)
+        # regardless of enabled, so an inactive card that imports robocasa must
+        # still be allowed to. This is ABOVE the enabled gate for that reason; it
+        # feeds no mount, so the base_profile sha (folded over mounts only) is
+        # untouched -- the robocasa card sits inactive yet owns robocasa/robosuite.
+        if "third_party" in data:
+            third_party[plugin] = tuple(data["third_party"])
         # ``enabled = false`` = installed but inactive: doctor it (card_mounts
         # reads the file directly, ignoring this), then flip it on and disable the
         # incumbent. Lets an ALTERNATIVE provider for an already-claimed seam --
@@ -140,8 +148,6 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, mounts_ in card_bundles(data).items():
             _claim(bundles, bundle_owner, name, tuple(mounts_),
                    kind="bundle", plugin=plugin)
-        if "third_party" in data:
-            third_party[plugin] = tuple(data["third_party"])
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
                     third_party, bundles)
