@@ -356,6 +356,21 @@ def test_stack_scripted_driver_smoke():
     assert d.exhausted
 
 
+def test_percept_rng_accepts_large_seeds():
+    """RandomState seeds must be < 2**32, so the derived percept seed wraps.
+
+    Regression for M6 round 107: seed=990000 (inventory_smoke's own documented
+    default) made seed*7919+11 overflow and raise at the first observe_once.
+    Every driver's t=0 percept routes through the one _percept_rng helper, so
+    FrozenPolicy alone covers them all.
+    """
+    from plugins.policies.drivers import FrozenPolicy
+
+    obs = {"cube_pos": np.array([0.0, 0.0, 0.82])}
+    target = FrozenPolicy(EpisodeSpec(seed=990000)).observe_once(obs)
+    assert target[2] == 0.82
+
+
 def test_stack_provider_satisfies_policy_factory():
     assert isinstance(load_provider(STACK_POLICY_REF), PolicyFactory)
 

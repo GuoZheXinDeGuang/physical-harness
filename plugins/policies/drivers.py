@@ -50,6 +50,18 @@ def _object_key(spec):
 
     return legacy.object_key(spec)
 
+def _percept_rng(spec: EpisodeSpec) -> np.random.RandomState:
+    """The seed-derived percept-noise stream, shared by every t=0 percept.
+
+    RandomState only accepts seeds in [0, 2**32); the derivation is wrapped
+    because any spec.seed >= 542479 otherwise overflows it (M6 round 107:
+    inventory_smoke's own --seed 990000 default crashed the first manipulate
+    node). Wrapping is value-identical for every seed below that, so sealed
+    runs replay bit-for-bit.
+    """
+    return np.random.RandomState((spec.seed * 7919 + 11) % (2**32))
+
+
 @dataclass(slots=True)
 class FrozenPolicy:
     """The black-box policy under governance. Never learns, never retries."""
@@ -59,7 +71,7 @@ class FrozenPolicy:
 
     def observe_once(self, obs: Mapping[str, np.ndarray]) -> np.ndarray:
         """Take the single noisy percept the policy will act on for the whole episode."""
-        rng = np.random.RandomState(self.spec.seed * 7919 + 11)
+        rng = _percept_rng(self.spec)
         sd = self.spec.percept_noise
         self.target = np.asarray(obs[_object_key(self.spec)]).copy() + np.array(
             [rng.normal(0, sd), rng.normal(0, sd), 0.0]
@@ -273,7 +285,7 @@ class StackScriptedDriver:
     def observe_once(self, obs) -> np.ndarray:
         """One noisy percept of BOTH cubes: xy noised, z exact, two consecutive
         draws from the one seed-derived stream so the cube errors are independent."""
-        rng = np.random.RandomState(self.spec.seed * 7919 + 11)
+        rng = _percept_rng(self.spec)
         sd = self.spec.percept_noise
         self.target_a = np.asarray(obs[_object_key(self.spec)]).copy() + np.array(
             [rng.normal(0, sd), rng.normal(0, sd), 0.0]
