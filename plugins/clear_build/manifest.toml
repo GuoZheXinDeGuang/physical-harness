@@ -1,0 +1,22 @@
+# The clear_build long-horizon mission card (M5). Dropping this dir makes
+# {"kind":"task","task":"clear_build"} an accepted brief -- discover() folds this
+# binding into the union at boot, no base edit. It declares NO [mounts.*], so
+# base_profile's sha is untouched (the fold is over mounts only); it composes the
+# grasp/pick/stack SKILL_SPECS execution bindings that already exist.
+#
+# needs_sim: the chain actuates the four robosuite tasks at run time. The doctor's
+# Tier A (load + isinstance the binding's policy/planner, import catalogue/oracles)
+# runs base-clean, but the third_party deps gate any real-sim smoke on a sim
+# machine -- symmetric with the geometric-grasp card.
+needs_sim = true
+third_party = ["robosuite", "mujoco"]
+
+# The new task -> its planner + the by-task composite policy. policy routes the
+# stack node to StackScriptedDriver and every other node to the scripted driver
+# (one policy.driver mount, chosen by spec.task); planner / catalogue / oracles
+# are this card's own from-scratch multi-skill vocabulary, reached by ref.
+[task_bindings.clear_build]
+policy = "plugins.policies:clear_build_provider"
+planner = "plugins.clear_build.planner:provider"
+catalogue = "plugins.clear_build.planner:CATALOGUE"
+oracles = "plugins.clear_build.planner:ORACLES"

@@ -110,3 +110,27 @@ class LiftGeometricPolicies:
 def lift_geometric_provider() -> LiftGeometricPolicies:
     """The geometric-grasp policy for the ``lift_geometric`` task binding."""
     return LiftGeometricPolicies()
+
+
+class ClearBuildPolicies:
+    """`harness.contracts.PolicyFactory` for the ``clear_build`` chain: one mount,
+    the driver chosen BY spec.task.
+
+    The mission spans four robosuite tasks under ONE policy.driver mount, but the
+    stack node needs the eight-phase :class:`StackScriptedDriver` (grasp cubeA +
+    seat it on cubeB) while grasp/pick run the four-phase scripted driver. The
+    task binding carries a single ``policy`` ref, so the per-node dispatch lives
+    HERE: ``task == "stack"`` -> StackScriptedDriver, everything else ->
+    ``_default_make_driver`` (the byte-identical scripted/cloned path). This is
+    the composite the multi-task chain needs; no other consumer reuses it.
+    """
+
+    def make_driver(self, spec: Any) -> Any:
+        if getattr(spec, "task", None) == "stack":
+            return _policy.StackScriptedDriver(spec)
+        return _policy._default_make_driver(spec)
+
+
+def clear_build_provider() -> ClearBuildPolicies:
+    """The by-task composite policy for the ``clear_build`` mission card."""
+    return ClearBuildPolicies()

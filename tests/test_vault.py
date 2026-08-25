@@ -45,9 +45,9 @@ def test_fold_over_real_runs():
     by_id = {n["id"]: n for n in g["nodes"]}
     edges = {(e["rel"], e["src"], e["dst"]) for e in g["edges"]}
 
-    # the three mounted skills + the 9 cards + the 9 capabilities are all present.
+    # the three mounted skills + the 10 cards + the 9 capabilities are all present.
     assert {STACK, ADC, EB} <= set(by_id)
-    assert sum(n["kind"] == "package" for n in g["nodes"]) == 9
+    assert sum(n["kind"] == "package" for n in g["nodes"]) == 10
     assert sum(n["kind"] == "capability" for n in g["nodes"]) == 9
 
     stack = by_id[STACK]
