@@ -340,6 +340,25 @@ def _governed_segment(episode: EpisodeContext, seg_spec: EpisodeSpec, bundle, *,
     ``governed_segment`` exactly as they monkeypatch ``_governed_rollout``."""
     gov = importlib.import_module("plugins.rsi.governed")
     ep = episode
+    # Heterogeneous episodic driver (M7): a mission whose sub-goals are DIFFERENT
+    # behaviours -- navigate, grasp, place, close, press -- not one retargetable
+    # grasp over N objects. Such a driver binds the live world + THIS sub-goal's
+    # spec itself (``enter_segment``) and reports its OWN stage terminal --
+    # arrived / grasped / placed / closed / on (``segment_success``) -- so the base
+    # neither retargets by object pose nor scores a fixed lifted()/_check_success
+    # terminal (neither of which is the right sub-goal truth for a nav or a close).
+    # An obs-only retargetable driver (robosuite clear_workspace's ScriptedDriver)
+    # has no ``enter_segment`` -> the pose-retarget path below, byte-identical.
+    # ponytail: two branches, one protocol probe; unify only if a THIRD driver
+    # shape appears that fits neither.
+    if hasattr(ep.driver, "enter_segment"):
+        ep.driver.enter_segment(ep.env, seg_spec)
+        seg = gov.governed_segment(ep.env, ep.obs, ep.driver, seg_spec, bundle,
+                                   step_budget=step_budget)
+        ep.obs = seg["obs"]
+        ep.cursor += seg["steps"]
+        seg["success"] = ep.driver.segment_success(ep.env)
+        return seg
     obj_key = ep.embodiment.object_key(seg_spec)
     ep.driver.retarget(ep.obs[obj_key])
     # ponytail: pokes driver.k to restart the four-phase grasp clock for the next

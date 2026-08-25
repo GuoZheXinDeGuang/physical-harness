@@ -358,3 +358,167 @@ def test_segment_without_episode_refuses():
                            nodes_out={}, predicates={}, episode=None)
     with pytest.raises(ValueError, match="persistent episode"):
         workload._segment({"id": "s", "skill": "clear", "args": {"object": "a"}}, ctx)
+
+
+# ── heterogeneous episodic driver: sub-goals are DIFFERENT behaviours (nav / grasp
+#    / place / close), the driver binds the live world + THIS sub-goal's spec and
+#    reports its OWN stage terminal -- NOT one retargetable grasp over N objects.
+#    This is the robocasa kitchen_thaw shape; the base opts into it via the
+#    driver's ``enter_segment`` and reads ``segment_success`` (never object_key /
+#    score_terminal). ────────────────────────────────────────────────────────────
+
+class _HetDriver:
+    """The composite kitchen driver's contract on a fake: binds the world + spec
+    per sub-goal, dispatches nothing (the fake stage is here), reports done off
+    ``_done`` keyed by the RE-TASKED sub-goal task."""
+
+    def __init__(self, done: dict) -> None:
+        self.k = 0
+        self.entered: list[str] = []     # spec.task per segment, in order
+        self._done = done
+
+    def observe_once(self, obs):
+        return None
+
+    def enter_segment(self, env, spec):
+        self.entered.append(spec.task)
+        self.k = 0
+
+    def segment_success(self, env) -> bool:
+        return bool(self._done.get(self.entered[-1], True))
+
+
+HET_DRIVER: _HetDriver
+
+
+class _HetEmbodiment:
+    """object_key / success RAISE -- proving the heterogeneous branch calls neither
+    (an obs-only retargetable driver would)."""
+
+    def __init__(self, world: _World) -> None:
+        self.world = world
+        self.makes = 0
+
+    def make_env(self, spec):
+        self.makes += 1
+        return self.world
+
+    def tasks(self):
+        return ("kitchen",)
+
+    def object_key(self, spec):
+        raise AssertionError("object_key must NOT be called on the heterogeneous "
+                             "segment path (the driver self-targets from the env)")
+
+    def success(self, obs, spec, start_z):
+        raise AssertionError("score_terminal/success must NOT be called on the "
+                             "heterogeneous path (segment_success is the truth)")
+
+
+def het_embodiment():
+    return _HET_EMB
+
+
+class _HetPolicy:
+    def make_driver(self, spec):
+        return HET_DRIVER
+
+
+def het_policy():
+    return _HetPolicy()
+
+
+def _het_drive(env, obs, driver, spec, bundle, *, step_budget):
+    """The faked inner drive: just steps the shared world; success comes from the
+    driver's segment_success, not this return (no 'success' key)."""
+    env.steps += 5
+    return {"obs": env.obs, "steps": 5, "stages": []}
+
+
+class _HetPlanner:
+    def plan(self, brief):
+        return json.loads(json.dumps({
+            "goal": "a two-sub-goal heterogeneous kitchen mission",
+            "nodes": [
+                {"id": "walk", "skill": "walk", "kind": "segment", "args": {}, "after": []},
+                {"id": "at", "skill": "at", "kind": "verify", "args": {}, "after": ["walk"]},
+                {"id": "grab", "skill": "grab", "kind": "segment", "args": {}, "after": ["at"]},
+                {"id": "held", "skill": "held", "kind": "verify", "args": {}, "after": ["grab"]},
+            ],
+            "verify": [{"after": "walk", "predicate": "staged"},
+                       {"after": "grab", "predicate": "staged"}],
+        }, sort_keys=True))
+
+    @property
+    def identity(self):
+        return "het_planner@v1"
+
+
+def _always():
+    return lambda node, ctx: {"success": True}
+
+
+_HET_CATALOGUE = {"walk": {}, "at": {}, "grab": {}, "held": {}}
+_HET_ORACLES = ("staged",)
+_HET_PREDICATES = {"at": "test_persistent_mission:_always",
+                   "held": "test_persistent_mission:_always"}
+#: each segment skill -> its distinct sub-goal task (the robocasa SEGMENT_SPECS shape)
+_HET_SEGMENT_SPECS = {"walk": {"task": "go"}, "grab": {"task": "pick"}}
+
+
+def _het_kernel() -> Kernel:
+    k = Kernel(CAPABILITIES)
+    k.provide("task.planner", _HetPlanner(), ref="tests.fakes:planner")
+    k.provide("graph.scene", _FakeScene(), ref="tests.fakes:scene")
+    k.provide("graph.skill", InMemorySkillGraph(),
+              ref="plugins.graphs:skill_graph_provider")
+    k.provide("embodiment.env", het_embodiment(),
+              ref="test_persistent_mission:het_embodiment")
+    k.provide("policy.driver", het_policy(),
+              ref="test_persistent_mission:het_policy")
+    k.provide("exec.rollouts", _FakeExecutor(), ref="tests.fakes:executor")
+    return k
+
+
+def _het_brief(**over) -> dict:
+    b = {"task": "kitchen", "catalogue": _HET_CATALOGUE, "oracles": _HET_ORACLES,
+         "predicates": dict(_HET_PREDICATES), "episodic": True,
+         "episode": {"task": "kitchen", "horizon": 500},
+         "segment_specs": _HET_SEGMENT_SPECS}
+    b.update(over)
+    return b
+
+
+def _het_fresh(done: dict) -> None:
+    global _HET_EMB, HET_DRIVER
+    _HET_EMB = _HetEmbodiment(_World())
+    HET_DRIVER = _HetDriver(done)
+
+
+def test_heterogeneous_segments_bind_env_and_report_own_terminal(monkeypatch):
+    _het_fresh(done={"go": True, "pick": True})
+    monkeypatch.setattr(governed, "governed_segment", _het_drive)
+    out = workload.run(_het_brief(), _het_kernel(), seed=11, max_actuations=20)
+
+    assert out["success"] is True and out["replans"] == 0
+    # ONE world for the whole mission (no per-segment make/reset/close)
+    assert _HET_EMB.makes == 1 and _HET_EMB.world.resets == 1 and _HET_EMB.world.closes == 1
+    # each segment re-tasked its own behaviour and the driver bound it in order --
+    # object_key / success (which would have raised) were never on this path
+    assert HET_DRIVER.entered == ["go", "pick"]
+    # both segment nodes sealed success from segment_success (not score_terminal)
+    assert out["nodes"]["walk"]["success"] and out["nodes"]["grab"]["success"]
+
+
+def test_heterogeneous_segment_failure_replans_in_the_same_world(monkeypatch):
+    # the second sub-goal's stage never reaches done -> its segment fails -> the base
+    # loop faults and replans into the SAME world (the kitchen_thaw nav-micro shape)
+    _het_fresh(done={"go": True, "pick": False})
+    monkeypatch.setattr(governed, "governed_segment", _het_drive)
+    out = workload.run(_het_brief(), _het_kernel(), seed=12, max_replans=2, max_actuations=20)
+
+    assert out["success"] is False and out["replans"] == 2
+    assert out["faults"][0]["kind"] == "node_failure" and out["faults"][0]["node"] == "grab"
+    # no new world on replan; walk (already done) was never re-driven, grab retried
+    assert _HET_EMB.makes == 1 and _HET_EMB.world.resets == 1 and _HET_EMB.world.closes == 1
+    assert HET_DRIVER.entered.count("go") == 1 and HET_DRIVER.entered.count("pick") == 3

@@ -1,0 +1,35 @@
+# The kitchen_thaw PERSISTENT-EPISODE mission card (M7 on RoboCasa). Dropping this
+# dir makes {"kind":"task","task":"kitchen_thaw"} an accepted brief. It declares NO
+# [mounts.*], so base_profile's sha is untouched (the fold is over mounts only); it
+# composes the generic persistent-episode runner + node-kind machinery that already
+# live in the base (plugins.task.workload EpisodeContext/_segment/_governed_segment
+# heterogeneous branch + plugins.task.validate NODE_KINDS) and adds only this
+# mission's PURE DATA vocabulary + planner.
+#
+# needs_sim: the ONE episode is a real robocasa MicrowaveThawingFridge world the six
+# segment nodes drive and the perceive/verify nodes read live. This card imports NO
+# sibling plugin (it reaches the robocasa env/percept/predicates AND its driver
+# purely by ref via load_provider -- tests/test_boundaries.py), so it owns no
+# third-party surface of its own; the robocasa card owns robocasa/robosuite/mujoco.
+needs_sim = true
+
+# The new task -> its deterministic planner + the robocasa composite kitchen driver
+# (one policy.driver mount, six stage behaviours dispatched by the re-tasked segment
+# spec) + this card's own heterogeneous vocabulary. The M7 persistence declarations
+# the base threads (harness_runtime) and checks (plugin_doctor): `episodic` opts the
+# run into ONE persistent world; `episode` names the single-episode spec block;
+# `segment_specs` re-tasks each segment to its stage. `env` / `percept` name the
+# robocasa embodiment for THIS session only -- the robocasa card is enabled=false so
+# it is out of the base fold; harness_runtime._mount_plan overrides the base
+# robosuite mounts with these for the kitchen_thaw runtime (docs/sim-adaptation.md §1).
+[task_bindings.kitchen_thaw]
+env = "plugins.embodiment_robocasa:provider"
+percept = "plugins.embodiment_robocasa.percept:provider"
+policy = "plugins.embodiment_robocasa.kitchen_driver:provider"
+planner = "plugins.mission_kitchen_thaw.planner:provider"
+catalogue = "plugins.mission_kitchen_thaw.planner:CATALOGUE"
+oracles = "plugins.mission_kitchen_thaw.planner:ORACLES"
+predicates = "plugins.mission_kitchen_thaw.planner:PREDICATES"
+episodic = true
+episode = "plugins.mission_kitchen_thaw.planner:EPISODE"
+segment_specs = "plugins.mission_kitchen_thaw.planner:SEGMENT_SPECS"

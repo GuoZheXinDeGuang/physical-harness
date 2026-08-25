@@ -287,7 +287,18 @@ def _mount_plan(binding: dict, skills_root: Path, render: bool = False):
         Mount("graph.skill", "plugins.graphs:skill_graph_provider",
               {"root": str(skills_root)}),
     ]
+    # A mission riding a DIFFERENT simulator names its embodiment.env / percept.model
+    # by ref in its binding: the robocasa card is enabled=false (kept OUT of the base
+    # fold so its second embodiment.env claim never collides with robosuite's), so a
+    # per-session override IS how that second sim mounts. Single-sim bindings omit
+    # these keys -> the base-folded robosuite mounts stand, byte-identical.
+    for cap, key in (("embodiment.env", "env"), ("percept.model", "percept")):
+        if key in binding:
+            override.append(Mount(cap, binding[key]))
     if render:
+        # ponytail: render re-overrides embodiment.env to the viewer wrapper, so it
+        # wins over a sim override -- render+second-sim is unsupported (E2E is egl
+        # headless). Wrap the sim ref here only once a windowed second sim is needed.
         override.append(Mount("embodiment.env", RENDER_ENV_REF))
     return resolve_plan(base_profile(), patches=(
         Patch("runtime", override=tuple(override)),))
