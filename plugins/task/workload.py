@@ -179,12 +179,50 @@ def _dispatch(node: Mapping, *, seed: int, env_ref: str, policy_ref: str,
 # returns the SAME ``{"success": bool, "governance": {...}}`` shape the loop
 # already reads, and the truth is ALWAYS a machine predicate, never a model claim.
 
+@dataclass
+class EpisodeContext:
+    """ONE persistent sim episode threaded through the plan graph (M7): the live
+    ``env``, the running ``obs``, the retargetable ``driver``, and a ``cursor``
+    (env steps consumed so far vs ``spec.horizon``). Built ONCE when a brief
+    declares ``episodic``; ``env.close()`` fires ONCE at mission end (win, abort,
+    or horizon), not per sub-goal -- the whole point of M7 over M6's fresh-per-node
+    dispatch. The world carries consequences forward: a ``segment`` reads the obs
+    the prior segment LEFT (a dropped object stays where it fell), never a reset
+    preview. Mutable on purpose -- the loop threads one instance through every node.
+    """
+
+    embodiment: Any
+    env: Any
+    driver: Any
+    spec: EpisodeSpec
+    obs: Any
+    cursor: int = 0
+    closed: bool = False
+
+    @property
+    def exhausted(self) -> bool:
+        """The shared robosuite horizon is spent; driving further is refused."""
+        return self.cursor >= self.spec.horizon
+
+    def close(self) -> None:
+        """Idempotent single close -- the mission-end teardown, fired once."""
+        if not self.closed:
+            self.closed = True
+            self.env.close()
+
+
 @dataclass(frozen=True)
 class NodeCtx:
     """What a node-kind handler may read. ``manipulate`` uses only the refs;
     ``perceive`` also resets the same-seed env by ref; ``decide``/``verify`` read
     only ``nodes_out`` (accumulated prior sealed results). ``nodes_out`` is the
-    loop's live dict passed by reference, so a later node sees earlier facts."""
+    loop's live dict passed by reference, so a later node sees earlier facts.
+
+    ``episode`` is the persistent M7 world or ``None``. When set, ``segment`` nodes
+    drive it (no make/close) and a card's perceive/verify predicate reads its live
+    ``obs`` instead of resetting a fresh env -- the same handle carries every
+    sub-goal's consequence forward. ``None`` is today's fresh-per-node path,
+    byte-identical (every existing card omits ``episodic``)."""
 
     seed: int
     env_ref: str
@@ -192,6 +230,12 @@ class NodeCtx:
     skills: tuple
     nodes_out: Mapping[str, dict]
     predicates: Mapping[str, str]  # predicate name -> "module:factory" ref
+    episode: EpisodeContext | None = None
+    #: segment skill -> per-sub-goal spec override (task/task_by_object/stages),
+    #: the segment analog of SKILL_SPECS: it routes each sub-goal's object to the
+    #: task whose object_key the driver retargets on. Empty -> every segment drives
+    #: the ONE episode spec (a single-object mission). Card data, threaded on the brief.
+    segment_specs: Mapping[str, Mapping] | None = None
 
 
 #: A non-manipulate node seals zero privilege: decide/verify read only sealed
@@ -254,11 +298,127 @@ def _verify(node: Mapping, ctx: NodeCtx) -> dict:
     return {"success": bool(raw["success"]), "governance": dict(_ZERO_PRIV)}
 
 
+def _episode_spec(brief: Mapping, *, seed: int, env_ref: str, policy_ref: str) -> EpisodeSpec:
+    """Build the ONE persistent episode's spec from the card's ``episode`` block on
+    the brief (kwargs a card authors: task, percept_noise, terminal_label, horizon,
+    and a ``stages`` REF resolved the same sanctioned way ``_dispatch`` resolves a
+    node's stages). Absent -> a bare same-seed spec. The mission stays pure data:
+    the base never names a task, the card's episode block does."""
+    kwargs = dict(brief.get("episode") or {})
+    stages_ref = kwargs.pop("stages", None)
+    stages = load_provider(stages_ref) if stages_ref else None
+    return EpisodeSpec(seed=seed, stages=stages, env_provider=env_ref,
+                       policy_provider=policy_ref, **kwargs)
+
+
+def _segment_governance(bundle, digests, entered: int, exited: int) -> dict:
+    """The per-sub-goal governance seal: the SAME shape ``_dispatch`` seals for a
+    fresh rollout (which established skills governed under what budgets), PLUS the
+    sub-goal's env-step span off the shared cursor so an auditor reconstructs the
+    whole persistent timeline from one note (m7 §2e). One seal per sub-goal."""
+    return {
+        "skills": digests,
+        "bundle_sha": bundle.sha() if bundle is not None else None,
+        "critic_budget": bundle.critic_budget if bundle is not None else 0,
+        "action_budget": bundle.action_budget if bundle is not None else 0,
+        "entered_env_step": entered,
+        "exited_env_step": exited,
+    }
+
+
+def _governed_segment(episode: EpisodeContext, seg_spec: EpisodeSpec, bundle, *,
+                      step_budget: int) -> dict:
+    """Drive the PERSISTENT episode ONE sub-goal segment on the SHARED env -- no
+    make, no reset, no close. Re-aims the shared driver at this sub-goal's object
+    (its live pose off ``episode.obs``) and restarts its grasp schedule, drives the
+    extracted ``governed_segment`` loop for ``step_budget`` env steps, advances the
+    cursor by what it consumed, then scores the sub-goal terminal on the obs the
+    drive LEFT. The arm starts wherever the last sub-goal ended -- no teleport.
+
+    Reached by importlib (plugins.task may not import plugins.rsi --
+    tests/test_boundaries.py) and module-level so tests monkeypatch it or the inner
+    ``governed_segment`` exactly as they monkeypatch ``_governed_rollout``."""
+    gov = importlib.import_module("plugins.rsi.governed")
+    ep = episode
+    obj_key = ep.embodiment.object_key(seg_spec)
+    ep.driver.retarget(ep.obs[obj_key])
+    # ponytail: pokes driver.k to restart the four-phase grasp clock for the next
+    # sub-goal (the prior one exhausted it); add a PolicyDriver.restart() if an
+    # episodic driver ever lacks .k. on_handback already writes .k (drivers.py).
+    if hasattr(ep.driver, "k"):
+        ep.driver.k = 0
+    start_z = float(ep.obs[obj_key][2])
+    seg = gov.governed_segment(ep.env, ep.obs, ep.driver, seg_spec, bundle,
+                               step_budget=step_budget)
+    ep.obs = seg["obs"]
+    ep.cursor += seg["steps"]
+    seg["success"] = gov.score_terminal(ep.embodiment, ep.obs, seg_spec, start_z, ep.env)
+    return seg
+
+
+def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpec:
+    """The per-sub-goal spec: the persistent episode's spec, optionally re-tasked
+    to this sub-goal's object so ``object_key`` resolves to the object the driver
+    retargets on. Reuses ``_dispatch``'s ``task_by_object`` shape (the pick pattern)
+    -- no override -> the ONE episode spec drives every sub-goal (single-object)."""
+    binding = (ctx.segment_specs or {}).get(node["skill"])
+    if not binding:
+        return ep.spec
+    kwargs = dict(binding)
+    task_by_object = kwargs.pop("task_by_object", None)
+    if task_by_object is not None:
+        obj = (node.get("args") or {}).get("object")
+        if obj not in task_by_object:
+            raise ValueError(
+                f"segment {node['id']!r}: object {obj!r} has no task binding; "
+                f"known objects: {sorted(task_by_object)}")
+        kwargs["task"] = task_by_object[obj]
+    stages_ref = kwargs.pop("stages", None)
+    if stages_ref is not None:
+        kwargs["stages"] = load_provider(stages_ref)
+    return ep.spec.child(**kwargs)
+
+
+def _segment(node: Mapping, ctx: NodeCtx) -> dict:
+    """SEGMENT (M7): drive the ONE persistent episode for this sub-goal. Unlike
+    ``manipulate`` (a throwaway make->reset->drive->close per node), a segment runs
+    on the shared live env so the world carries the prior sub-goal's consequence
+    forward, and a failed verify downstream replans into the SAME world (the loop's
+    existing fault->replan, no reset). Governance mounts PER SEGMENT: this sub-goal's
+    task's established skills assemble a bundle exactly as ``_dispatch`` does. The
+    seal carries the sub-goal's env-step span off the shared cursor."""
+    ep = ctx.episode
+    if ep is None:
+        raise ValueError(
+            f"segment node {node['id']!r} needs a persistent episode; the brief must "
+            "declare 'episodic' (no EpisodeContext threaded on this run)")
+    seg_spec = _segment_spec(node, ep, ctx)
+    bundle, digests = assemble_bundle(ctx.skills, seg_spec.task)
+    entered = ep.cursor
+    if ep.exhausted:
+        # Mission-level abort floor (m7 §2c): the shared horizon is spent. Seal an
+        # honest zero-step partial rather than drive a dead env; the loop faults on
+        # success=False and bounds the retries via max_replans, never a reset.
+        return {"success": False, "steps": 0, "stages": [], "aborted": "horizon",
+                "governance": _segment_governance(bundle, digests, entered, entered)}
+    seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor)
+    exited = ep.cursor
+    stages = seg.get("stages", [])
+    opstream.emit("sub_goal_transition", node=node["id"],
+                  object=(node.get("args") or {}).get("object"),
+                  success=bool(seg["success"]),
+                  entered_env_step=entered, exited_env_step=exited)
+    return {"success": bool(seg["success"]), "steps": seg.get("steps"),
+            "stages": stages,
+            "governance": _segment_governance(bundle, digests, entered, exited)}
+
+
 #: kind -> handler ``(node, ctx) -> {"success", "governance", ...}``. The names
 #: are validate.NODE_KINDS verbatim; the assert makes a drifted table a loud
 #: import error, never a silent KeyError mid-brief.
 _KIND_HANDLERS = {
     "manipulate": _manipulate,
+    "segment": _segment,
     "perceive": _perceive,
     "decide": _decide,
     "verify": _verify,
@@ -319,10 +479,22 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     actuations = 0
     replans = 0
     success = False
+    # M7 opt-in: a brief that declares ``episodic`` opens ONE persistent world
+    # here and threads it through every node; ``env.close()`` fires once in the
+    # finally below (win, abort, or horizon). Absent -> episode is None, today's
+    # fresh-per-node path, byte-identical (every existing card omits it).
+    episode: EpisodeContext | None = None
+    if brief.get("episodic"):
+        gov = importlib.import_module("plugins.rsi.governed")
+        espec = _episode_spec(brief, seed=seed, env_ref=env_ref, policy_ref=policy_ref)
+        embodiment, env, obs, driver = gov.open_episode(espec)
+        episode = EpisodeContext(embodiment, env, driver, espec, obs)
     # Built ONCE: nodes_out is passed by reference, so a decide/verify node
-    # reached later in the loop reads the facts earlier nodes have sealed.
+    # reached later in the loop reads the facts earlier nodes have sealed;
+    # episode (if any) is the shared persistent world every segment drives.
     ctx = NodeCtx(seed=seed, env_ref=env_ref, policy_ref=policy_ref,
-                  skills=skills, nodes_out=nodes_out, predicates=predicates)
+                  skills=skills, nodes_out=nodes_out, predicates=predicates,
+                  episode=episode, segment_specs=brief.get("segment_specs"))
     while True:
         # Pre-episode there is no obs; the empty snapshot is the honest scene
         # until M2's World bridge feeds a live one.
@@ -423,6 +595,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                       node=fault.get("node"), msg=fault.get("msg"))
         brief = {**brief, "fault": fault}
 
+    # ONE close for the ONE persistent world, at the loop's single exit (every
+    # path -- win, budget, exhausted replans -- breaks to here). No try/finally
+    # around the loop: harness_runtime owns crash-safety (its docstring), and
+    # wrapping would force a 100-line re-indent for a sim-env leak the GC reaps.
+    # ponytail: single-exit close; add try/finally if run() ever grows a raising
+    # path the runtime does not already contain.
+    if episode is not None:
+        episode.close()
     goal = plan.get("goal") if isinstance(plan, Mapping) else None
     out = {"success": success, "goal": goal, "replans": replans,
            "actuations": actuations, "nodes": nodes_out, "faults": faults}

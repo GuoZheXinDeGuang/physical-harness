@@ -20,7 +20,7 @@ _NODE_KEYS = frozenset({"id", "skill", "args", "after"})
 #: generic handlers and self-checks coverage against this set at import. A node
 #: with no ``kind`` defaults to ``"manipulate"`` -- so existing cards (no kind on
 #: any node) validate byte-identically, sealed plan shas unmoved.
-NODE_KINDS = frozenset({"manipulate", "perceive", "decide", "verify"})
+NODE_KINDS = frozenset({"manipulate", "segment", "perceive", "decide", "verify"})
 
 
 def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
