@@ -37,6 +37,8 @@ manifest 自注册(卡=目录, base sha 逐位不变)、体检+验货(含 task_b
 +9.5/+11.0/+10.5pp, 68 修 6 破 n=600, 判定三块全确立; broken 率逐块稳定 2/2/2。**
 **已烧(round 97 r2, 活验货 FAIL):** 几何抓取卡 lift_geometric 验货 campaign 预登记块 dev 48200-48699 + held-out 48700-48899 经进化态运行时(runs/session-evolution)真跑烧掉, stamped prereg sha ff7c9f841348。
 gen-1 dev 功效规划取 196 席(48200-48395), 实测 196/196 = 100.0% 基线零残余失败 → campaign 收敛零规则 → 零晋级, 验货 RED(0 published skill records)。held-out 从未评分(无晋级链可确认), 但预登记块整体随实验烧掉不复用(同 place-g2 733 全席规矩)。base rate 高致晋级空间为零 = r1 预判的诚实天花板, 门就是门不调阈值凑晋级。
+**已烧(M5 clear_build 标定, round 97 后):** 标定块 48900-49049(150 席, baseline 臂 headless 探针 scripts/probe_clear_build.py, 10 worker): 链基率 44.7%(67/150), q_pre 65.3%(98/150 达 build-stack), 首死直方图 none 67 / grasp-cube 33 / build-stack 31 / pick-milk 14 / pick-can 5, ~3.76s/集; 标定块永不再当门禁/held-out。
+**预留(M5 clear_build 预注册, runs/clear-build-cal, prereg sha 0f3de2e95e12):** dev 蓄水池 49050-49349(300, 功效缩放前缀); held-out #1/#2/#3 = 49350-49549 / 49550-49749 / 49750-49949(各 200, 头条三块, 各评分一次); reserve 50000+ 留 Phase-2 节点间。n4 stack 治理头条按标定 §4.3 推迟(先要几何抓取真晋货), dev/held-out 未烧。
 
 **frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
 父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.
