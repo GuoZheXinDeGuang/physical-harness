@@ -39,6 +39,7 @@ manifest 自注册(卡=目录, base sha 逐位不变)、体检+验货(含 task_b
 gen-1 dev 功效规划取 196 席(48200-48395), 实测 196/196 = 100.0% 基线零残余失败 → campaign 收敛零规则 → 零晋级, 验货 RED(0 published skill records)。held-out 从未评分(无晋级链可确认), 但预登记块整体随实验烧掉不复用(同 place-g2 733 全席规矩)。base rate 高致晋级空间为零 = r1 预判的诚实天花板, 门就是门不调阈值凑晋级。
 **已烧(M5 clear_build 标定, round 97 后):** 标定块 48900-49049(150 席, baseline 臂 headless 探针 scripts/probe_clear_build.py, 10 worker): 链基率 44.7%(67/150), q_pre 65.3%(98/150 达 build-stack), 首死直方图 none 67 / grasp-cube 33 / build-stack 31 / pick-milk 14 / pick-can 5, ~3.76s/集; 标定块永不再当门禁/held-out。
 **预留(M5 clear_build 预注册, runs/clear-build-cal, prereg sha 0f3de2e95e12):** dev 蓄水池 49050-49349(300, 功效缩放前缀); held-out #1/#2/#3 = 49350-49549 / 49550-49749 / 49750-49949(各 200, 头条三块, 各评分一次); reserve 50000+ 留 Phase-2 节点间。n4 stack 治理头条按标定 §4.3 推迟(先要几何抓取真晋货), dev/held-out 未烧。
+**已烧(M5 clear_build v2 stack-first 再预注册 + dev campaign, round 101):** v1(stack-last)标定触 §4.3(未治理死 52 > n4 治理死 31)→ proceed=false。设计 §1/§4.1 节序杠杆把治理节点 build-stack 排首(planner @v1→@v2, base sha b905a511 未动, 测数不变)。v2 标定(runs/clear-build-cal-v2, 48900-49049 重测——标定块永不门禁, 可复测: 治理死 71 > 未治理死 12, build-stack 150/150 达, 链基率仍 44.7%, q_pre_rate 0.4467>0.30)清所有 §4 门 → proceed=true; 再封 prereg(sha 逐位仍 0f3de2e95e12, stack 任务不随链序变)+ chain_battery_plan 303e5dfb + calibration 684443d9。dev 蓄水池 49050-49349 由 v2 dev campaign 真跑烧掉(runs/clear-build-g1, scripts/clear_build_campaign.py, 从 place-g2 both-families bundle b026831c 种起): gen-1 功效前缀 267 席(49050-49316), 种子 bundle 治理 dev 率 66.3%(177/267), 候选 g4(privileged.stack_xy_residual gt 0.0387 @arm106 replace)fires 130 但对父 fixed 0/broken 0/p=1.0 → 拒(min_fixed 3 未达)→ gen-1 收敛, 0 晋级 = 诚实 null(place-g2 三规则已吃尽 stack 可治理残余; final_sha 仍 b026831c, 0 published skill)。held-out 49350-49549 本相未烧(heldout=() 延迟, 下一相评 3 臂链电池/冻结终 bundle)。
 
 **frontier(round 77 新发现) → round 87 三件全清:** 1. beam gen-1 泄漏已回滚(被拒分支归还
 父 bundle, 幸存池只收有封存规则的分支, 红绿钉死) 2. record 路径迁移已修(config.
@@ -46,7 +47,7 @@ _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在�
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
 **frontier(现存, 按顺位, M5 clear_build 落地后):**
-0. clear_build 长链卡已落(plugins/clear_build + 复合策略 clear_build_provider + scripts/chain_battery.py, 体检 GREEN, base sha b905a511 未动)。下一步 = §6 标定块(48900-49049, 150 席): 量 q_pre/链基率/首死归因 → go/no-go(§4.1-4.2)。smoke 已示链多死于未治理 grasp/pick 首节点, 若标定证实则先要几何抓取真晋货再谈 n4 治理头条, Phase-2 节点间规则严禁按 spec 先建(§6.3)。
+0. clear_build 长链卡已落 + 标定 + v2 再预注册 + dev campaign 全跑完(round 100-101)。v1 标定 §4.3 no-go(链死未治理 grasp) → 设计 §1/§4.1 节序杠杆 stack-first(planner @v2) → v2 标定 proceed=true(治理死 71 vs 未治理 12, build-stack 100% 达) → dev campaign(runs/clear-build-g1)gen-1 收敛 0 晋级 = **诚实 null**(place-g2 both-families bundle 已吃尽 stack 可治理残余, 候选 g4 对父 fixed 0)。**下一步(下一相, 拥 held-out 烧权)**: 3 臂链电池(baseline vs governed=place-g2 bundle)配对同种子 McNemar 于 held-out #1 49350-49549——claim (a)+(b) 用现存规则即成头条, 零新晋级需求; 或按 frontier #3 换难度轴让 stack/grasp 现新残余再谈进化。Phase-2 节点间规则仍 gated(§6.3, 归因未证 n4 节点间路由为主失败)。
 1. R4 配对前后门禁(评测电池已可跑, 差 before/after 配对机器门)
 2. qwen38 活跑 gate(GPU 被 rynnbrain/Glass_killer 占, 16.7GB<21.6GB; 腾出后
    round25_rerun 补跑 + qwen 卡活验; VLM planner=换 mount)
