@@ -49,7 +49,7 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-Full-suite parity (card present): `553 passed, 9 skipped` (the 5 robocasa-marked
+Full-suite parity (card present): `553 passed, 9 skipped` (the 6 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `6 passed, 556 deselected`).
 base_profile sha is byte-stable at `b905a5…` (folds to the value sealed in
