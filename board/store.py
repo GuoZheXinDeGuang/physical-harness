@@ -503,8 +503,9 @@ def parse_ledger(text: str) -> list[dict]:
     The ledger is prose, not a table, so this is a best-effort extraction: pull
     every ``NNNN-NNNN`` range from the budget section, classify each by the
     keyword in its sentence (已烧 -> burned, 留/需要时 -> reserved, else
-    planned), and keep the strongest state when a range recurs (a held-out
-    block first planned then later burned reads as burned). A bullet wrapped
+    planned; 未烧 right after a range un-burns that one range), and keep the
+    strongest state when a range recurs (a held-out block first planned then
+    later burned reads as burned). A bullet wrapped
     onto continuation lines keeps its classification: lines without a keyword
     inherit the last keyword seen since the bullet started (a ``**`` line or a
     blank line resets it), and a line's own keyword takes precedence over the
@@ -534,10 +535,13 @@ def parse_ledger(text: str) -> list[dict]:
             lo, hi = int(m.group(1)), int(m.group(2))
             if hi <= lo:
                 continue
+            # 未烧 right after a range explicitly un-burns it, even on a 已烧
+            # line ("held-out 49350-49549 本相未烧" inside a burn bullet).
+            r_state = "planned" if "未烧" in ln[m.end():m.end() + 12] else state
             key = (lo, hi)
             prev = found.get(key)
-            if prev is None or _STATE_ORDER[state] > _STATE_ORDER[prev["state"]]:
-                found[key] = {"lo": lo, "hi": hi, "state": state,
+            if prev is None or _STATE_ORDER[r_state] > _STATE_ORDER[prev["state"]]:
+                found[key] = {"lo": lo, "hi": hi, "state": r_state,
                               "line": re.sub(r"\*\*|`", "", ln).strip()}
     return sorted(found.values(), key=lambda r: r["lo"])
 

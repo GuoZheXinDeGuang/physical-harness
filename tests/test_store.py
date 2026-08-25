@@ -179,6 +179,20 @@ def test_parse_ledger_wrapped_entry():
     assert by[(50000, 50199)] == "planned"  # new bullet resets the carry
 
 
+def test_parse_ledger_weishao_unburns():
+    # The round-101 trap: one giant **已烧** bullet also narrates that the
+    # held-out block is NOT burned yet. 未烧 right after the range must beat
+    # the line's 已烧, or the runtime burn-guard blocks the next headline.
+    text = (
+        "区块预算\n"
+        "**已烧(round 101):** dev 49050-49349 真跑烧掉; held-out 49350-49549 本相未烧。\n"
+        "frontier\n"
+    )
+    by = {(r["lo"], r["hi"]): r["state"] for r in bs.parse_ledger(text)}
+    assert by[(49050, 49349)] == "burned"
+    assert by[(49350, 49549)] == "planned"
+
+
 def test_parse_rounds():
     text = (
         "intro\n"
