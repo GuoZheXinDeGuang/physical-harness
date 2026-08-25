@@ -35,13 +35,14 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 536 passed
-skips      : 12 skipped
+pass       : 529 passed
+skips      : 21 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
              [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
+             [9] test_robocasa_drivers.py      robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
 wall time  : ~4.8s
@@ -49,17 +50,15 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +14 over the round-96 snapshot (522→536) is phase 5's routing tests:
-`test_session_routing.py` (9: the session param across board fn / storecli / mcp
-faces — default / whitelist / traversal) + `test_cockpit_stop.py` (5: per-session
---stop reaping by exact pid). All are sim-free and unmarked, so they add to both
-lanes and skip in neither.
-
-Full-suite parity (card present): `567 passed, 9 skipped` (the 6 robocasa-marked
+Full-suite parity (card present): `560 passed, 18 skipped` (the 15 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
-run only in sims/robocasa-venv via `pytest -m robocasa` → `6 passed, 570 deselected`
-— total collected is now 576; the 6 robocasa passes are unchanged from phase 2,
-only the deselected count moves +14).
+run only in sims/robocasa-venv via `pytest -m robocasa` → `12 passed, 3 xfailed,
+563 deselected`; the 3 xfails are the phase-3 driver honest-failure surfaces —
+nav-microwave (fridge blocks the aisle) / close-door / place — see
+local-archive/robocasa-adapt/phase3.md). The kitchen_thaw mission card (phase 4)
+adds no robocasa-marked test — its live proof is the runtime E2E
+(local-archive/robocasa-adapt/phase4.md), not a pytest; it contributes 7 base-lane
+tests (2 heterogeneous-segment runner tests + 5 mission-card structural tests).
 base_profile sha is byte-stable at `b905a5…` (folds to the value sealed in
 runs/round25-rerun) — the manifest fold reproduces the old hard-coded mounts, and
 the inactive embodiment_robocasa card (enabled=false) folds no mount.
