@@ -303,6 +303,19 @@ def is_session(session_dir: str | Path) -> bool:
     return (Path(session_dir) / "session-log" / "rows.jsonl").exists()
 
 
+def session_inbox(runs_dir: str | Path, session: str) -> Path | None:
+    """Resolve a runtime session NAME to its inbox dir, or ``None`` when the name
+    is not a real booted session under ``runs_dir`` (traversal rejected).
+
+    The WRITE-side twin of the read guard: submit_brief/run_task route a brief
+    into the returned inbox, exactly as the read faces resolve a session through
+    ``safe_child(is_session)``. Same one audited guard, so a ``../`` name can
+    never route a brief outside runs_dir and only a session with a resident
+    runtime (its ``session-log/rows.jsonl`` exists) is a legal target."""
+    path = safe_child(runs_dir, session, is_session)
+    return (path / "inbox") if path else None
+
+
 def _chain_rows(log_dir: Path) -> tuple[list[dict], int]:
     """Whole rows in seq order + a mid-write skip count -- same partial-tolerant
     line loop as _index_rows: the runtime appends rows.jsonl line by line, so a

@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 529 passed
+pass       : 543 passed
 skips      : 21 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -45,15 +45,21 @@ skips      : 21 skipped
              [9] test_robocasa_drivers.py      robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.2s
+wall time  : ~4.3s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-Full-suite parity (card present): `560 passed, 18 skipped` (the 15 robocasa-marked
+The +14 over the phase-4 snapshot (529→543) is phase 5's routing tests:
+`test_session_routing.py` (9: the session param across board fn / storecli / mcp
+faces — default / whitelist / traversal) + `test_cockpit_stop.py` (5: per-session
+--stop reaping by exact pid). All are sim-free and unmarked, so they add to both
+lanes and skip in neither.
+
+Full-suite parity (card present): `574 passed, 18 skipped` (the 15 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `12 passed, 3 xfailed,
-563 deselected`; the 3 xfails are the phase-3 driver honest-failure surfaces —
+577 deselected`; the 3 xfails are the phase-3 driver honest-failure surfaces —
 nav-microwave (fridge blocks the aisle) / close-door / place — see
 local-archive/robocasa-adapt/phase3.md). The kitchen_thaw mission card (phase 4)
 adds no robocasa-marked test — its live proof is the runtime E2E
@@ -77,3 +83,13 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
   everything collection needs (including `mcp` for the both-faces tests)
 
 A fresh clone that shows a FAILURE (not a skip) is a real regression.
+
+## repeat-offender: keep this snapshot + the two README counts in lockstep
+
+This count has drifted before — the robocasa-marked tally slipped 5→6 (commit
+38fe596) and had to be chased down after the fact. So the rule above is a
+STANDING one, not a nicety: any commit touching `tests/` re-runs the isolated
+base lane and the parity suite and updates, in the SAME commit, (1) the snapshot
+`pass` line here, (2) the parity line here, (3) README's 全量 count, (4) README's
+底座快道 count. A snapshot that lags the tests is the bug this section exists to
+prevent from recurring a fourth time.
