@@ -44,9 +44,9 @@ uv venv && uv pip install -e ".[dev]"
 PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python -m pytest
 ```
 
-- **全量**(装了 robosuite 卡): **553 通过, 17 跳过**(跳过 = Mac 归档 campaign 与 BC 权重不在 git, 加 14 个 robocasa 卡/驱动自证只在 robocasa venv 跑, 预期; robocasa venv 里 `-m robocasa` → 11 通过 + 3 xfail, xfail = phase-3 驱动失败面 关门/搬运/放置)。
+- **全量**(装了 robosuite 卡): **553 通过, 18 跳过**(跳过 = Mac 归档 campaign 与 BC 权重不在 git, 加 15 个 robocasa 卡/驱动自证只在 robocasa venv 跑, 预期; robocasa venv 里 `-m robocasa` → 12 通过 + 3 xfail, xfail = phase-3 驱动诚实失败面 导航去微波炉(冰箱堵通道)/关门/放置)。
 - **底座快道**(改底座前后各跑一遍、变差不许合入)= 隔离进程(robosuite 卡缺席)里
-  `pytest -m "not robosuite"`: **522 通过, 20 跳过, 28 弃**。快照格式与隔离跑法见
+  `pytest -m "not robosuite"`: **522 通过, 21 跳过, 28 弃**。快照格式与隔离跑法见
   [docs/base-gate.md](docs/base-gate.md)。
 
 `mujoco==3.3.7` + `robosuite==1.5.2` 是硬 pin(mujoco>=3.4 把 `qM` 改名 `M`, robosuite 1.5.2 会崩);
