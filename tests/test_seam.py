@@ -83,7 +83,11 @@ def test_episode_spec_with_stages_pickles():
 def test_robosuite_embodiment_satisfies_env_provider():
     p = load_provider(ENV_REF)
     assert isinstance(p, EnvProvider)
-    assert p.tasks() == ("lift", "pickcan", "pickmilk", "stack")
+    # sorted TASKS: the four staged tasks + the M7 clear_workspace mode-0 family
+    # (clearall builds the persistent env; clear{milk,bread,cereal,can} name each
+    # sub-goal's object_key -- plugins/embodiment_robosuite/env.py TASKS).
+    assert p.tasks() == ("clearall", "clearbread", "clearcan", "clearcereal",
+                         "clearmilk", "lift", "pickcan", "pickmilk", "stack")
 
 
 def test_governor_policies_satisfies_policy_factory():

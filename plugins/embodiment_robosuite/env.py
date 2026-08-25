@@ -26,6 +26,22 @@ TASKS: dict[str, dict] = {
                  "kwargs": {"single_object_mode": 2, "object_type": "can"}},
     "pickmilk": {"env": "PickPlace", "object_key": "Milk_pos",
                  "kwargs": {"single_object_mode": 2, "object_type": "milk"}},
+    # M7 clear_workspace: ONE mode-0 PickPlace episode staging ALL FOUR objects.
+    # The persistent runner builds the env ONCE from "clearall"; each sub-goal
+    # retargets the driver via a per-object task below, whose ONLY job is to name
+    # the object_key the segment reads/scores against (the env is never rebuilt
+    # per segment -- object_key is the only field the persistent path consults).
+    # All mode 0 so a stray make_env stays self-consistent with the episode env.
+    "clearall":    {"env": "PickPlace", "object_key": "Milk_pos",
+                    "kwargs": {"single_object_mode": 0}},
+    "clearmilk":   {"env": "PickPlace", "object_key": "Milk_pos",
+                    "kwargs": {"single_object_mode": 0}},
+    "clearbread":  {"env": "PickPlace", "object_key": "Bread_pos",
+                    "kwargs": {"single_object_mode": 0}},
+    "clearcereal": {"env": "PickPlace", "object_key": "Cereal_pos",
+                    "kwargs": {"single_object_mode": 0}},
+    "clearcan":    {"env": "PickPlace", "object_key": "Can_pos",
+                    "kwargs": {"single_object_mode": 0}},
 }
 
 #: Height above its starting pose the target must reach for the shared sub-goal.

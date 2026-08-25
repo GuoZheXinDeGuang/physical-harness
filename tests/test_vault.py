@@ -45,9 +45,10 @@ def test_fold_over_real_runs():
     by_id = {n["id"]: n for n in g["nodes"]}
     edges = {(e["rel"], e["src"], e["dst"]) for e in g["edges"]}
 
-    # the three mounted skills + the 11 cards + the 9 capabilities are all present.
+    # the three mounted skills + the 12 cards + the 9 capabilities are all present
+    # (12th card: the M7 clear_workspace persistent-episode mission).
     assert {STACK, ADC, EB} <= set(by_id)
-    assert sum(n["kind"] == "package" for n in g["nodes"]) == 11
+    assert sum(n["kind"] == "package" for n in g["nodes"]) == 12
     assert sum(n["kind"] == "capability" for n in g["nodes"]) == 9
 
     stack = by_id[STACK]

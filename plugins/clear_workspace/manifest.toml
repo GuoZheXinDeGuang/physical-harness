@@ -1,0 +1,34 @@
+# The clear_workspace PERSISTENT-EPISODE mission card (M7). Dropping this dir makes
+# {"kind":"task","task":"clear_workspace"} an accepted brief -- discover() folds
+# this binding into the union at boot, no base edit. It declares NO [mounts.*], so
+# base_profile's sha is untouched (the fold is over mounts only); it composes the
+# generic persistent-episode runner + node-kind machinery that already live in the
+# base (plugins.task.workload EpisodeContext/_segment + plugins.task.validate
+# NODE_KINDS) and adds only this mission's PURE DATA vocabulary.
+#
+# needs_sim: the ONE episode is a real robosuite mode-0 PickPlace world the four
+# segment nodes drive and the perceive/verify nodes read live. The doctor's Tier A
+# (load policy/planner, import catalogue/oracles, load_provider EVERY predicate ref
+# AND every episode/segment stages ref) runs base-clean; third_party gates any real
+# sim smoke on a sim machine -- symmetric with the inventory_build card.
+needs_sim = true
+third_party = ["robosuite", "mujoco"]
+
+# The new task -> its fault-adaptive planner + the by-task composite policy (reused
+# verbatim from inventory_build: task "clearall" is not "stack" -> the four-phase
+# ScriptedDriver, which retarget() re-aims at each sub-goal's object). catalogue /
+# oracles / predicates are this card's own heterogeneous vocabulary, reached by ref.
+#
+# The M7 additions the base already threads (harness_runtime) and checks
+# (plugin_doctor): `episodic` opts the run into ONE persistent world; `episode`
+# names the single-episode spec block; `segment_specs` routes each sub-goal's
+# object to the per-object task whose object_key the driver retargets on.
+[task_bindings.clear_workspace]
+policy = "plugins.policies:clear_build_provider"
+planner = "plugins.clear_workspace.planner:provider"
+catalogue = "plugins.clear_workspace.planner:CATALOGUE"
+oracles = "plugins.clear_workspace.planner:ORACLES"
+predicates = "plugins.clear_workspace.planner:PREDICATES"
+episodic = true
+episode = "plugins.clear_workspace.planner:EPISODE"
+segment_specs = "plugins.clear_workspace.planner:SEGMENT_SPECS"

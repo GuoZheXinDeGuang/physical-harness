@@ -239,6 +239,21 @@ def check(plugin_dir: str | Path) -> Report:
                 table = getattr(importlib.import_module(mod), attr)
                 for ref in table.values():
                     load_provider(ref)
+            # Persistent-episode binding kind (M7): the ONE-episode block and the
+            # per-sub-goal segment_specs each may name a `stages` "module:factory"
+            # ref. Resolve every one HERE so a dead segment-stages ref reddens at
+            # mount, not when the runner opens the world -- same stance as the
+            # predicate refs above (GOAL v4.2: 不合格在 mount 报错而非任务中失败).
+            if binding.get("episodic"):
+                epmod, epattr = binding["episode"].split(":", 1)
+                episode = getattr(importlib.import_module(epmod), epattr)
+                smod, sattr = binding["segment_specs"].split(":", 1)
+                seg_specs = getattr(importlib.import_module(smod), sattr)
+                stages_refs = [episode.get("stages")]
+                stages_refs += [s.get("stages") for s in seg_specs.values()]
+                for ref in stages_refs:
+                    if ref is not None:
+                        load_provider(ref)
         except Exception as exc:  # noqa: BLE001 -- any dead ref is a red
             rep.add("A", f"task:{task}", "FAIL", f"{type(exc).__name__}: {exc}")
             continue

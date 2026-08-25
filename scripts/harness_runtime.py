@@ -322,6 +322,14 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     # kindful node's machine oracle. Manipulate-only bindings omit it.
     if "predicates" in binding:
         wbrief["predicates"] = _load_attr(binding["predicates"])
+    # A persistent-episode mission (M7) opts in with episodic=true and names its
+    # ONE-episode block + per-sub-goal segment_specs by ref beside the rest; thread
+    # them so workload.run opens the single world and drives each segment in it.
+    # Non-episodic bindings omit these -- the fresh-per-node path, byte-identical.
+    if binding.get("episodic"):
+        wbrief["episodic"] = True
+        wbrief["episode"] = _load_attr(binding["episode"])
+        wbrief["segment_specs"] = _load_attr(binding["segment_specs"])
     return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations)
 
