@@ -52,12 +52,15 @@ def discover_binding() -> dict:
     return binding
 
 
-def _run_one(arg: tuple[int, str | None]) -> dict:
+def _run_one(arg: tuple[int, str | None, str]) -> dict:
     """One chain under one mount. ``skills_root=None`` is the ungoverned baseline
     (the base's rootless empty store); a dir mounts ``graph.skill`` there so the
-    build-stack node assembles its governance bundle. Clean Pool task -- builds
-    its own kernel, no sim state crosses the fork."""
-    seed, skills_root = arg
+    manipulate nodes assemble their per-task governance bundles. ``arm`` is the
+    caller-declared label -- the baseline arm may itself carry a root (an ablation
+    that governs SOME nodes but not the one under test), so the label is explicit,
+    not derived from ``skills_root is None``. Clean Pool task -- builds its own
+    kernel, no sim state crosses the fork."""
+    seed, skills_root, arm = arg
     from harness.config import Mount, Patch, resolve_plan
     from harness.definitions import CAPABILITIES
     from harness.events import SessionLog
@@ -88,7 +91,7 @@ def _run_one(arg: tuple[int, str | None]) -> dict:
     dt = time.perf_counter() - t0
     death = "none" if out["success"] else (out["faults"][-1].get("node")
                                            or out["faults"][-1]["kind"])
-    return {"seed": seed, "arm": "baseline" if skills_root is None else "governed",
+    return {"seed": seed, "arm": arm,
             "success": bool(out["success"]), "first_death": death,
             "replans": out["replans"], "actuations": out["actuations"],
             "seconds": round(dt, 3)}
@@ -151,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selfcheck", action="store_true", help="run the discordance self-check and exit")
     ap.add_argument("--seeds", help='"S:E" (half-open) | "S1,S2,.." | "S"')
     ap.add_argument("--skills-root", default="runs/inventory-build-gov/skills")
+    ap.add_argument("--baseline-root", default=None,
+                    help="root for the reference arm (default None = ungoverned); "
+                         "set to an ablation root to measure the DELTA of the extra "
+                         "governance in --skills-root over it")
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--alpha", type=float, default=0.05)
     ap.add_argument("--min-fixed", type=int, default=3)
@@ -165,11 +172,13 @@ def main(argv: list[str] | None = None) -> int:
     from harness.executor import LocalPoolExecutor
 
     seeds = _seeds(args.seeds)
-    tasks = [(s, None) for s in seeds] + [(s, args.skills_root) for s in seeds]
+    tasks = ([(s, args.baseline_root, "baseline") for s in seeds]
+             + [(s, args.skills_root, "governed") for s in seeds])
     rows = LocalPoolExecutor().map(_run_one, tasks, workers=args.workers)
     base = sorted((r for r in rows if r["arm"] == "baseline"), key=lambda r: r["seed"])
     gov = sorted((r for r in rows if r["arm"] == "governed"), key=lambda r: r["seed"])
     summary = summarize(base, gov, alpha=args.alpha, min_fixed=args.min_fixed)
+    summary["roots"] = {"baseline": args.baseline_root, "governed": args.skills_root}
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps({**summary, "episodes": {"baseline": base,
