@@ -26,6 +26,7 @@ manifest 自注册(卡=目录, base sha 逐位不变)、体检+验货(含 task_b
 **已烧(round 86):** pickcan/pickmilk 探针 45000-45011。
 **已烧(round 90, 诊断级):** 41581-41880(放置探针 A/B; bring-up 蓄水池按侦察规划使用,
 永不作门禁/held-out); 41881-41999 留 smoke/后续 bring-up。
+**已烧(M5 clear_build bring-up smoke):** 41881-41890(10 席, smoke 蓄水池内)——4 节点长链活跑首证, governed 臂(stack-g1+place-g2 挂载)链成功 4/10, 全 4 节点遍历 ~2.7s/链(单 worker), 首死直方图 grasp-cube 5 / none 4 / pick-milk 1。链死在未治理的首节点(scripted lift ~50%), 非 stack 节点 = 设计 §4.3 情形, 标定块正是要量 q_pre; 非缺陷, 待正式标定。
 **预留(round 90 预注册):** place campaign dev 46000-46999; held-out 47000-47199 /
 47200-47399 / 47400-47599(头条三块)。
 **已烧(round 91):** place-g1 dev 用 46000-46266(267 席); held-out #1 = 47000-47199。
@@ -42,7 +43,8 @@ gen-1 dev 功效规划取 196 席(48200-48395), 实测 196/196 = 100.0% 基线�
 _STORAGE_PARAMS 在哈希收口点豁免 root——round 29 法则原文留在豁免现场; round 78 的容忍
 收紧成钉; 已知天花板: 豁免按键名全局生效, 现仅 graph.skill 用 root, 注释已声明)
 3. ruff==0.16.4 已 pin(zos 同版对齐, 存量 lint 同轮清零)。
-**frontier(现存, 按顺位, round 97 r2 后):**
+**frontier(现存, 按顺位, M5 clear_build 落地后):**
+0. clear_build 长链卡已落(plugins/clear_build + 复合策略 clear_build_provider + scripts/chain_battery.py, 体检 GREEN, base sha b905a511 未动)。下一步 = §6 标定块(48900-49049, 150 席): 量 q_pre/链基率/首死归因 → go/no-go(§4.1-4.2)。smoke 已示链多死于未治理 grasp/pick 首节点, 若标定证实则先要几何抓取真晋货再谈 n4 治理头条, Phase-2 节点间规则严禁按 spec 先建(§6.3)。
 1. R4 配对前后门禁(评测电池已可跑, 差 before/after 配对机器门)
 2. qwen38 活跑 gate(GPU 被 rynnbrain/Glass_killer 占, 16.7GB<21.6GB; 腾出后
    round25_rerun 补跑 + qwen 卡活验; VLM planner=换 mount)
