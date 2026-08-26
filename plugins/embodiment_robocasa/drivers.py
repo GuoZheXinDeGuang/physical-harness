@@ -31,6 +31,7 @@ import numpy as np
 # 12-dim action layout (install report §3.4): arm OSC 0:6, gripper 6,
 # base vx/vy/wyaw 7:10, torso 10, base_mode 11.
 GRIP = 6
+TORSO = 10
 MODE = 11
 ADIM = 12
 
@@ -88,15 +89,34 @@ def _zero():
     return a
 
 
+def _torso_q(env):
+    """Current torso-lift joint position (slide, range 0..0.34 m)."""
+    m = env.sim.model
+    j = m.joint_name2id("mobilebase0_joint_torso_height")
+    return float(env.sim.data.qpos[m.jnt_qposadr[j]])
+
+
+def _torso_cmd(env, target):
+    """Torso channel value servoing the lift joint to `target` (P on qpos).
+
+    Measured (this venv, seed 200000): the JOINT_POSITION torso channel acts as
+    a rate command (+1 held sweeps the full 0.34 m range in ~40 steps, ~8.5 mm/
+    step), holds position at 0, and works identically in arm AND base mode --
+    the arm OSC rides along instead of fighting it (eef z tracks the lift).
+    """
+    return float(np.clip((float(target) - _torso_q(env)) * 25.0, -1.0, 1.0))
+
+
 # ---- shared primitives -------------------------------------------------------
 
-def _arm_action(env, goal_world, grip, kp=10.0):
+def _arm_action(env, goal_world, grip, kp=10.0, dyaw=0.0):
     """base_mode=-1 arm action driving the eef toward goal_world (P control).
 
     World error is rotated into the OSC base frame (Rz(-psi)) so the
     command is axis-correct at any base yaw; scaled by kp and clipped to the
-    controller's [-1, 1] (== +-0.05 m/step). Rotation channels stay 0 (the foods
-    are small/graspable top-down; wrist yaw is never needed for this mission).
+    controller's [-1, 1] (== +-0.05 m/step). dyaw drives the wrist-yaw rotation
+    channel (a[5]; measured: positive == CCW about world z) -- the grasp stage
+    uses it to align the finger-opening axis across the object's thin side.
     """
     err = np.asarray(goal_world, float) - _eef(env)
     _, psi = _base_pose(env)
@@ -104,6 +124,7 @@ def _arm_action(env, goal_world, grip, kp=10.0):
     cmd = np.array([bxy[0], bxy[1], err[2]])
     a = _zero()
     a[0:3] = np.clip(cmd * kp, -1.0, 1.0)
+    a[5] = float(np.clip(dyaw, -1.0, 1.0))
     a[GRIP] = grip
     a[MODE] = GRIP_OPEN  # -1 == arm mode
     return a
@@ -166,18 +187,29 @@ class NavigateDriver:
     STOW_STEPS = 80    # stow is best-effort: converge or spend this, then drive
     ARM_CAP = 0.3      # per-step arm command cap while stowing (gentle)
     VCAP = 0.35        # base velocity cap while loaded
-    WARC = 0.15        # loaded yaw-rate cap: turn only as a slow ARC while
+    WARC = 0.12        # loaded yaw-rate cap: turn only as a slow ARC while
                        # translating (wheels moving -> no stiction dead-zone)
-    CARRY_STOP = 0.50  # loaded standoff from the dock: driving the last ~0.4 m
+    CARRY_STOP = 0.65  # loaded standoff from the dock: driving the last ~0.4 m
                        # rams the carried object into the target appliance's
                        # face (measured drop at dist~0.39); the place stage's
-                       # ARM covers that final reach, the base need not
+                       # ARM covers that final reach, the base need not.
+                       # 0.50 measured too tight across random kitchens: loaded
+                       # runs plateau 0.6-0.8 from the dock (counter/furniture
+                       # edge), burning the cap just short of the old gate
+    CARRY_NEAR = 0.85  # stall-arrival band: when progress has physically
+                       # converged (blocked by the counter edge) within this of
+                       # the dock, the leg is DONE -- grinding on strips the
+                       # cargo (measured: near-gate drops at steps 252-416 on
+                       # runs that had plateaued at 0.67-0.78 long before)
 
     def __init__(self, fixture_name, carry=False):
         self.fixture_name = fixture_name
         self.carry = carry          # hold the gripper closed to keep a grasped object
         self._goal = None
         self._stow_left = self.STOW_STEPS if carry else 0
+        self._start_xy = None       # base pose at carry entry (back-out reference)
+        self._back_ticks = 0
+        self._dist_hist: list = []  # loaded-leg progress window (stall-arrival)
 
     def _target(self, env):
         if self._goal is None:
@@ -189,7 +221,17 @@ class NavigateDriver:
         return self._goal
 
     def _stow_action(self, env):
-        """One gentle arm step toward the carry pose; None once stowed/spent."""
+        """One gentle arm step toward the carry pose; None once stowed/spent.
+
+        TWO-STAGE, ALL WHILE STATIONARY: retract horizontally at the lifted
+        height first, then lower to CARRY_Z (with the torso riding down) only
+        once pulled back near the body. Both orderings of the alternatives were
+        measured and lose: lowering while still over the shelf drags the slab
+        into the shelf lip (strips in the first ~100 transport steps), and
+        deferring the lowering into the DRIVE -- or skipping it and carrying at
+        lift height -- strips mid-transport (drops at steps 133-378: moving
+        while easing z, and the high extended carry itself, are both unstable).
+        """
         if self._stow_left <= 0:
             return None
         xy, psi = _base_pose(env)
@@ -197,14 +239,17 @@ class NavigateDriver:
         txy = xy + np.array([c * self.CARRY_FWD - s * self.CARRY_LAT,
                              s * self.CARRY_FWD + c * self.CARRY_LAT])
         eef = _eef(env)
+        retracted = np.linalg.norm(eef[:2] - txy) < 0.12
+        tz = self.CARRY_Z if retracted else eef[2]     # stage 1: hold height
         if (np.linalg.norm(eef[:2] - txy) < self.STOW_TOL
                 and abs(eef[2] - self.CARRY_Z) < self.STOW_TOL):
             self._stow_left = 0
             return None
         self._stow_left -= 1
-        a = _arm_action(env, np.array([txy[0], txy[1], self.CARRY_Z]),
+        a = _arm_action(env, np.array([txy[0], txy[1], tz]),
                         GRIP_CLOSE, kp=6.0)
         a[0:3] = np.clip(a[0:3], -self.ARM_CAP, self.ARM_CAP)
+        a[TORSO] = _torso_cmd(env, 0.0) if retracted else 0.0
         return a
 
     def act(self, env, obs):
@@ -222,15 +267,35 @@ class NavigateDriver:
         # 90 degrees off its heading with yaw locked (stalls 1.2 m short). So:
         # stow first, then a slow ARC (translation keeps the wheels out of the
         # stiction dead-zone) with an ACTIVE arm counter-sweep each step.
+        if self._start_xy is None:
+            self._start_xy = _base_pose(env)[0].copy()
         stow = self._stow_action(env)
         if stow is not None:
             return stow
         xy, psi = _base_pose(env)
-        vec = np.asarray(gxy, float) - xy
-        heading = float(np.arctan2(vec[1], vec[0]))
-        a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
-        a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
-        a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
+        cleared = (np.linalg.norm(xy - self._start_xy) > 0.45
+                   or self._back_ticks > 60)
+        if not cleared:
+            # back STRAIGHT out of the fridge face first: arcing/turning right
+            # at the open fridge sweeps the carried slab into the door frame
+            # (measured: most transport drops clustered in the first ~100
+            # steps, before the base was clear)
+            self._back_ticks += 1
+            a = _zero()
+            a[7] = -0.25
+            a[GRIP] = GRIP_CLOSE
+            a[MODE] = GRIP_CLOSE
+        else:
+            vec = np.asarray(gxy, float) - xy
+            heading = float(np.arctan2(vec[1], vec[0]))
+            a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
+            a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
+            a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
+            self._dist_hist.append(float(np.linalg.norm(vec)))
+            # NO z easing while moving: all height changes happen in the
+            # stationary stow -- easing the eef down mid-drive was measured to
+            # strip the cargo (drops at steps 144-332 on seeds that survived
+            # with the height held through the drive).
         # active counter-sweep: in base mode the arm channels still ADD deltas
         # to the held (base-frame) goal, so pull the swept eef back toward the
         # carry pose WHILE driving -- the poor-man's whole-body coordination.
@@ -244,81 +309,316 @@ class NavigateDriver:
         d = np.linalg.norm(gxy - xy)
         if self.carry:
             # loaded: position-only at the STANDOFF (facing/final approach
-            # would ram the cargo into the appliance -- see act/CARRY_STOP).
-            return bool(d <= self.CARRY_STOP)
+            # would ram the cargo into the appliance -- see act/CARRY_STOP),
+            # OR a stall-arrival: progress physically converged near the dock
+            # (counter/furniture edge) -- grinding on only strips the cargo.
+            blocked = (len(self._dist_hist) > 40
+                       and max(self._dist_hist[-41:])
+                       - min(self._dist_hist[-41:]) < 0.02)
+            return bool(d <= self.CARRY_STOP
+                        or (blocked and d <= self.CARRY_NEAR))
         return bool(d <= NAV_POS_TOL and np.cos(gyaw - psi) >= NAV_ORI_COS)
 
 
 class GraspDriver:
-    """Base-align to the arm's reach sweet spot, then a direct diagonal approach
-    onto the object -> chase-close -> in-place squeeze -> gentle lift. Done ==
-    check_obj_grasped AND the object actually risen off its entry z (see done).
+    """Base-align to the arm's reach sweet spot, then a standoff approach onto
+    the object -> gated close -> in-place squeeze -> gentle lift, with a
+    deterministic retry schedule when the lift proves the enclosure false.
+    Done == check_obj_grasped AND the object actually risen off its entry z.
 
-    Two things the naive "hover-above then descend" driver got wrong, both forced
-    by the mobile manipulator's real workspace (measured this venv, seed 7):
+    The original fixed-standoff driver (FWD=0.65 tuned on a z~1.0 shelf) scored
+    3% on 60 random scratch seeds (capability-r1.md). The measured failure
+    taxonomy, and what each part below answers:
 
-    * The navigate dock is placed for ARRIVAL, not grasping. The PandaOmron's right
-      arm is mounted ~0.15 m off base centre, so an object is only in the arm's
-      envelope when the base sits at obj_xy - Rz(psi)@[FWD, LAT]; from the fridge
-      dock the meat is 0.63 m OUT of reach until the base shifts ~0.14 m laterally
-      (workspace scan: reach 0.63 m -> 0.005 m). So grasp first re-parks the base.
-      FWD/LAT are robot reach constants (calibration knobs), not scene values --
-      tune here if the arm/base geometry changes, not per task.
-    * At that extension the arm can only touch the far-forward object on a RISING
-      diagonal, so a low hover is itself unreachable and the descent gate never
-      opens. Driving straight at the grasp point traces the reachable path.
+    * 57% stuck in reach: the meat sits on HIGH (z 1.3-1.5) or LOW (z 0.6-0.9)
+      shelves, outside the arm envelope at the fixed park. Fix: the TORSO lift
+      (slide joint, 0..0.34 m, position-holding -- an action channel the drivers
+      never used) raises the whole envelope to the shelf, and the residual
+      height error shrinks the standoff FWD along the reach sphere
+      (fwd = sqrt(FWD^2 - dz^2)) for shelves the torso cannot reach.
+    * 32% closed on AIR even with the eef centred: the meat is a flat slab,
+      measured reg_bbox horizontal extents 0.066-0.086 m (minor axis) x
+      0.094-0.124 m (major) against an 0.08 m total finger span -- enclosure is
+      GEOMETRICALLY possible only across the minor axis, and the old driver
+      never commanded wrist yaw, so success was the luck of the spawn
+      orientation (the "object-level conditionality" of calibration-r1). Fix:
+      the wrist-yaw channel (a[5], measured CCW-positive about z) servos the
+      finger-opening axis (== eef site x axis, measured) onto the object's
+      bbox minor axis before closing.
+    * the horizontal reach-in also PLOWED the object across the shelf (meat
+      displaced up to 0.4 m/episode, each retry chasing it deeper into the
+      fridge). Fix: over-then-down -- hover above the object, align xy+yaw,
+      descend with open fingers straddling the slab, close IN PLACE.
+    * per-object geometry still defeats single attempts: a fixed retry schedule
+      (closer park / other lateral side / extra torso, RETRY below) re-runs the
+      whole approach after a failed lift -- deterministic, same seed same
+      trajectory; RSI can later learn WHEN to switch, the driver just owns the
+      mechanical sequence.
     """
 
-    FWD = 0.65        # base stands this far in front of the object (arm fwd reach)
-    LAT = -0.15       # ... and this far to the arm side (right-arm mount offset)
+    FWD = 0.65        # standoff at the tuned work height (arm fwd reach)
+    LAT = -0.15       # arm-side lateral offset (right-arm mount)
+    WORK_Z = 1.00     # meat height FWD was tuned at, torso down
+    TORSO_MAX = 0.34  # torso slide range (omron_mobile_base.xml)
+    FWD_MIN = 0.38    # never park closer than this (base/fridge collision)
     ALIGN_TOL = 0.04  # base-park tolerance (P-tail floors ~0.03 on this base)
-    GRASP_TOL = 0.045 # eef-to-grasp-point distance that triggers the close
+    ALIGN_CAP = 110   # align bailout: park where we are and try (blocked park)
+    HOVER = 0.08      # hover height above the object before the descent
+    HOVER_XY = 0.03   # xy alignment gate at hover
+    YAW_TOL = 0.30    # rad: finger axis vs bbox minor axis gate (mod pi)
+    KYAW = 2.0        # wrist-yaw P gain; per-step channel cap below
+    YAW_CAP = 0.4
+    PHASE_CAP = 90    # hover/descend stall bailout -> next retry attempt
+    CLOSE_XY = 0.035  # xy gate for the close (the arm's xy P-tail floors at
+                      # ~0.03 at fridge extension; 0.03 measured gate-churn)
+    CLOSE_DZ = 0.02   # descent complete when eef z within this of the aim z
     CLOSE_TICKS = 12   # chase-close ticks onto the object (original)
-    SQUEEZE_TICKS = 25 # then squeeze IN PLACE (kp=0) -- the probe-proven settle
+    SQUEEZE_TICKS = 35 # then squeeze IN PLACE (kp=0) -- the probe-proven settle
                        # that turns a touching latch into a real enclosure
     LIFT_DZ = 0.20    # how far to raise after closing
+    LIFT_TICKS = 40   # lift budget; not secure by then -> recover + retry
     SECURE_DZ = 0.08  # the OBJECT must rise this far off its entry z to count
                       # (0.04 verified too low: the meat cleared the latch but not
                       # the shelf lip, and the stow drag stripped it -- carry-probe;
                       # measured achievable lift at full extension is ~+0.09)
     LIFT_CAP = 0.3    # per-step arm command cap in the lift (gentle raise)
+    RECOVER_TICKS = 18
+    #: retry schedule: (mode, d_fwd, d_lat, d_aim_z, d_torso) per attempt --
+    #: deterministic, exhausted in order. Modes measured on the dev block:
+    #: * "over"     -- hover above, descend (the only mode that does not plow
+    #:   the slab across the shelf; a lateral reach-in variant was measured and
+    #:   dropped: it shoved the meat up to 0.4 m and churned at its gate).
+    #: * "over_end" -- same but aim at the slab's base-near END, where the mesh
+    #:   narrows: some slabs' minor extent (up to 0.086 m) exceeds the 0.08 m
+    #:   finger span, so a centre grasp is geometrically impossible.
+    #: The closer-park/lower-aim tweaks are the measured single-seed winners.
+    #: The 6th field is the wrist-yaw STYLE -- the three styles were measured
+    #: on the dev block and win DISJOINT seed sets (union 22/60 vs 14-15 for
+    #: any single style), so the schedule sweeps them:
+    #: * "gated" -- yaw servo only once xy < 0.06 (servoing at full extension
+    #:   fights the reach: bare push extends 0.664 m, under a yaw servo ~0.56)
+    #: * "full"  -- yaw servo throughout (works where the park is close)
+    #: * "pre"   -- pre-rotate while retracted, then extend orientation-free
+    #: The 7th field rotates the whole approach ring (the base re-parks on an
+    #: arc around the object). Measured: +-0.22 arcs LOSE (the rotated parks
+    #: are blocked far more often -- align-stuck 18/60 vs 9/60), so the
+    #: schedule keeps the frontal approach and sweeps the other axes.
+    RETRY = (("over", 0.0, 0.0, 0.0, 0.0, "gated", 0.0),
+             ("over", -0.07, 0.0, -0.015, 0.0, "full", 0.0),
+             ("over_end", 0.0, 0.0, -0.005, 0.0, "gated", 0.0),
+             ("over", 0.0, 0.0, 0.0, 0.0, "pre", 0.0),
+             ("over", -0.10, 0.03, -0.02, 0.06, "gated", 0.0),
+             ("over_end", -0.07, -0.05, -0.015, 0.0, "full", 0.0))
 
     def __init__(self, obj_name):
         self.obj_name = obj_name
         self.phase = "align"
+        self.attempt = 0
         self._psi = None       # approach yaw, locked at entry (the dock yaw)
         self._ticks = 0
         self._lift_z = None
         self._obj_z0 = None    # object z at entry: the secure-lift reference
+        self._z_hist: list = []  # descent stall detector window
+
+    # -- per-attempt geometry --------------------------------------------------
+    def _tweak(self):
+        return self.RETRY[min(self.attempt, len(self.RETRY) - 1)]
+
+    def _torso_target(self, env):
+        mode, d_fwd, d_lat, d_aim, d_torso, style, d_psi = self._tweak()
+        mz = float(_obj_pos(env, self.obj_name)[2])
+        return float(np.clip(mz - self.WORK_Z + d_torso, 0.0, self.TORSO_MAX))
+
+    def _standoff(self, env):
+        """(fwd, lat) for this attempt: the reach-sphere shrink + retry tweak."""
+        mode, d_fwd, d_lat, d_aim, d_torso, style, d_psi = self._tweak()
+        mz = float(_obj_pos(env, self.obj_name)[2])
+        dz = mz - (self.WORK_Z + self._torso_target(env))  # residual height err
+        fwd = float(np.sqrt(max(self.FWD ** 2 - dz ** 2, self.FWD_MIN ** 2)))
+        return max(fwd + d_fwd, self.FWD_MIN), self.LAT + d_lat
+
+    def _apsi(self):
+        """This attempt's approach yaw: the locked dock yaw + the retry arc."""
+        return self._psi + self._tweak()[6]
 
     def _base_target(self, env):
         m = _obj_pos(env, self.obj_name)
         if self._psi is None:
             self._psi = _base_pose(env)[1]
-        c, s = np.cos(self._psi), np.sin(self._psi)
-        return m[:2] - np.array([c * self.FWD - s * self.LAT,
-                                 s * self.FWD + c * self.LAT])
+        fwd, lat = self._standoff(env)
+        c, s = np.cos(self._apsi()), np.sin(self._apsi())
+        return m[:2] - np.array([c * fwd - s * lat, s * fwd + c * lat])
+
+    def _next_attempt(self):
+        self.attempt += 1
+        self.phase = "align"
+        self._ticks = 0
+        self._lift_z = None
+        self._z_hist = []
+
+    def _minor_axis(self, env):
+        """World-horizontal unit vector across the object's THINNEST bbox
+        extent -- the only span the 0.08 m fingers can enclose. None when the
+        object has no reg_bbox geom (fall back to no yaw servo)."""
+        m = env.sim.model
+        try:
+            gid = m.geom_name2id(f"{self.obj_name}_reg_bbox")
+        except Exception:
+            return None
+        R = np.asarray(env.sim.data.geom_xmat[gid]).reshape(3, 3)
+        size = np.asarray(m.geom_size[gid])
+        for k in np.argsort(size[:2]):        # thin in-plane axis first
+            v = R[:2, k]
+            n = float(np.linalg.norm(v))
+            if n > 0.3:                       # skip a near-vertical axis
+                return v / n
+        return None
+
+    def _yaw_err(self, env, axis):
+        """Signed angle (mod pi -- the fingers are symmetric) from the finger-
+        opening axis (eef site x, measured) to the target horizontal axis."""
+        if axis is None:
+            return 0.0
+        R = np.asarray(
+            env.sim.data.site_xmat[env.robots[0].eef_site_id["right"]]).reshape(3, 3)
+        f = R[:2, 0]
+        n = float(np.linalg.norm(f))
+        if n < 0.2:
+            return 0.0
+        f = f / n
+        ang = np.arctan2(axis[1], axis[0]) - np.arctan2(f[1], f[0])
+        return float((ang + np.pi / 2) % np.pi - np.pi / 2)
+
+    def _grasp_xy(self, env):
+        """Grasp-point xy: the object centre, or for the *_end modes the point
+        3/5 of the way out to the slab's base-near END along its major axis
+        (deterministic; the mesh narrows toward the ends, and over-span slabs
+        are only enclosable there)."""
+        m = _obj_pos(env, self.obj_name)
+        mode = self._tweak()[0]
+        if not mode.endswith("_end"):
+            return m[:2]
+        mdl = env.sim.model
+        try:
+            gid = mdl.geom_name2id(f"{self.obj_name}_reg_bbox")
+        except Exception:
+            return m[:2]
+        R = np.asarray(env.sim.data.geom_xmat[gid]).reshape(3, 3)
+        size = np.asarray(mdl.geom_size[gid])
+        k = int(np.argmax(size[:2]))          # major in-plane axis
+        v = R[:2, k]
+        n = float(np.linalg.norm(v))
+        if n < 0.3:
+            return m[:2]
+        v = v / n
+        off = v * float(size[k]) * 0.6
+        # pick the end nearer the base (the reachable one), deterministically
+        xy, _ = _base_pose(env)
+        if np.linalg.norm(m[:2] + off - xy) > np.linalg.norm(m[:2] - off - xy):
+            off = -off
+        return m[:2] + off
 
     def act(self, env, obs):
         m = _obj_pos(env, self.obj_name)
         eef = _eef(env)
+        torso = _torso_cmd(env, self._torso_target(env))
+        mode, d_fwd, d_lat, d_aim, d_torso, style, d_psi = self._tweak()
+        gxy = self._grasp_xy(env)
+
         if self.phase == "align":
             tgt = self._base_target(env)
-            if np.linalg.norm(_base_pose(env)[0] - tgt) < self.ALIGN_TOL:
-                self.phase = "reach"
+            self._ticks += 1
+            if (np.linalg.norm(_base_pose(env)[0] - tgt) < self.ALIGN_TOL
+                    or self._ticks > self.ALIGN_CAP):
+                self.phase = "preyaw" if style == "pre" else "hover"
+                self._ticks = 0
             else:
-                return _base_action(env, tgt, self._psi, grip=GRIP_OPEN, kp=6.0)
-        gp = np.array([m[0], m[1], m[2]])   # grasp point == object body
-        if self.phase == "reach":
-            if np.linalg.norm(gp - eef) < self.GRASP_TOL:
+                a = _base_action(env, tgt, self._apsi(), grip=GRIP_OPEN, kp=6.0)
+                a[TORSO] = torso
+                return a
+        if self.phase == "preyaw":
+            # rotate the wrist onto the object's thin axis WHILE RETRACTED --
+            # near the body the orientation authority is full. Commanding yaw
+            # during the extension instead FIGHTS the reach: the OSC trades
+            # orientation for position when left alone (measured: a bare push
+            # extends 0.664 m forward; the same push under a live yaw servo
+            # stalls at ~0.56 and the orientation ends 57 degrees sideways).
+            yerr = self._yaw_err(env, self._minor_axis(env))
+            self._ticks += 1
+            if abs(yerr) < 0.2 or self._ticks > 50:
+                self.phase = "hover"
+                self._ticks = 0
+            a = _arm_action(env, eef, GRIP_OPEN, kp=0.0,
+                            dyaw=np.clip(yerr * self.KYAW,
+                                         -self.YAW_CAP, self.YAW_CAP))
+            a[TORSO] = torso
+            return a
+        if self.phase == "hover":
+            # over-then-down: centre above the grasp point and get the fingers
+            # across the thin side, per this attempt's yaw STYLE (see RETRY)
+            wp = np.array([gxy[0], gxy[1], m[2] + self.HOVER])
+            err_xy = wp[:2] - eef[:2]
+            yerr = self._yaw_err(env, self._minor_axis(env))
+            self._ticks += 1
+            if (np.linalg.norm(err_xy) < self.HOVER_XY
+                    and abs(eef[2] - wp[2]) < 0.04
+                    and (style == "pre" or abs(yerr) < self.YAW_TOL)):
+                self.phase = "descend"
+                self._ticks = 0
+            elif self._ticks > self.PHASE_CAP:
+                self._next_attempt()
+                return _arm_action(env, eef, GRIP_OPEN, kp=0.0)
+            if self.phase == "hover":
+                full = np.clip(yerr * self.KYAW, -self.YAW_CAP, self.YAW_CAP)
+                dyaw = (full if style == "full"
+                        else full if (style == "gated"
+                                      and float(np.linalg.norm(err_xy)) < 0.06)
+                        else 0.0)
+                a = _arm_action(env, wp, GRIP_OPEN, dyaw=dyaw)
+                a[TORSO] = torso
+                return a
+        # descent/close aim: slightly BELOW the grasp point. A friction stall
+        # (fingers rubbing the slab sides) is PRESSED through with a saturated
+        # down command -- the small P-tail near the aim is weaker than the
+        # contact friction and used to freeze the descent 1.2-1.7 cm high,
+        # leaving a top-edge graze that slipped out. Only a stall that survives
+        # the press (truly wedged) closes early: deepest reachable pinch.
+        aim = np.array([gxy[0], gxy[1], m[2] + d_aim - 0.005])
+        if self.phase == "descend":
+            yerr = self._yaw_err(env, self._minor_axis(env))
+            self._ticks += 1
+            self._z_hist.append(float(eef[2]))
+            err = aim - eef
+            centred = np.linalg.norm(err[:2]) < self.CLOSE_XY
+            stalled = (len(self._z_hist) > 8
+                       and self._z_hist[-9] - self._z_hist[-1] < 0.002)
+            wedged = (len(self._z_hist) > 25
+                      and self._z_hist[-26] - self._z_hist[-1] < 0.003)
+            if centred and (-err[2] < self.CLOSE_DZ or wedged):
                 self.phase = "close"
-            return _arm_action(env, gp, GRIP_OPEN)
+                self._ticks = 0
+            elif self._ticks > self.PHASE_CAP:
+                self._next_attempt()
+                return _arm_action(env, eef, GRIP_OPEN, kp=0.0)
+            else:
+                # descend yaw per style: "full" keeps the hard servo; the
+                # others take only MILD corrections once nearly centred (a
+                # hard yaw servo at extension destroys the orientation)
+                dyaw = (np.clip(yerr * self.KYAW, -self.YAW_CAP, self.YAW_CAP)
+                        if style == "full"
+                        else (np.clip(yerr * self.KYAW, -0.15, 0.15)
+                              if float(np.linalg.norm(err[:2])) < 0.06 else 0.0))
+                a = _arm_action(env, aim, GRIP_OPEN, dyaw=dyaw)
+                a[2] = -0.5 if stalled else float(np.clip(a[2], -0.5, 0.5))
+                return a
         if self.phase == "close":
+            # close IN PLACE: the fingers already straddle the slab; chasing
+            # the centre at gain here is what used to shove it off the shelf
             self._ticks += 1
             if self._ticks > self.CLOSE_TICKS:
                 self.phase = "squeeze"
                 self._ticks = 0
-            return _arm_action(env, gp, GRIP_CLOSE)
+            return _arm_action(env, eef, GRIP_CLOSE, kp=0.0)
         if self.phase == "squeeze":
             # hold position (kp=0), keep closing: chasing the object centre at
             # full gain while the fingers close shoves the object instead of
@@ -327,14 +627,29 @@ class GraspDriver:
             self._ticks += 1
             if self._ticks > self.SQUEEZE_TICKS:
                 self.phase = "lift"
+                self._ticks = 0
                 self._lift_z = _eef(env)[2] + self.LIFT_DZ
             return _arm_action(env, eef, GRIP_CLOSE, kp=0.0)
-        # lift -- GENTLY (carry-probe: a saturated 0.05 m/step lift accelerates
-        # the just-enclosed object out of the fingers; capped 0.015 m/step keeps
-        # the seed-11 enclosure through the whole raise).
-        a = _arm_action(env, np.array([eef[0], eef[1], self._lift_z]), GRIP_CLOSE)
-        a[0:3] = np.clip(a[0:3], -self.LIFT_CAP, self.LIFT_CAP)
-        return a
+        if self.phase == "lift":
+            # GENTLY (carry-probe: a saturated 0.05 m/step lift accelerates the
+            # just-enclosed object out of the fingers; capped 0.015 m/step keeps
+            # the enclosure through the whole raise). done() fires mid-lift the
+            # moment the object provably rides up; a spent budget without that
+            # proof means the fingers closed on air -> recover and retry.
+            self._ticks += 1
+            if self._ticks > self.LIFT_TICKS:
+                self.phase = "recover"
+                self._ticks = 0
+            a = _arm_action(env, np.array([eef[0], eef[1], self._lift_z]), GRIP_CLOSE)
+            a[0:3] = np.clip(a[0:3], -self.LIFT_CAP, self.LIFT_CAP)
+            return a
+        # recover: open and rise straight up off the slab, then re-run the
+        # approach with the next attempt's geometry (deterministic retry, not RSI)
+        self._ticks += 1
+        if self._ticks > self.RECOVER_TICKS:
+            self._next_attempt()
+        return _arm_action(env, np.array([eef[0], eef[1], eef[2] + 0.08]),
+                           GRIP_OPEN)
 
     def done(self, env):
         """Grasped AND the object has actually risen off its entry pose.

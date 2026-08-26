@@ -39,7 +39,7 @@ from plugins.embodiment_robocasa import drivers as D
 #: seed 11 needed >250 capped steps for the same leg the empty base does in ~80).
 _STAGES: dict[str, tuple[Any, int]] = {
     "nav_fridge":  (lambda: D.NavigateDriver("fridge"), 250),
-    "grasp_meat":  (lambda: D.GraspDriver("meat"), 260),
+    "grasp_meat":  (lambda: D.GraspDriver("meat"), 900),
     "nav_micro":   (lambda: D.NavigateDriver("microwave", carry=True), 450),
     "place_meat":  (lambda: D.PlaceDriver("meat", "microwave"), 300),
     "close_door":  (lambda: D.CloseDoorDriver("microwave"), 250),
