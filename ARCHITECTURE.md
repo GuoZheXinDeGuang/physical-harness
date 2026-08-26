@@ -1,106 +1,169 @@
-# Backbone Harness 架构
+# Architecture
 
-一句话: dsh 式插件内核承载 Zetta 式 physical RSI, 三层科研板块以契约接入, 一切能改变结论的东西(挂载、解析、特权、参数)都进内容哈希。
+一句话定位：**一个让"机器人技能变好了"这句话没法骗人的系统**——冻结策略执行任务、
+哈希链封存证据、预注册的统计流程演化技能。内核极小，机器人/仿真器/任务全是插拔卡片。
 
-## 两层结构: 执行 / 进化(GOAL v4.2)
+## 0. 三条设计铁律
 
-底座只焊死两层, 其余(顶层 VLM / 导航 / 建图 / 感知 / 抓取 / RL 动作 / 机器人 / 界面)全是随插随拔的卡:
+整个架构由三条铁律推导而来：
 
-- **执行层(L-exec)**: 接大任务 → 拆成小任务串 → 逐个匹配技能 → 按依赖调度 → 每步验证状态 → 失败重规划。本体只有编排逻辑(拆解规则 / JSON 传参格式 / 工具调用约定 / 执行验证循环)。执行真任务只用已入库技能与固化配置, 不在线试错。
-- **进化层(L-evo)**: 独立、离线, 把执行层当**实验设备**调用。两种活: (a) 冻结全部技能, 只改 harness 编排配置/参数, 仿真批量执行对比前后; (b) 仿真反复试验新技能到成功率达标——产出走验证四件套(配对 / 盲孪生 / held-out / 消融)后, 连同全部实测数据沉淀进技能库。
+1. **执行与演化分离（execution / evolution 两态）**。干活时策略是冻结的，一个字节不改；
+   只有演化态才能产生新技能，且新技能必须通过统计检验才能上岗。
+2. **证据先于结论**。每集实验封存成 hash chain 日志，改一字节链就断；实验设计（种子、
+   假设、门槛）在跑之前预注册封存，跑完不许反悔。
+3. **内核极小，其余皆卡**。内核不认识任何机器人、仿真器、任务——这些全部通过声明式
+   manifest 插进来。
 
-**mode 机制(两层的硬边界, round 96)**: mode 是每会话属性, 默认 EXECUTION(fail-safe: 真任务永不触发 RSI)。`harness_runtime --mode {execution,evolution}` 写一次 `<session-dir>/MODE`(重启断言一致 = 进程间不可变), 并封 `runtime.boot` 行 `{mode, skills_manifest, mount_plan_sha}` 为链 0 号 —— 篡改 mode/清单即令 `verify()` 断链, 断链就是审计(复用既有 chain_start/chain_step, 无新哈希)。一守卫一审计: (a) `_process` 只在进化态接受 `kind=="campaign"`, 否则拒到 failed/ 记 `runtime.task_error`(拒绝非中和, 同注入键防御, 亦即 M4 rung-3 的修正); (b) 每执行任务前重折 `skills_root` 摘要集断言等于 boot 清单(文件名即内容摘要, 集合相等即抓住带外篡改)。
+## 1. 目录结构
 
-**单向流**: 只有进化态的 `_copy_skills` 写封存记录; 执行态从不写 `skills_root`, 只挂已封 SkillRecord(`heldout_judgement_established=True`) + 冻结 profile。真机(`actuation:real`)卡被此 sim 运行时拒挂 —— 它属另一个认证运行时, 永不是一条 brief 之遥。
+```
+physical-harness/
+├── harness/        内核：episode 循环、session log 哈希链、特权预算
+├── plugins/        卡片：所有"具体"的东西
+│   ├── embodiment_robosuite/   桌面机械臂卡（环境 + 感知 + 驱动 + 谓词）
+│   ├── embodiment_robocasa/    厨房机器人卡（同上，另一套依赖）
+│   ├── mission_*/              任务卡（任务图 + planner，纯数据 manifest）
+│   ├── task/                   通用任务机器：图执行、验证、replan
+│   └── rsi/                    技能演化引擎：门禁、配对检验、campaign
+├── board/          对外唯一门面（"一个店三张脸"）
+├── scripts/        常驻 runtime + 演化入口
+├── runs/           证据库（gitignored，只在本机）
+└── tests/          600+ 测试；base lane 零仿真依赖即可全绿
+```
 
-## 固定原则 → 机制(GOAL v4.2, 逐条可验)
+## 2. Kernel（harness/）——内核只提供三个保证
 
-| 原则 | 机制(在 harness 里落在哪) |
-|---|---|
-| 零插件可启动、自测全绿 | `harness/fakes.py` 七能力空 provider + `profiles.fakes_profile()`; `plugins/` 空目录下 `pytest -m "not robosuite"` 全绿, `harness_runtime --drain` 假 brief 跑到 done/ |
-| 挂载时校验, 不合格在 mount 报错(非任务中失败) | 契约是 runtime_checkable Protocol; `Kernel.provide` 在挂载点做 isinstance 门, 挂错形状当场失败, 不流进 episode |
-| 完整配置进内容哈希, 配置变 = 另一个实验身份 | Profile/Bundle/Patch → `resolve_plan` → `MountPlan.sha`; 能改结论的常数进预注册哈希, 加缝即换 sha |
-| 事件链式日志, 事后不可篡改, 重启延续 | `SessionLog` 链式承诺, 挂载/解析/campaign 同一条链; 就地篡改被 `verify()` 抓住; 常驻运行时 load-or-fresh 续链 |
-| 特权每次使用被记录, 每技能带特权依赖测量 | 特权解析吃预算(Kernel 记账), critic/recovery 只能碰 `FeatureView`(特征读取逐次记账); 每条 SkillRecord 附特权消融曲线 |
-| 两层单向(进化调用执行, 执行不反向调用) | mode 机制: 进化态调用执行做实验, 执行态只消费封存沉淀; 执行时刻 campaign brief 被拒、`skills_root` 不写 |
+**Episode loop**。一个 episode = 世界从 reset 到关闭的一次完整经历。所有任务都是
+这个循环的实例。
 
-## 三层 OS 与契约的映射
+**Session log（hash chain）**。每发生一件事（挂载、执行、验证、campaign 结果）追加
+一行，每行携带前一行的 hash。事后改任何一行，`verify()` 立刻抓到断链——这是"证据"
+的技术基础。审计不是流程，是数学。
 
-| OS 板块 | 骨架契约(harness/contracts.py) | 第一个 provider |
+**Privilege budget（特权预算）**。仿真里可以作弊（直接读物体真实坐标，privileged /
+上帝视角），真机上没有。内核对每次特权读取记账；每条上岗技能附带特权消融曲线
+（ablation curve），靠作弊涨的分在消融里现形。
+
+配置完整性：所有能改变实验结论的东西（挂载了什么、用什么参数）折成一个内容哈希
+（`MountPlan.sha`）。配置变 = 哈希变 = 另一个实验身份，不存在"悄悄改了个参数"。
+
+## 3. Cards（plugins/）——三类卡片
+
+**Embodiment card（本体卡）**：一个机器人 + 仿真器的全套——环境构造、感知、驱动
+（driver，如"导航到冰箱"怎么用轮子实现）、判定谓词（predicate，如"物体在微波炉
+里吗"）。每张本体卡配独立 venv（robosuite 与 robocasa 的 numpy ABI 互斥，隔离比
+调和便宜），互相不知道对方存在。
+
+**Mission card（任务卡）**：一个任务的图定义——节点怎么连、每个节点用哪个驱动、用
+哪个谓词验证。manifest.toml 是**纯数据**，没有逻辑，所以加任务不可能弄坏内核。
+
+**RSI card（演化引擎）**：见 §6。
+
+卡片间的边界规矩是 **provider by ref**：卡不许 import 另一张卡的代码，只能在
+manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），由内核在挂载
+时解析。挂载点做 Protocol isinstance 校验——形状不对当场报错，不流进 episode。
+边界测试常驻，偷 import 隔壁卡直接红。
+
+## 4. 任务图——为什么是图不是脚本
+
+脚本写死"抓、走、放"，失败只能整个重来。我们把任务拆成节点图，节点四种 kind：
+
+| kind | 干什么 | 例子 |
 |---|---|---|
-| 1 Reasoning VLM | reasoner.proposer(Reasoner) | plugins/reasoner(SearchProposer 适配; 真模型走同一 transport, gated) |
-| 2 Scene Graph | graph.scene(SceneGraph) | plugins/graphs.SimSceneGraph(robosuite obs, base_profile 默认); WorldSceneGraph(机器人 World.snapshot, 走 robot-world bundle; 首个消费者 zos 已退役, 留给未来 actuation:real 卡, 见 docs/zos-salvage.md) |
-| 2 Skill Graph | graph.skill(SkillGraph) | plugins/graphs.InMemorySkillGraph(内容寻址) |
-| 3 具身/环境 | embodiment.env(EnvProvider), embodiment.ground_truth(privileged) | plugins/embodiment_robosuite |
-| 3 策略/技能 | policy.driver(PolicyFactory) | plugins/policies(scripted / bc 适配) |
-| 感知 | percept.model(PerceptModel) | plugins/embodiment_robosuite/percept.OnboardPercept(L1 rung 1 已迁入) |
-| 执行织物 | exec.rollouts(RolloutExecutor) | harness/executor.LocalPoolExecutor(将来 Ray/远程同一契约) |
+| perceive | 看一眼世界 | "厨房里有什么" |
+| decide | 做决定 | "先拿哪个罐子" |
+| segment | 执行一段动作（唯一动真格的节点） | "导航到冰箱" |
+| verify | 读世界活状态核实，**不信 segment 的自我报告** | "真的到了吗" |
 
-RSI workload(plugins/rsi)是 OS 主循环里 Verify -> Adapt 那条边的严格化:
-它消费上述能力, 产出**带测量的技能**写回 Skill Graph - 图里的 failure modes 与 capability boundaries 不再是标注, 是配对实验的输出。
+核心机制 **in-episode replan**：verify 失败时不重置世界，在同一个世界里重新规划
+重试——就像抓杯子滑了一下是原地再抓，不是回家重新出门。一集里可以操作几十次、
+错了就地补救，这就是长程任务能力的来源。长任务跑在一个持久 episode 里
+（`episodic: true`），环境、观测、执行游标跨节点存活。
 
-## 内核(harness/)
+另一条铁律：**渲染是活状态不是证据**。取景窗帧、截图永远不进 session log 链。
 
-- capability.py: Definition(name, contract, privileged)。契约必须是 runtime_checkable Protocol。
-- kernel.py: provide/resolve/mount。**每次 resolve 都被记账**(消费者、provider ref、是否特权), 特权解析吃预算 - FeatureView 的思想上提到系统层。
-- config.py: Profile/Bundle/Patch -> resolve_plan -> MountPlan(带来源出处), canonical()+sha() 进内容哈希; round 29 的教训(能改变结论的常数必须可审计)在这里变成结构。
-- events.py: 链式承诺的 SessionLog(内核事件与 workload 事件同一条链的构造)。
-- registry.py: "module:attr" 字符串加载 provider 工厂。**provider 身份以字符串随 EpisodeSpec 传递**, 因为模块全局 hook 不能活过 multiprocessing spawn(phase 1 实测过并写进过文档), 而字符串可 pickle、可进哈希、可审计。
-- definitions.py: 能力清单(上表)。
-- executor.py: 本地进程池 provider。
+## 5. Board 与 runtime——外界怎么用这个系统
 
-## L0 迁移方式(适配器, 不动数值)
+**Board 是唯一门面**，同一套函数暴露三张脸：Python API（`board/store.py`）、
+CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏一处测试抓。
+读随便读；写只有一个口：`submit_brief`。
 
-governor.env.make_env / governor.policy.make_driver 变为派发点:
-spec 携带 env_provider / policy_provider ref 时经 registry 加载 provider, 缺省走原路径。
-加字段只加在 dataclass 末尾(phase 1 的字段顺序教训)。
-Preregistration 增加同名可选字段并由 _specs 下传; 由此 prereg sha 会变, 这是预期且诚实的(挂载进哈希)。
-parity 协议: scripts/parity_check.py 读取 runs/campaign-pj-* 的存档 preregistration, 经 kernel 路径重跑, 比对每代规则 canonical + bundle sha、dev/blind 门禁与 held-out 的全部配对字段。
-已验证: 脚本与克隆两个策略均四组 PASS(round 54/55)。
+**brief 是纯选择器 + 预算**，不含实现：
 
-## L1 进度
+```json
+{"kind":"task",     "task":"kitchen_thaw", "seed":11, "max_replans":3}
+{"kind":"campaign", "campaign":"stack", "dev":[41000,41999], "heldout":[42000,42199]}
+{"kind":"rsi",      "task":"kitchen_thaw"}
+```
 
-- rung 3(round 58b): **事件链合一**。链原语(chain_start/chain_step)只在 harness.events
-  存在一份, governor.episode_log 复用同一实现(种子不同, 数学逐位不变 -- 有 golden 值测试,
-  归档的 episode log 仍可审计)。新增 `Kernel.note()`: workload 把 campaign 完成事件
-  (prereg sha / 规则 / 技能摘要 / held-out)写进**同一条**内核会话链 --
-  挂载、解析、campaign 结果如今在一本可验证的账里, note() 是证据不是控制流。
-- rung 2(round 57): **executor 接管全部 rollout 执行**。governor 里 6 处散落的
-  `multiprocessing.Pool` 块(gate / campaign / parallel / recovery_search / beam / demos)
-  换成 `executor.map(fn, items, workers=...)`; 注入方式是**显式关键字参数**贯穿调用链
-  (paired_gate / ablation_curve / run_campaign / rollout_many / _measure / _rate 均加
-  `executor=None`), 缺省回落 `governor.parallel.default_executor()`(与原 Pool.map 逐位同义)。
-  不用模块全局(round 29 的教训); executor 在父进程创建 pool, 无 spawn 问题。
-  workload 从 kernel 解析 `exec.rollouts` 注入 -- **换分布式后端 = 换一个 mount**。
-- rung 1(round 56): 恢复侧感知 `_percept_object` 的实现移入 embodiment 插件,
-  governor 只留派发点与命名默认 `DEFAULT_PERCEPT_REF`。
-  策略自身的 t=0 感知(`FrozenPolicy.observe_once`)是冻结策略本体的一部分, 不属于可挂载服务, 不迁。
-  caveat 已闭合(L1 rung 3): `Preregistration.percept_provider` 默认即 `DEFAULT_PERCEPT_REF`
-  (显式 None 也在 `__post_init__` 归一成常量), 经 `_specs` 下传 -- 直接构造 prereg 跑
-  run_campaign 的路径如今也进哈希。用默认值构造的 prereg 其 sha 因此变化, 预期且诚实
-  (与上文加 seam 字段时 sha 变、round 29 挪常数进哈希同款); demo/kernel 路径 sha 不变
-  (workload.run 一直显式盖真 ref, 值与常量相同)。
+用什么代码由服务端按 manifest 决定，brief 里多塞任何键都被拒——执行入口不可注入。
 
-## 有意推迟的一项: features 注册表插件化
+**Runtime 是常驻进程**，逻辑极简：盯一个 inbox 文件夹，有文件就认领（原子 rename，
+天然防抢单），干完移到 done/ 或 failed/。没有消息队列、没有数据库，文件系统的原子
+性够用。每个仿真器一个 runtime、一个 venv、一个 session 目录。
 
-REGISTRY 的注册发生在模块 import 时, 这**正是它 spawn 安全的原因**
-(worker 重新 import 就重新注册, 无需任何状态迁移)。
-把注册改为 mount 驱动会立刻回到 "模块全局活不过 spawn" 的老坑;
-把提取器移入插件而 governor 保留副本则是 round 44 的漂移坑。
-干净解法需要 L2 的依赖反转(registry 上提进 harness, 插件在 import 时向它注册,
-worker 因 spec ref 而 import 插件 -> 注册在 worker 里自然发生)。
-在那之前不动, 原因记录于此。
+**两态的硬边界**：mode 是每 session 属性，默认 EXECUTION（fail-safe：真任务永不触发
+演化）。boot 时把 mode + 技能清单 + 挂载哈希封成链的第 0 行；执行态收到 campaign/rsi
+brief 直接拒；每次执行前重折技能目录摘要与 boot 清单比对——带外塞文件也抓得住。
+只有演化态写技能库；执行态只挂已确立（held-out 通过）的冻结 SkillRecord。
 
-## L0 已知限制(有意, 待 L1 清除)
+## 6. RSI——技能怎么科学地变好
 
-- worker 里 provider 由裸 ref 字符串重建, Mount params 到不了 worker; workload 在 params 非空时拒绝启动(fail loud), L1 把 params 编进 spec。
-- (已关闭, round 62) demos 采集现在接受 env_provider ref 并随 spec 下传;
-  演示者本身保持脚本专家(演示是专家行为, 不是被挂载策略的行为)。
-- provider 在 make_env/make_driver 里每 episode 重建一次; 对无状态适配器免费, L1 引入 per-worker 缓存。
+演化的对象是**规则（rule）**："观测特征 X 越过阈值 T 时，执行恢复动作 R"。
+例：`finger_gap < 0.0096 → regrasp`（手指闭合后间隙过小说明没夹住，重抓）。
 
-## 不变量(从 phase 1 原样上提)
+一句 `{"kind":"rsi","task":X}` 触发七步链，每步防一种自欺：
 
-- 可见即已记录: 能力解析、挂载、特权使用全部落链式日志, 篡改可被审计抓住。
-- canonical 完整性: 进哈希的 dataclass 字段必须全部出现在 canonical()(parent_sha 类自引用除外), 有常驻测试。
-- 特权预算同时覆盖特征读取(FeatureView)与能力解析(Kernel)。
-- 头条数字至少三区块; 判断主张走盲发孪生的 held-out 对比。
+| 步 | 干什么 | 防什么 |
+|---|---|---|
+| 1 calibration | 跑 150 集 baseline，统计逐节点首死分布 | 凭感觉判断瓶颈 |
+| 2 mechanical gates | 六条硬标准逐条打分，不过就停 | 想开工就放宽标准 |
+| 3 prereg | 种子/假设/门槛先封存（content hash）再跑 | 跑完改口 |
+| 4 dev campaign | 搜候选规则，配对同种子 McNemar（对父版本数"修好/弄坏"） | 把运气当提升 |
+| 5 blind twin | 同样的恢复动作但无条件每次做，新规则必须打赢它 | "判断时机"没价值却邀功 |
+| 6 held-out | 全新种子只考一次，考完作废 | 反复刷题刷到及格 |
+| 7 fold-in | 确立的规则折进运行时技能库 | —— |
+
+三个不许 agent 插手的点：治理节点由首死归因选（不是 agent 挑好看的）；阈值由搜索
+算法定；本体没注册恢复原语就诚实报"无从下手"，不现编动作。
+
+**诚实 null / 诚实 NO-GO 是合格产出**。门禁说"失败是能力缺口不是可治理失误"时，
+正确动作是去补能力，不是调阈值凑一个晋级。账本里的 null 结论和成功一样值钱——
+它们标出了能力边界。
+
+**Seed 即考题**：仿真确定性，同 seed 同世界。考过的种子块永久作废（一次性账本），
+runtime 在调度边界强制查重。标定块例外：标定永不设门，永远可复测。
+
+## 7. Evidence（runs/）
+
+每个 session 的封存日志、SkillRecord、campaign 产物，全部 content-hash 命名
+（文件名 = 内容 hash，改内容 = 换名 = 断链）。不进 git：它是这台机器的实验记录，
+代码库交付的是"能产生证据的机器"，不是证据本身。外界读证据一律走 board，
+不直接翻文件。
+
+## 8. UI（ph-station，独立仓库）
+
+红线一条：**前端零业务逻辑**。浏览器里的面板（执行图谱、过程流、轨迹、仿真取景窗、
+技能谱系、演进进度）全是纯视图，所有状态经唯一一条 HTTP 面
+（`POST /api/board/<fn>`）从 board 读。前端不算任何数——所以它不可能算错，
+所有数字都能追溯到 hash 链。
+
+## 9. 不变量（可验，测试常驻）
+
+- 可见即已记录：能力解析、挂载、特权使用全部落链式日志，篡改被 `verify()` 抓住。
+- 进哈希的配置字段必须完整出现在 canonical 序列化里（有常驻测试）。
+- 零插件可启动：`plugins/` 为空时 base lane 全绿——内核真正 sim-agnostic。
+- 判断类主张必须过 blind twin + held-out；头条数字至少跨三个种子块。
+- 执行态永不写技能库；真机卡（`actuation:real`）被 sim runtime 拒挂。
+
+```
+你的一句话 → brief → inbox → runtime 挂卡执行任务图
+                                  ↓
+                        每步 verify，失败就地 replan
+                                  ↓
+                        全程封进 hash chain（runs/）
+                                  ↓
+            UI 只读 board 画出来；RSI 只从证据里长出新技能
+```
+
+**执行不写、演化不骗、前端不算、证据不改。**
