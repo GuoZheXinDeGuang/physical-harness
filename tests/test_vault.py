@@ -95,6 +95,7 @@ def test_node_page_has_both_directions():
     assert ("DESCENDS_FROM", ADC) in back                 # descendant -> this skill
 
 
+@_sealed
 def test_unknown_node_is_an_error():
     g = bv.build_graph(RUNS)
     assert bv.node(g, "nope") == {"error": "unknown node"}
