@@ -692,3 +692,35 @@ def test_a_manipulate_only_plan_needs_no_predicates_table():
     assert all("kind" not in n for n in plan["nodes"])
     ok, _ = validate_plan(plan, CATALOGUE, ORACLES)
     assert ok
+
+
+def test_an_ungrounded_arg_folds_back_instead_of_crashing(monkeypatch):
+    """A dispatch-time grounding refusal (a pick object with no task binding --
+    the first thing a real VLM planner fabricated) is the PLANNER's fault: it
+    must burn a replan and fold the refusal (naming the known bindings) back
+    into the next brief, never crash the loop."""
+    class _Ungrounded(_CountingPlanner):
+        def plan(self, brief):
+            self.briefs.append(dict(brief))
+            if brief.get("fault") is None:
+                return json.loads(json.dumps({
+                    "goal": "pick something",
+                    "nodes": [{"id": "pick-0", "skill": "pick",
+                               "args": {"object": "vlm"}, "after": []}],
+                    "verify": [{"after": "pick-0", "predicate": "pick_success"}],
+                }, sort_keys=True))
+            return StackPlanner().plan({**brief, "task": "stack"})
+
+    planner = _Ungrounded()
+    kernel = _task_kernel(planner)
+    fake = _RolloutFake([True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run(dict(WBRIEF), kernel, seed=1)
+
+    assert out["success"] is True and out["replans"] == 1
+    fault = planner.briefs[1]["fault"]
+    assert fault["kind"] == "node_failure" and fault["node"] == "pick-0"
+    assert "refused at dispatch" in fault["msg"] and "can" in fault["msg"], \
+        "the refusal must name the known bindings so a replan can ground itself"
+    assert len(fake.specs) == 1, "the ungrounded node never actuated"

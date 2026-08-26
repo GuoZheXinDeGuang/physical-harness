@@ -520,8 +520,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                   episode=episode, segment_specs=brief.get("segment_specs"))
     while True:
         # Pre-episode there is no obs; the empty snapshot is the honest scene
-        # until M2's World bridge feeds a live one.
-        brief = {**brief, "scene": scene.snapshot({}),
+        # until M2's World bridge feeds a live one. seed rides the brief so a
+        # frozen-graph planner (planner_vlm) can key its per-(task, seed) cache;
+        # deterministic planners ignore it.
+        brief = {**brief, "scene": scene.snapshot({}), "seed": seed,
                  "budget": max_actuations - actuations}
         plan = planner.plan(brief)
         ok, msg = validate_plan(plan, catalogue, oracles,
@@ -562,7 +564,23 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 opstream.emit("node_start", node=node["id"], skill=node["skill"],
                               node_kind=kind, actuation=actuations)
                 opstream.emit("actuation_start", node=node["id"], actuation=actuations)
-                result = _KIND_HANDLERS[kind](node, ctx)
+                try:
+                    result = _KIND_HANDLERS[kind](node, ctx)
+                except ValueError as exc:
+                    # A dispatch-time grounding refusal (an arg with no scene
+                    # binding, an undeclared predicate): the planner's fault,
+                    # not the loop's. With a trusted table planner this was a
+                    # wiring bug worth a crash; behind an untrusted VLM it is
+                    # exactly the boundary's job -- fold the refusal (which
+                    # names the known bindings) back into the next brief so a
+                    # replan can ground itself. Non-ValueError still crashes:
+                    # an env/driver bug is not the planner's to repair.
+                    fault = {"kind": "node_failure", "node": node["id"],
+                             "failed": [node["skill"]], "done": [], "left": [],
+                             "msg": f"node {node['id']!r} refused at dispatch: {exc}"}
+                    opstream.emit("node_failed", node=node["id"],
+                                  failed=[node["skill"]], done=[])
+                    break
                 opstream.emit("actuation_end", node=node["id"], actuation=actuations,
                               success=bool(result.get("success")),
                               steps=result.get("steps"))

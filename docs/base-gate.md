@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 633 passed
+pass       : 643 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,10 +49,21 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~5.3s
+wall time  : ~8.9s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +10 pass over the five-track merge snapshot (633→643, skips unchanged) is
+the planner_vlm card (docs/vlm-graph-paper-plan.md §1 landed): +9
+`test_planner_vlm.py` (canned-endpoint generation through validate_plan, the
+one-re-ask-then-rejectable parse path, the per-(task, seed) frozen-graph cache,
+the replan prompt echoing done nodes, doctor exemption/SKIP, and the committed
+stack_vlm binding + fold) and +1 `test_task_seam.py` (a dispatch-time grounding
+refusal — the first thing the live VLM fabricated — folds back as a node fault
+instead of crashing the loop). All canned-HTTP/fake-rollout, sim-free, no seeds
+burned; the base plan sha is untouched (the card declares task_bindings only,
+and model_endpoint stays enabled=false — planner_vlm reaches it by ref string).
 
 The +28 pass / +3 skip over the campaign-progress-scan snapshot (605→633,
 29→32) is the merge of the five vlm-graph build tracks, each verified
@@ -145,7 +156,9 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `594 passed, 22 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `674 passed, 29 skipped` (re-measured
+2026-08-27 with the planner_vlm card; the count had lagged since the five-track
+merge) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;

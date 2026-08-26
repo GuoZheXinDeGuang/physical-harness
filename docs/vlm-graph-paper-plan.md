@@ -23,11 +23,23 @@
 
 ## 1. VLM graph generation — design
 
-**New card `plugins/planner_vlm/`** exposing a `TaskPlanner` provider. The
-provider prompts a VLM with (catalogue, oracles, scene snapshot, goal, fault)
-and parses a strict-JSON graph `{goal, nodes[], verify[]}`. Everything invalid
-is rejected by the existing validator and folds back as `invalid_plan` — the
-mechanism the boundary was written for.
+**New card `plugins/planner_vlm/`** exposing a `TaskPlanner` provider. ✅
+landed (this lane). The provider prompts the model through the §1b seam —
+resolved by REF STRING (`plugins.model_endpoint:provider`, the SKILL_SPECS
+`stages`-ref crossing), so the model_endpoint card stays enabled=false and the
+sealed base plan sha never moves — and parses a strict-JSON graph
+`{goal, nodes[], verify[]}` with ONE re-ask carrying the parse error; a second
+failure returns a graph the validator is guaranteed to refuse (the
+`invalid_plan` fold-back, never a silently invented graph). The A/B channel is
+`[task_bindings.stack_vlm]`: same policy ref as stack, planner swapped,
+card-owned catalogue restricted to the skills that policy can drive (the live
+model exercised the mismatch a wider catalogue leaves open). Live-run lessons
+folded into the base in the same lane: a dispatch-time grounding refusal (the
+model fabricating a pick object) now folds back as a node fault instead of
+crashing the loop, and its "known objects" message re-grounded the next live
+plan. Open gap, on purpose: with the pre-M2 empty scene snapshot the model
+cannot ground arg VALUES (stack ignores args at dispatch, so stack_vlm runs
+E2E; multi-object VLM tasks wait on the scene bridge).
 
 Four hardening items the scouts identified as real gaps (in priority order):
 
@@ -46,11 +58,12 @@ Four hardening items the scouts identified as real gaps (in priority order):
    Every manipulate/segment node must be covered by a verify-list edge or a
    verify-kind successor node; all committed planners already satisfied it.
    (Repo's own lesson: audit oracles before trusting them.)
-4. **Graph-as-evidence.** Plan shas already enter the sealed log. For anything
-   feeding calibration or the seed ledger, the emitted graph must be
-   generate-once-then-frozen per (task, seed): first emission is cached and
-   sealed; replays mount the frozen graph. Otherwise "calibration blocks are
-   re-runnable" silently stops being true.
+4. **Graph-as-evidence.** ✅ landed (this lane, in-process half). The card
+   keeps a process-lifetime frozen-graph cache keyed on (endpoint, task, seed,
+   fault): first emission freezes, same-process replays return the byte-same
+   graph without re-asking the model (tested), and the workload now stamps
+   `seed` onto the brief so the key exists. Cross-process sealing stays the
+   existing plan-sha-in-chain mechanism — no second sealing path was built.
 
 What the VLM does **not** get to do (existing guardrails, keep them): invent
 skills or predicates (catalogue/PREDICATES are card-authored symbols), touch
