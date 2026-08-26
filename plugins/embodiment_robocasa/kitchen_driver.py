@@ -88,7 +88,23 @@ class KitchenThawDriver:
         """No-op: the stage drivers self-target off the live env, never a pose."""
 
     def on_handback(self) -> None:
-        """No-op: no critic-recovery bundle mounts over these sub-goals yet."""
+        """No-op: the active stage driver reads the live env each ``act``, so it
+        resumes from the world the recovery left -- no schedule to restore."""
+
+    def make_recovery(self, recovery, obs, draw, spec):
+        """Build the 12-dim recovery actor for THIS embodiment (governed.py's
+        ``make_recovery`` seam). The active stage carries the target the repair
+        aims at -- a GraspDriver its ``obj_name``, a NavigateDriver its
+        ``fixture_name`` -- read off the live env the same oracle-side way the
+        stage drivers read it. ``obs``/``draw``/``spec`` are the tabletop percept
+        seam's args, unused here (robocasa recovery reads env truth)."""
+        from plugins.embodiment_robocasa.recovery import RobocasaRecoveryActor
+
+        stage = self._stage
+        return RobocasaRecoveryActor(
+            self._env, recovery.name, recovery.steps(),
+            obj_name=getattr(stage, "obj_name", None),
+            fixture_name=getattr(stage, "fixture_name", None))
 
     @property
     def identity(self) -> str:

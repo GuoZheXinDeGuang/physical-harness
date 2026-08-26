@@ -64,7 +64,9 @@ def sha_json(payload) -> str:
 _HASH_FOLD_DEFAULTS = (("recovery_name", "regrasp"),
                        ("parent_store", None),
                        ("parent_final_sha", None),
-                       ("reasoner", None))
+                       ("reasoner", None),
+                       ("segment_isolate", None),
+                       ("horizon", 900))
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +184,20 @@ class Preregistration:
     #: claim about what this campaign measured, so it enters the content hash.
     #: Before the provider triple, which stays the literal tail the seam guard pins.
     terminal_label: bool = False
+    #: M7 node-level RSI: the ordered persistent-episode SUB-GOAL tasks each episode
+    #: drives (``task`` names the mission env), the LAST being the target node scored.
+    #: None (folded out of the hash) is the one-shot rollout every robosuite campaign
+    #: uses; a robocasa segment campaign sets it so ``governed_rollout`` routes to the
+    #: isolated-segment path. Conclusion-moving (which node was scored), so it enters
+    #: the content hash when non-default -- byte-identical rebuild for every prior
+    #: seal. Task-shape config, so it sits before the provider tail (seam guard).
+    segment_isolate: tuple[str, ...] | None = None
+    #: Episode horizon (env steps) each rollout runs under. Default 900 == the
+    #: EpisodeSpec default the robosuite campaigns use, folded out of the hash so
+    #: every prior seal rebuilds byte-identical; a persistent-episode segment
+    #: campaign sets it above the summed sub-goal caps so the target segment never
+    #: truncates (kitchen nav+grasp needs >1150). Task-shape, before the tail.
+    horizon: int = 900
     #: L0 capability-seam refs ("module:factory" strings, harness/registry.py):
     #: which embodiment.env / policy.driver provider built this run's episodes.
     #: None keeps every existing archived campaign's replay path byte-identical
@@ -306,7 +322,9 @@ def _specs(seeds: Sequence[int], prereg: Preregistration) -> list[EpisodeSpec]:
                         terminal_label=prereg.terminal_label,
                         env_provider=prereg.env_provider,
                         policy_provider=prereg.policy_provider,
-                        percept_provider=prereg.percept_provider) for s in seeds]
+                        percept_provider=prereg.percept_provider,
+                        segment_isolate=prereg.segment_isolate,
+                        horizon=prereg.horizon) for s in seeds]
 
 
 def propose_rule(

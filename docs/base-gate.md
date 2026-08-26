@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 605 passed
+pass       : 618 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -51,6 +51,19 @@ wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +13 over the kitchen-thaw-horizon snapshot (605→618 pass, skips unchanged at
+29) is node-level RSI on RoboCasa (`tests/test_node_level_rsi.py`): the two
+structural gaps closed for the kitchen grasp node -- (A) the robocasa card now
+registers recovery `Strategy` shapes (`regrasp_kitchen`/`redock_retry`) and its
+driver EXECUTES them in PandaOmron's 12-dim action space, and (B) the
+isolated-segment campaign rollout scores a `segment` target in a fresh world per
+seed (prefix ungoverned to the precondition, target governed). 13 sim-free tests:
+primitive registration + 12-dim base_mode discipline (4), the node-level
+recovery-primitive gate c5 + c1 (3), the isolation plumbing (`_segment_isolation`
+/ `build_prereg` threading segment_isolate) (2), and the isolated rollout's
+drive-prefix-ungoverned / score-only-the-target / dispatch logic on fakes (4).
+Adds to both lanes.
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`
@@ -127,7 +140,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `594 passed, 21 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `607 passed, 21 skipped` (the +13 node-level RSI
+base-lane tests above add to this lane too; the 18 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —

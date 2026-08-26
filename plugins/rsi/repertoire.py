@@ -127,6 +127,34 @@ REPERTOIRE = REPERTOIRE + (
     ),
 )
 
+#: The RoboCasa card (PandaOmron, 12-dim). Its repair shapes speak the phase
+#: vocabulary ``plugins/embodiment_robocasa/recovery.py`` understands -- disjoint
+#: from the tabletop above/descend/close/lift so ``governed._is_place_recovery``
+#: stays False -- and are EXECUTED by ``RobocasaRecoveryActor`` reusing the
+#: verified 12-dim motor primitives in ``drivers.py``, never the tabletop
+#: RecoveryActor. The first batch answers the two measured kitchen deaths
+#: (calibration r3, STATUS.md): a false grasp enclosure and a loaded-nav stall.
+KITCHEN = "embodiment_robocasa"
+
+REPERTOIRE = REPERTOIRE + (
+    Strategy(
+        "regrasp_kitchen",
+        (("unclench", 6, 0.0, 0.0), ("raise", 22, 0.0, 0.0),
+         ("reseat", 30, 0.0, 0.0), ("clench", 20, 0.0, 0.0)),
+        "Kitchen grasp recovery: release, lift clear, re-descend onto a fresh live "
+        "meat pose, close in place. GraspDriver.done's SECURE_DZ is the real-"
+        "enclosure judge -- a fired trigger (observable.finger_gap closed-on-nothing) "
+        "means the grip latched on air, and this re-seats it. Arm mode throughout.",
+        card=KITCHEN),
+    Strategy(
+        "redock_retry",
+        (("backout", 20, 0.0, 0.0), ("redock", 120, 0.0, 0.0)),
+        "Kitchen nav/at recovery: back the base straight out, re-drive the fixture "
+        "dock (fresh NavigateDriver), then hand back so the stalled segment retries "
+        "from a clean approach. For a loaded-transport stall. Base mode throughout.",
+        card=KITCHEN),
+)
+
 BY_NAME = {s.name: s for s in REPERTOIRE}
 DEFAULT = "regrasp"
 

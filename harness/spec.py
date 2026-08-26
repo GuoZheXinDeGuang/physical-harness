@@ -66,6 +66,16 @@ class EpisodeSpec:
     #: (embodiment.terminal_success). False keeps the legacy sub-goal path
     #: byte-identical; task-shape config, so it sits before the provider tail.
     terminal_label: bool = False
+    #: M7 node-level RSI: an ordered tuple of persistent-episode SUB-GOAL tasks to
+    #: drive on the ONE world this spec opens (``task`` names the MISSION env), the
+    #: LAST of which is the target node scored. None keeps the one-shot rollout path
+    #: byte-identical (every robosuite spec omits it). Set only by an isolated
+    #: segment campaign (plugins/rsi/campaign.py -> governed.isolated_segment_rollout),
+    #: which drives the prefix sub-goals ungoverned to establish the target's
+    #: precondition, then the target segment under the bundle -- the round-108
+    #: isolated-node probe, expressed as a campaign rollout. Task-shape config, so it
+    #: sits in the band BEFORE the provider tail (the seam guard pins the triple).
+    segment_isolate: tuple[str, ...] | None = None
     #: L0 capability-seam dispatch: "module:factory" refs for embodiment.env and
     #: policy.driver (see harness/registry.py). None keeps the pre-kernel path
     #: byte-identical. These travel as strings rather than module-global hooks

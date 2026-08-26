@@ -360,13 +360,14 @@ def recovery_support(task: str, node: dict) -> dict:
     node is not reachable by the campaign path" are different honest answers and
     the operator needs to know which one they got:
 
-    * the node's driver must implement ``RECOVERY_PROTOCOL`` -- the methods
-      ``plugins/rsi/governed.py`` calls the instant a rule fires. The robocasa
-      drivers implement ``act(env, obs)`` and nothing else, so RoboCasa has NO
-      registered recovery primitive and this returns exactly that. Nothing is
-      invented to fill the hole.
-    * ``segment`` nodes live in ONE persistent world; ``run_campaign`` builds a
-      fresh world per episode, so there is no per-segment campaign path yet.
+    * the embodiment card must register a recovery ``Strategy`` (repertoire),
+      AND -- because a documented no-op ``retarget``/``on_handback`` would pass a
+      bare ``hasattr`` probe while doing nothing -- its driver must be able to
+      EXECUTE one: an episodic-segment driver needs ``enter_segment`` (the
+      isolated-node campaign path) and ``make_recovery`` (build the actor for its
+      own 12-dim action space). The kitchen driver now has both, so RoboCasa's
+      grasp node is governable; a card with neither is reported as such and
+      nothing is invented to fill the hole.
     * an un-importable driver is reported as un-importable, never silently as
       "unsupported" -- usually it means the wrong venv for this embodiment.
     """
@@ -418,14 +419,140 @@ def recovery_support(task: str, node: dict) -> dict:
             f"驱动 {type(driver).__name__} 缺 {missing}"
             "（plugins/rsi/governed.py 在规则触发时调用它们）。")
     if node["kind"] == "segment":
-        blockers.append(
-            "segment 节点跑在 ONE 持久世界里，run_campaign 每集自建世界 —— "
-            "持久集分段目前没有独立 campaign 路径（诚实缺口，不是本次绕得过的）")
+        # The isolated-segment campaign path (governed.isolated_segment_rollout)
+        # drives the target sub-goal in a fresh world per seed, so a persistent
+        # mission IS governable now -- but only through a driver that can enter a
+        # sub-goal (enter_segment) and build a recovery actor for its own action
+        # space (make_recovery). A no-op retarget/on_handback is not enough.
+        seg_missing = [m for m in ("enter_segment", "make_recovery")
+                       if not hasattr(driver, m)]
+        if seg_missing:
+            blockers.append(
+                f"segment 驱动 {type(driver).__name__} 缺 {seg_missing}: 隔离节点 "
+                "campaign 路径需要 enter_segment（驱动子目标）+ make_recovery（在该本体 "
+                "12 维动作空间里执行恢复）—— 有文档的 no-op 不算原语在场。")
     out["blockers"] = blockers
     out["supported"] = not blockers
     out["reason"] = (" ".join(blockers) if blockers
                      else f"驱动 {type(driver).__name__} 实现 {list(RECOVERY_PROTOCOL)}")
     return out
+
+
+def _segment_isolation(task: str, node: dict, cal: dict) -> tuple[str, tuple[str, ...], int]:
+    """The isolated-node rollout plumbing for an episodic ``segment`` target.
+
+    Returns ``(mission_task, sub_goal_tasks, horizon)``: the mission env task the
+    ONE world opens under, the ordered sub-goal tasks to drive (the target's
+    ``segment`` ancestors up to and including it, mapped through the card's
+    SEGMENT_SPECS -- the prefix re-establishes the target's precondition, the
+    round-108 "drive from reset to the node's precondition" probe), and the
+    episode horizon (above the summed caps so the target never truncates)."""
+    from scripts.harness_runtime import _load_attr
+
+    binding = _binding(task)
+    graph = {g["id"]: g for g in cal.get("graph") or []}
+    seg_specs = _load_attr(binding["segment_specs"])
+    episode = dict(_load_attr(binding["episode"])) if "episode" in binding else {}
+    chain: list[dict] = []
+    nid: str | None = node["id"]
+    seen: set[str] = set()
+    while nid in graph and nid not in seen:
+        seen.add(nid)
+        g = graph[nid]
+        if g["kind"] == "segment":
+            chain.append(g)
+        after = [a for a in g["after"] if a in graph]
+        nid = after[-1] if after else None
+    chain.reverse()  # oldest ancestor first, the target last
+    subgoals = tuple(dict(seg_specs[g["skill"]])["task"] for g in chain)
+    return episode.get("task", task), subgoals, int(episode.get("horizon", 4000))
+
+
+def _plan_graph(task: str, max_actuations: int) -> list[dict]:
+    """The task's node graph WITHOUT running an episode: the planner is a pure
+    function, so a node-level run can read kinds/after edges up front (to decide
+    isolation and the sub-goal chain) before paying for any calibration."""
+    from harness.definitions import CAPABILITIES
+    from harness.events import SessionLog
+    from harness.kernel import Kernel
+
+    from scripts import harness_runtime as hr
+
+    binding = _binding(task)
+    with tempfile.TemporaryDirectory() as empty_skills:
+        kernel = Kernel(CAPABILITIES, log=SessionLog())
+        kernel.mount(hr._mount_plan(binding, Path(empty_skills)))
+        brief = hr.task_brief(task, binding)
+        scene = kernel.resolve("graph.scene", consumer="rsi")
+        plan = kernel.resolve("task.planner", consumer="rsi").plan(
+            {**brief, "scene": scene.snapshot({}), "budget": max_actuations})
+    return [{"id": n["id"], "skill": n["skill"], "kind": n.get("kind", "manipulate"),
+             "after": list(n.get("after") or []), "args": dict(n.get("args") or {})}
+            for n in (plan.get("nodes") or [])]
+
+
+def _isolated_probe_one(job: tuple) -> dict:
+    """ONE ungoverned isolated-node episode: drive the prefix sub-goals + the
+    target on a fresh world, score the TARGET segment boolean. summarize-shaped,
+    with the graph reduced to the single target node so ``attribute`` charges the
+    residual to it (owner() sees kind=segment == ACTUATING and stops there)."""
+    task, node_id, node_skill, mission_task, subgoals, horizon, seed = job
+    from harness.spec import EpisodeSpec
+    from plugins.rsi.governed import isolated_segment_rollout
+
+    binding = _binding(task)
+    from scripts.harness_runtime import _load_attr
+
+    episode = dict(_load_attr(binding["episode"])) if "episode" in binding else {}
+    spec = EpisodeSpec(
+        seed=seed, task=mission_task,
+        percept_noise=float(episode.get("percept_noise", 0.012)), horizon=horizon,
+        env_provider=binding.get("env"), policy_provider=binding["policy"],
+        percept_provider=binding.get("percept"), segment_isolate=subgoals)
+    t0 = time.perf_counter()
+    out = isolated_segment_rollout(spec, None)
+    dt = time.perf_counter() - t0
+    node = {"id": node_id, "skill": node_skill, "kind": "segment", "after": [], "args": {}}
+    return {
+        "seed": seed, "success": bool(out["success"]),
+        "first_death": "none" if out["success"] else node_id,
+        "graph": [node],
+        "node_ok": {node_id: bool(out["success"])},
+        "node_stages": {node_id: out.get("stages") or []},
+        "replans": 0, "actuations": len(subgoals),
+        "budget_exhaust": bool(out.get("steps") and out["steps"] >= horizon),
+        "seconds": round(dt, 3),
+    }
+
+
+def calibrate_isolated(task: str, node: dict, mission_task: str, subgoals: tuple,
+                       horizon: int, block, *, workers: int = 10,
+                       out_dir: Path | None = None, extra: dict | None = None) -> dict:
+    """Node-isolated calibration: the generic probe (``calibrate``) restricted to
+    the ONE target segment, base rate = the target sub-goal boolean. Same
+    summarize/attribute machinery, never gates, always re-runnable."""
+    from harness.executor import LocalPoolExecutor
+
+    ss = seeds(block)
+    tick = None
+    if out_dir is not None:
+        from scripts.campaign_progress import tracker
+
+        tick = tracker(out_dir, len(ss) + POST_CAL_STEPS,
+                       label=f"rsi {task} · calibrate node {node['id']}", extra=extra)
+    jobs = [(task, node["id"], node["skill"], mission_task, subgoals, horizon, s)
+            for s in ss]
+    if workers <= 1 or len(ss) == 1:
+        rows = []
+        for j in jobs:
+            rows.append(_isolated_probe_one(j))
+            if tick is not None:
+                tick(rows[-1])
+    else:
+        rows = LocalPoolExecutor().map(_isolated_probe_one, jobs, workers=workers,
+                                       on_result=tick)
+    rows.sort(key=lambda r: r["seed"])
+    return summarize(task, rows, block)
 
 
 def repair_shape(cal: dict, node_id: str, allowed: list[str]) -> str:
@@ -524,16 +651,26 @@ def build_prereg(task: str, node: dict, cal: dict, dev_block, heldout_block,
     from plugins.rsi.campaign import Preregistration
 
     kwargs = node_spec_kwargs(task, node)
+    prereg_task = kwargs["task"]
+    seg_isolate: tuple[str, ...] | None = None
+    horizon = 900
+    binding = _binding(task)
+    if node["kind"] == "segment" and binding.get("episodic"):
+        # Node-level RSI on a persistent mission: the campaign opens the MISSION
+        # env and scores the isolated TARGET sub-goal (governed.isolated_segment_
+        # rollout). ``task`` becomes the mission task so make_env resolves; the
+        # sub-goal chain + horizon ride the prereg.
+        prereg_task, seg_isolate, horizon = _segment_isolation(task, node, cal)
     return Preregistration(
         dev=tuple(seeds(dev_block)), heldout=tuple(seeds(heldout_block)),
         percept_noise=float(kwargs.get("percept_noise", 0.012)),
         critic_budget=0, action_budget=0, recovery_sensor_sd=0.020,
-        max_generations=2, task=kwargs["task"], policy="scripted",
+        max_generations=2, task=prereg_task, policy="scripted",
         stages=kwargs.get("stages"),
         terminal_label=bool(kwargs.get("terminal_label", False)),
         scale_dev_by_power=True, require_judgement=True,
         recovery_name=repair_shape(cal, node["id"], allowed),
-        parent_store=None,
+        parent_store=None, segment_isolate=seg_isolate, horizon=horizon,
     )
 
 
@@ -630,11 +767,34 @@ def run_chain(task: str, out: Path, *, workers: int = 10, stop_after: str = "hel
                               "blocks": {k: list(v) for k, v in blocks.items()},
                               **extra})
 
+    # Node-level RSI on an episodic ``segment`` target calibrates the TARGET node
+    # ALONE (round-108 template): the whole-chain rate on a persistent mission is
+    # 0% by construction (thawed needs every sub-goal) and would trip c1, so an
+    # explicit segment ``node`` override isolates it -- drive the prefix sub-goals
+    # to the node's precondition, score the node's own boolean.
+    binding = _binding(task)
+    graph_nodes = _plan_graph(task, max_actuations)
+    isolate = (node is not None
+               and {g["id"]: g for g in graph_nodes}.get(node, {}).get("kind") == "segment"
+               and bool(binding.get("episodic")))
+    report["isolated_node"] = node if isolate else None
+
     beat("calibrate", 0)
-    cal = calibrate(task, blocks["cal"], workers=workers, out_dir=out,
-                    max_replans=max_replans, max_actuations=max_actuations,
-                    extra={"stage": "calibrate", "task": task,
-                           "blocks": {k: list(v) for k, v in blocks.items()}})
+    cal_extra = {"stage": "calibrate", "task": task,
+                 "blocks": {k: list(v) for k, v in blocks.items()}}
+    if isolate:
+        target_node = {g["id"]: g for g in graph_nodes}[node]
+        mission_task, subgoals, horizon = _segment_isolation(
+            task, target_node, {"graph": graph_nodes})
+        report["segment_isolate"] = {"mission_task": mission_task,
+                                     "sub_goals": list(subgoals), "horizon": horizon}
+        cal = calibrate_isolated(task, target_node, mission_task, subgoals, horizon,
+                                 blocks["cal"], workers=workers, out_dir=out,
+                                 extra={**cal_extra, "node": node})
+    else:
+        cal = calibrate(task, blocks["cal"], workers=workers, out_dir=out,
+                        max_replans=max_replans, max_actuations=max_actuations,
+                        extra=cal_extra)
     report["calibration"] = {k: v for k, v in cal.items() if k != "episodes"}
     (out / "calibration.json").write_text(json.dumps(cal, indent=1, sort_keys=True,
                                                      default=str))

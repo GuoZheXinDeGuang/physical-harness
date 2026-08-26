@@ -32,7 +32,8 @@ from plugins.rsi.governed import Bundle, RecoverySpec, Rule
 from plugins.rsi.stats.search import Trigger
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-_NEW_FIELDS = ("recovery_name", "parent_store", "parent_final_sha", "reasoner")
+_NEW_FIELDS = ("recovery_name", "parent_store", "parent_final_sha", "reasoner",
+               "segment_isolate", "horizon")
 
 
 def _prereg(**kw) -> Preregistration:

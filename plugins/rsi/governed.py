@@ -398,7 +398,16 @@ def governed_segment(env, obs, driver, spec: EpisodeSpec, bundle: Bundle | None,
         assert_privilege_budget(act_view, bundle.action_budget, role="recovery")
         steps = triggered.recovery.steps()
         draw = used[triggered_idx]
-        if _is_place_recovery(steps):
+        if hasattr(driver, "make_recovery"):
+            # Embodiment-owned recovery (M7 robocasa): the driver builds the actor
+            # for its OWN action space (PandaOmron's 12-dim, base_mode discipline)
+            # and reads the target off the LIVE world it already holds -- the
+            # kitchen stage drivers are privileged scripted oracles, so their
+            # recovery reads env truth the same way, never the tabletop percept
+            # seam (whose object_key does not resolve a sub-goal task). Robosuite
+            # drivers have no such method, so the two branches below are untouched.
+            recovery = driver.make_recovery(triggered.recovery, obs, draw, spec)
+        elif _is_place_recovery(steps):
             # Place-shaped repair: aim the actor at a fresh cubeB estimate (the
             # place goal) and point the driver's target_b at the same estimate,
             # so the phases it resumes after handback stay consistent with what
@@ -406,10 +415,11 @@ def governed_segment(env, obs, driver, spec: EpisodeSpec, bundle: Bundle | None,
             # STACK_PHASE_HEIGHT['place'], so the estimate needs no z offset.
             goal = _place_object(obs, spec, triggered.recovery.sensor_sd, draw)
             driver.retarget_place(goal)
+            recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
         else:
             goal = _percept_object(obs, spec, triggered.recovery.sensor_sd, draw)
             driver.retarget(goal)
-        recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
+            recovery = RecoveryActor(steps, goal, height_offset=spec.grasp_height_offset)
         consec = [0] * len(consec)
 
     if stages is not None:
@@ -463,7 +473,14 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
     close. The drive is factored so M7's persistent segment path reuses this ONE
     loop on an already-open env; passing ``step_budget=spec.horizon`` on a fresh
     env is byte-identical to the pre-extraction single loop.
+
+    A ``spec.segment_isolate`` spec routes to :func:`isolated_segment_rollout`
+    instead: node-level RSI on a persistent-episode mission scores the TARGET
+    sub-goal in a fresh world per seed, which every downstream gate (paired_gate,
+    ablation) reaches through this one function unchanged.
     """
+    if spec.segment_isolate:
+        return isolated_segment_rollout(spec, bundle)
     embodiment = _embodiment(spec)
     env = embodiment.make_env(spec)
     try:
@@ -488,6 +505,69 @@ def governed_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
         "fired_rules": sorted({f["rule_id"] for f in seg["fires"]}),
         "chain": seg["chain"],
         "critic_privilege_used": seg["critic_privilege_used"],
+        "declared_privilege": bundle.declared_privilege() if bundle else 0,
+        "trace": seg["trace"],
+    }
+    if "stages" in seg:
+        result["stages"] = seg["stages"]
+    return result
+
+
+def isolated_segment_rollout(spec: EpisodeSpec, bundle: Bundle | None) -> dict:
+    """One node-isolated rollout of a persistent-episode mission (M7, node-level RSI).
+
+    ``spec.segment_isolate`` is the ordered sub-goal tasks to drive on the ONE
+    world ``spec`` opens (``spec.task`` is the MISSION env). The prefix sub-goals
+    run UNGOVERNED to re-establish the target's precondition (the round-108
+    "drive from reset to the target node's precondition" probe), then the LAST
+    one -- the target -- runs under ``bundle`` and is the segment scored. Each
+    seed is an independent fresh episode, so the dev/held-out blocks stay the
+    clean same-seed paired population McNemar assumes -- the reason this
+    per-seed-fresh path was chosen over reusing one persistent world (whose
+    carried-over state would correlate the pairs).
+
+    Returns the ``governed_rollout`` shape (the target segment's trace + fires,
+    the segment boolean as ``success``), so paired_gate/ablation/run_campaign
+    consume it with no branch of their own.
+    """
+    subgoals = spec.segment_isolate
+    embodiment, env, obs, driver = open_episode(spec)
+    if not hasattr(driver, "enter_segment"):
+        env.close()
+        raise ValueError(
+            f"segment_isolate needs an episodic-segment driver (enter_segment); "
+            f"{type(driver).__name__} is obs-only retargetable, no isolated path")
+    seg: dict | None = None
+    success = False
+    try:
+        cursor = 0
+        for i, subtask in enumerate(subgoals):
+            is_target = i == len(subgoals) - 1
+            seg_spec = spec.child(task=subtask)
+            driver.enter_segment(env, seg_spec)
+            seg = governed_segment(env, obs, driver, seg_spec,
+                                   bundle if is_target else None,
+                                   step_budget=max(spec.horizon - cursor, 1))
+            obs = seg["obs"]
+            cursor += seg["steps"]
+            success = bool(driver.segment_success(env))
+            # A prefix that failed never established the target's precondition;
+            # the target did not run, so this seed is an honest upstream failure
+            # (rare -- e.g. kitchen nav is 150/150 -- but scored, not dropped).
+            if not success and not is_target:
+                break
+    finally:
+        env.close()
+    if seg is None:
+        seg = {"steps": 0, "policy_steps": 0, "fires": [], "chain": chain_start(),
+               "critic_privilege_used": 0, "trace": {}}
+    result = {
+        "seed": spec.seed, "task": spec.task, "policy": driver.identity,
+        "success": success, "steps": seg["steps"], "policy_steps": seg["policy_steps"],
+        "fires": seg["fires"],
+        "fired_at": seg["fires"][0]["step"] if seg["fires"] else None,
+        "fired_rules": sorted({f["rule_id"] for f in seg["fires"]}),
+        "chain": seg["chain"], "critic_privilege_used": seg["critic_privilege_used"],
         "declared_privilege": bundle.declared_privilege() if bundle else 0,
         "trace": seg["trace"],
     }

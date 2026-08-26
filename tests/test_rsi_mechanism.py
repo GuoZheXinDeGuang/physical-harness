@@ -191,9 +191,15 @@ def test_a_no_go_verdict_names_the_missing_capability():
 # ── the repertoire registration the boundary rests on ────────────────────────
 
 def test_every_repertoire_strategy_is_registered_to_an_embodiment_card():
-    assert repertoire.for_card(repertoire.ROBOSUITE) == repertoire.names()
+    # Every strategy carries a card; the registered cards partition names().
+    cards = {s.card for s in repertoire.REPERTOIRE}
+    assert cards == {repertoire.ROBOSUITE, repertoire.KITCHEN}
+    partition = repertoire.for_card(repertoire.ROBOSUITE) + repertoire.for_card(repertoire.KITCHEN)
+    assert sorted(partition) == sorted(repertoire.names())
 
 
 def test_an_unregistered_card_has_no_recovery_primitives():
-    """The whole point: absence is reportable, not fillable."""
-    assert repertoire.for_card("embodiment_robocasa") == []
+    """The whole point: absence is reportable, not fillable. RoboCasa now HAS
+    primitives (round: node-level RSI), so a card with genuinely none is the probe."""
+    assert repertoire.for_card("embodiment_nonexistent") == []
+    assert repertoire.for_card(repertoire.KITCHEN) == ["regrasp_kitchen", "redock_retry"]

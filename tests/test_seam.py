@@ -40,7 +40,7 @@ def test_episode_spec_omits_new_fields_unchanged():
         "seed": 7, "task": "lift", "robot": "Panda", "horizon": 900,
         "percept_noise": 0.020, "arm_noise": 0.02, "kp": 8.0, "policy": "scripted",
         "schedule": NOMINAL_SCHEDULE, "grasp_height_offset": 0.0, "stages": None,
-        "terminal_label": False,
+        "terminal_label": False, "segment_isolate": None,
         "env_provider": None, "policy_provider": None, "percept_provider": None,
     }
 
@@ -54,10 +54,13 @@ def test_new_fields_are_appended_at_the_end():
     the provider tail."""
     names = [f.name for f in dc.fields(EpisodeSpec)]
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
-    assert names[-4] == "terminal_label"
-    assert names[-5] == "stages"
+    # M7 node-level RSI's segment_isolate joins the task-shape band ahead of the
+    # provider tail (like stages/terminal_label); the triple keeps the literal tail.
+    assert names[-4] == "segment_isolate"
+    assert names[-5] == "terminal_label"
+    assert names[-6] == "stages"
     assert all(f.default is None for f in dc.fields(EpisodeSpec)
-              if f.name in ("env_provider", "policy_provider", "stages"))
+              if f.name in ("env_provider", "policy_provider", "stages", "segment_isolate"))
 
 
 def test_episode_spec_with_provider_refs_pickles():
@@ -181,9 +184,11 @@ def test_preregistration_provider_fields_are_appended_at_the_end():
     assert names[-3:] == ["env_provider", "policy_provider", "percept_provider"]
     # R2 ruling: `stages` sits directly before the provider block, like on
     # EpisodeSpec -- the triple keeps the literal tail. Round 79's
-    # terminal_label joins the same task-shape band ahead of the tail.
-    assert names[-4] == "terminal_label"
-    assert names[-5] == "stages"
+    # terminal_label and M7's segment_isolate/horizon join the same task-shape band.
+    assert names[-4] == "horizon"
+    assert names[-5] == "segment_isolate"
+    assert names[-6] == "terminal_label"
+    assert names[-7] == "stages"
     assert fields["stages"].default is None
     assert fields["env_provider"].default is None
     assert fields["policy_provider"].default is None
