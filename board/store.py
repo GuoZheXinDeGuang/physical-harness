@@ -269,13 +269,18 @@ _PROGRESS_RUNNING_S = 120
 
 
 def campaign_progress(runs_dir: str | Path) -> list[dict]:
-    """Every live campaign heartbeat under runs/ (``runs/*/progress.json``,
-    written per finished episode by scripts/campaign_progress.py), newest first.
+    """Every live campaign heartbeat under runs/ -- both a hand-run store
+    (``runs/<store>/progress.json``) and a chain fired THROUGH the runtime, which
+    lands two levels deeper at ``runs/<session>/campaigns/<brief>/progress.json``
+    (harness_runtime writes campaign/rsi output under the session's inbox
+    sibling). Written per finished episode by scripts/campaign_progress.py,
+    newest first.
 
     Live state, not sealed evidence (same family as runtime_status): no chain
     verify, a mid-write or malformed file is skipped and the next poll recovers.
     Each row is the heartbeat's payload (done/total/started_ts/updated_ts/label
-    + the rolling stats the writer folded) plus ``name`` (the store dir),
+    + the rolling stats the writer folded) plus ``name`` (the store dir, or
+    ``<session>/<brief>`` for a nested chain so the two never collide),
     ``fresh`` (updated within the freshness window) and ``running`` (fresh AND
     not yet at total). The
     rolling statistics arrive pre-folded from the python writer -- the TS panel
@@ -283,7 +288,10 @@ def campaign_progress(runs_dir: str | Path) -> list[dict]:
     runs_dir = Path(runs_dir)
     now = time.time()
     out = []
-    for p in sorted(runs_dir.iterdir()):
+    flat = [(p, p.name) for p in sorted(runs_dir.iterdir())]
+    nested = [(p, f"{p.parent.parent.name}/{p.name}")
+              for p in sorted(runs_dir.glob("*/campaigns/*"))]
+    for p, name in flat + nested:
         if not p.is_dir():
             continue
         try:
@@ -301,7 +309,7 @@ def campaign_progress(runs_dir: str | Path) -> list[dict]:
         # done == total, so a reader keyed only on ``running`` would retire the
         # card at the exact moment the result appears. Both booleans are decided
         # here, python-side; the panel only filters on them.
-        out.append({**row, "name": p.name, "fresh": fresh,
+        out.append({**row, "name": name, "fresh": fresh,
                     "running": fresh and row["done"] < row["total"]})
     out.sort(key=lambda r: r.get("updated_ts") or 0, reverse=True)
     return out

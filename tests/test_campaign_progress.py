@@ -109,6 +109,32 @@ def test_tracker_stamps_a_fixed_extra_on_every_heartbeat(tmp_path):
     assert row["stage"] == "calibrate" and row["done"] == 1 and row["succeeded"] == 1
 
 
+def test_campaign_progress_finds_runtime_fired_chains(tmp_path):
+    """A chain fired through the runtime lands at
+    ``runs/<session>/campaigns/<brief>/`` -- two levels under runs/, not one --
+    because harness_runtime writes campaign/rsi output beside the session inbox.
+    A scan that only walked the top level showed the hand-run stores and left the
+    live chain invisible in the console."""
+    runs = _fixture(tmp_path)
+    write_progress(runs / "session-robocasa-rsi" / "campaigns" / "rsi-kitchen-thaw",
+                   12, 160, label="rsi kitchen_thaw · calibrate",
+                   extra={"stage": "calibrate", "succeeded": 1})
+    # the session dir itself is not a store and carries no heartbeat of its own
+    (runs / "session-robocasa-rsi" / "inbox").mkdir()
+    (runs / "session-robocasa-rsi" / "campaigns" / "half-written").mkdir()
+    (runs / "session-robocasa-rsi" / "campaigns" / "half-written"
+     / "progress.json").write_text('{"done": 5, "tot')
+
+    by_name = {r["name"]: r for r in bs.campaign_progress(runs)}
+    assert set(by_name) == {"live-cal", "done-cal", "stale-cal",
+                            "session-robocasa-rsi/rsi-kitchen-thaw"}
+    row = by_name["session-robocasa-rsi/rsi-kitchen-thaw"]
+    assert row["running"] is True and row["fresh"] is True
+    assert row["stage"] == "calibrate" and row["done"] == 12
+    names = [r["name"] for r in bs.campaign_progress(runs)]
+    assert names[-1] == "stale-cal"  # newest-first ordering survives the merge
+
+
 def test_campaign_progress_empty_runs(tmp_path):
     (tmp_path / "runs").mkdir()
     assert bs.campaign_progress(tmp_path / "runs") == []

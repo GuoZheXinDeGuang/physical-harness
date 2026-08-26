@@ -32,10 +32,10 @@ Two ways:
   `import sys; sys.modules["robosuite"] = sys.modules["mujoco"] = None`, on
   `PYTHONPATH`, then `pytest -m "not robosuite"`.
 
-## current snapshot (2026-08-26, isolated, robosuite blocked)
+## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 604 passed
+pass       : 605 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -47,10 +47,16 @@ skips      : 29 skipped
              [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.6s
+wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
+29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`
+scanned only `runs/*/progress.json`, but a chain fired THROUGH the runtime lands
+at `runs/<session>/campaigns/<brief>/progress.json`, so the console's 演进 panel
+showed the hand-run stores and never the live chain. Sim-free, no seeds burned.
 
 The +2 over the RSI-mechanism snapshot (602→604 pass, skips unchanged at 29) is
 `tests/test_kitchen_thaw_horizon.py`: the calibration-r2 finding pinned. The
