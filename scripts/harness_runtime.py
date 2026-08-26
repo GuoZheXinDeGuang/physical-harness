@@ -390,9 +390,15 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
                         max_replans=max_replans, max_actuations=max_actuations)
 
 
+def _ledger_text(status_md: Path = STATUS_MD) -> str:
+    """STATUS.md is the operator's local ledger, untracked in the public repo:
+    a fresh clone has no ledger, which correctly reads as 'nothing burned'."""
+    return status_md.read_text() if status_md.exists() else ""
+
+
 def _burned_ranges(status_md: Path = STATUS_MD) -> list[tuple[int, int]]:
     """Burned seed intervals from the one prose ledger (STATUS.md 区块预算)."""
-    return [(r["lo"], r["hi"]) for r in parse_ledger(status_md.read_text())
+    return [(r["lo"], r["hi"]) for r in parse_ledger(_ledger_text(status_md))
             if r["state"] == "burned"]
 
 
@@ -538,7 +544,7 @@ def _rsi_blocks(brief: dict) -> dict:
         v = brief.get(key)
         return (int(v[0]), int(v[1])) if v is not None else None
 
-    return allocate(parse_ledger(STATUS_MD.read_text()),
+    return allocate(parse_ledger(_ledger_text()),
                     floor=int(brief.get("floor", 0)),
                     cal=pin("cal"), dev=pin("dev"), heldout=pin("heldout"))
 

@@ -12,3 +12,8 @@ runs/
 # reads it there (board.parse_rounds), it is just not tracked.
 local-archive/
 progress.md
+
+# operator progress ledgers/worklogs: local-only, the public repo ships standard docs
+STATUS.md
+docs/overnight-goal-20260825.md
+docs/gap-paper-notes.md

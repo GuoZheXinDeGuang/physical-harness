@@ -610,7 +610,9 @@ def run_chain(task: str, out: Path, *, workers: int = 10, stop_after: str = "hel
     from scripts.campaign_progress import write_progress
 
     out.mkdir(parents=True, exist_ok=True)
-    ledger = parse_ledger((status_md or REPO / "STATUS.md").read_text())
+    status_md = status_md or REPO / "STATUS.md"
+    # untracked in the public repo: a fresh clone has no ledger = nothing burned
+    ledger = parse_ledger(status_md.read_text() if status_md.exists() else "")
     blocks = allocate(ledger, floor=floor, cal=cal, dev=dev, heldout=heldout)
     report: dict = {"task": task, "blocks": {k: list(v) for k, v in blocks.items()},
                     "stage": "calibrate"}

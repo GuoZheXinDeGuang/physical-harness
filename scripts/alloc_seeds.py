@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="only avoid BURNED (let the suggestion reuse reserved "
                          "blocks -- what the runtime guard actually enforces)")
     args = ap.parse_args(argv)
-    ledger = parse_ledger(args.status.read_text())
+    ledger = parse_ledger(args.status.read_text() if args.status.exists() else "")
     avoid = ("burned",) if args.include_reserved else _TAKEN
     lo, hi = next_block(args.n, ledger, floor=args.floor, avoid=avoid)
     print(f"{lo}-{hi - 1}  ([{lo}, {hi})  {args.n} seeds; reserve this in "
