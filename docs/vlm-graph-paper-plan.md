@@ -151,6 +151,48 @@ proves sim-agnosticism with a third backend, and GPU-parallel rollouts feed the
 RSI evidence loop). VLABench is the best narrative fit but has thin baselines;
 BEHAVIOR-1K/RLBench/Meta-World/SimplerEnv: skip.
 
+## 3b. VLA policy cards — transport and model selection
+
+**Transport (from StarVLA code-level read): server-client is the answer to
+venv hell.** StarVLA's policy-server protocol layer is 409 lines total
+(msgpack+ndarray codec that refuses pickle, websocket server with
+first-frame metadata handshake, blocking client) and imports zero torch —
+verified in code, and MIT. Vendor it. A VLA policy runs in its own
+venv/process behind the socket; harness side needs only
+`websockets + msgpack + numpy`. Our own openpi checkout already proves the
+pain (its LIBERO client venv is py3.8+cu113): isolation is not optional.
+
+Three upgrades over StarVLA when we mount it as a card:
+
+- **Handshake-vs-manifest reconciliation as a hard gate.** StarVLA repeats a
+  "train/test mismatch silently kills success rate" warning banner in four
+  places because it has no mount-time checkpoint. We do: the card's manifest
+  params (image size, view order, chunk size, unnorm_key) are reconciled
+  against the server's handshake metadata at mount — mismatch fails loud,
+  and the metadata is sealed into the episode evidence.
+- **Denormalization never leaves the server** (their single-source-of-truth
+  norm-stats principle; the ckpt dir must contain weights + config +
+  dataset_statistics or the mount fails).
+- **Per-card fake-data smoke** (`--smoke`: fake obs in, action shape
+  asserted out, with/without optional keys) as a doctor Tier-A item.
+
+Driver-layer responsibilities (chunk caching, action ensembling, sticky
+gripper, retarget-on-task-change) stay in the card's driver file (~200 lines,
+mirrors StarVLA's per-benchmark thin adapters); none of it enters the kernel.
+
+**Model selection (2026-08 survey):**
+
+| Seat | Pick | Why |
+|---|---|---|
+| (A) frozen skill card, first | **π0.5 / openpi** | already runs locally; official websocket+msgpack server is shape-identical to our card boundary; Apache-2.0; official LIBERO ckpt ~98% |
+| (A) backup | GR00T N1.7 | commercial-OK NVIDIA license, own policy server, 3B fits the 4090 |
+| (A) high-score reference | MolmoAct2-LIBERO | 97-98% LIBERO head-of-field, transformers-native, half-day thin server |
+| (B) RSI improvement target | **SmolVLA** | 450M — full fine-tune fits a single 24GB card in hours, so candidate generation is cheap; LIBERO scores unsaturated ⇒ a real failure axis for the evidence gates (the round-97 lesson: a zero-failure axis yields zero candidates) |
+
+Ruled out: OpenVLA-OFT (LoRA needs >24GB; Llama-2 license taints weights),
+RDT/RDT2 (dual-arm real-robot focus, no sim ckpts), WALL-OSS (no LIBERO,
+observe only).
+
 ## 4. Paper framing (vs StarVLA)
 
 StarVLA (arXiv:2604.05014) solves **research-iteration composability** (swap
@@ -185,5 +227,10 @@ MountPlan.sha — say so loudly in the paper).
 4. §2b interface pass (contracts completion + manifest folds + plug-point
    table) — do it while the planner_vlm work has the seams open anyway.
 5. Matrix runs on stack/clear_workspace/kitchen_thaw (scratch seeds first).
-6. LIBERO card (§3), then LIBERO-Plus perturbation runs.
-7. §2.2 script deletion + friction measurement, §4 write-up.
+6. §3b policy transport (vendor protocol layer + handshake gate + smoke) and
+   the first VLA card: π0.5/openpi against LIBERO.
+7. LIBERO card (§3), then LIBERO-Plus perturbation runs. (6 and 7 land
+   together: the LIBERO embodiment card is the π0.5 card's test bed.)
+8. SmolVLA as the RSI improvement target — fine-tune candidates through the
+   evidence gates; this is the paper's layer-2 experiment.
+9. §2.2 script deletion + friction measurement, §4 write-up.
