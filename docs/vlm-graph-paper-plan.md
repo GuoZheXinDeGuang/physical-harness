@@ -61,6 +61,30 @@ Model choice: start with the locally served Qwen (sglang, already running on
 the 4090) behind an `available()` probe so doctor stays green on machines
 without it. The card carries the prompt template; the kernel never sees it.
 
+## 1b. One model seam: local or API, same interface
+
+Decision: there is no "DeepSeek Flash vs local Qwen" choice to make — both are
+OpenAI-compatible chat-completions endpoints, so the seam is a single
+`ModelEndpoint` config: `{base_url, api_key, model}`. The local sglang serving
+of Qwen3.8-27B-AWQ exposes `/v1/chat/completions`; DeepSeek/OpenAI/Anthropic
+API endpoints are the same shape with a different `base_url`. dsh's hardwired
+DeepSeek client is deleted and becomes one preset among several.
+
+Three seats consume this one seam, and only through it:
+
+1. **ph-station built-in agent** — its base model. The UI stays logic-free
+   (red line): the endpoint config lives harness-side and is passed through.
+2. **`planner_vlm` card** (§1) — graph generation.
+3. **`reasoner.proposer`** — RSI candidate proposal, when a model-driven
+   proposer ever mounts.
+
+Defaults: our machines point at the local Qwen (multimodal, so the planner can
+take scene images later); GPU-less users drop in an API key. An `available()`
+probe (HTTP ping) keeps `plugin_doctor` green when neither is up. The seam is
+a Protocol in `harness/contracts.py` like every other plug point — a provider
+card `model_endpoint/` owns the client code; nothing else imports an HTTP
+library.
+
 ## 2. Modular insertion — two changes, both "reuse the existing fold"
 
 1. **Recoveries move into the manifest.** `[recoveries.<name>] ref = "…"` in
@@ -84,6 +108,36 @@ Target contributor experience, aligned with the card model (no new framework):
 
 Irreducible (stays manual, on purpose): seed allocation/burn discipline,
 predicate audits, seam-conflict adjudication.
+
+## 2b. Interface pass — make the plug points visible (the OOP complaint)
+
+The confusion reading `plugins/` is real and diagnosable: the interfaces
+exist (`runtime_checkable` Protocols, checked at mount) but they are not
+*enumerable* — skills especially appear as three disconnected shapes
+(strings in `CATALOGUE` dicts, providers behind manifest refs, frozen
+`SkillRecord` files in skills_root) with no single `SkillLibrary` you can
+point at. Fix by making `harness/contracts.py` the complete, closed list of
+plug points rather than adding a class hierarchy:
+
+1. **Every seam is a named Protocol in `contracts.py`, no exceptions.**
+   Today's set (TaskPlanner, embodiment env, percept, …) plus the missing
+   ones: `Skill` (name + arg schema + the episode/segment binding that today
+   hides in `SKILL_SPECS`/`SEGMENT_SPECS`), `SkillLibrary` (list / get /
+   install over skills_root — the RSI publish path and the execution mount
+   path become two methods of one visible interface), `RecoveryStrategy`
+   (§2.1), `ModelEndpoint` (§1b).
+2. **A card declares what it provides in its manifest** — `[skills.*]`,
+   `[recoveries.*]` sections folded by `discover()` like mounts/campaigns
+   already are. Reading a card's manifest.toml then answers "what does this
+   card plug in, where" without reading its Python.
+3. **ARCHITECTURE.md gets a plug-point table**: one row per Protocol —
+   name, method signatures, which cards implement it, how it is validated at
+   mount. That table is the "explicit interface" a new contributor reads
+   first; if a seam isn't in the table, it isn't a seam.
+
+Explicitly not doing: base classes with inheritance, abstract factories, or a
+plugin base framework. Protocols + manifest folds are already the mechanism;
+the gap is completeness and visibility, not machinery.
 
 ## 3. Benchmark
 
@@ -125,7 +179,11 @@ MountPlan.sha — say so loudly in the paper).
 ## 5. Order of work
 
 1. §2.1 recoveries-in-manifest (small, unblocks robocasa RSI independently).
-2. §1 planner_vlm card + the two validator rules + doctor exemption.
-3. Matrix runs on stack/clear_workspace/kitchen_thaw (scratch seeds first).
-4. LIBERO card (§3), then LIBERO-Plus perturbation runs.
-5. §2.2 script deletion + friction measurement, §4 write-up.
+2. §1b model seam (`ModelEndpoint` Protocol + provider card + presets) — it
+   is a dependency of everything model-driven that follows.
+3. §1 planner_vlm card + the two validator rules + doctor exemption.
+4. §2b interface pass (contracts completion + manifest folds + plug-point
+   table) — do it while the planner_vlm work has the seams open anyway.
+5. Matrix runs on stack/clear_workspace/kitchen_thaw (scratch seeds first).
+6. LIBERO card (§3), then LIBERO-Plus perturbation runs.
+7. §2.2 script deletion + friction measurement, §4 write-up.
