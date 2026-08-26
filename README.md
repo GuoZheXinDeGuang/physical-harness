@@ -25,35 +25,7 @@ only by the operator's decision.
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    subgraph board["board/ — three faces, one truth"]
-        store["store.py<br/>(python)"]
-        cli["storecli.py<br/>(CLI/JSON)"]
-        mcp["mcp_server.py<br/>(MCP tools)"]
-    end
-    subgraph kernel["harness/ — the kernel (zero plugin imports)"]
-        K["resolve accounting · contract-mount check<br/>config→hash · chained ledger · percept isolation"]
-    end
-    subgraph cards["plugins/ — cards (pure-data manifest.toml)"]
-        E["embodiment_robosuite / embodiment_robocasa"]
-        P["policies · reasoner · task · graphs · rsi"]
-        S["skill_* / mission_* records"]
-    end
-    subgraph runtimes["resident runtimes — one per sim venv"]
-        R1["session-main<br/>(.venv: robosuite 1.5.2)"]
-        R2["session-robocasa<br/>(robocasa-venv: robosuite master)"]
-    end
-    EV["runs/ — sealed evidence<br/>(hash-chained SessionLog)"]
-
-    UI["ph-station cockpit<br/>(browser panels)"] -->|MCP / POST /api/board/fn| board
-    board --> kernel
-    kernel -->|mount + resolve| cards
-    board -->|submit_brief → inbox| runtimes
-    runtimes -->|govern rollout| kernel
-    runtimes --> EV
-    board -->|read-only| EV
-```
+![physical-harness system architecture](images/physical-harness-v2.png)
 
 Capability seams are the manifest in `harness/definitions.py`; contracts are the
 `runtime_checkable` Protocols in `harness/contracts.py`, so a wrong-shaped provider fails at
@@ -177,35 +149,7 @@ robosuite/MuJoCo（或 RoboCasa）回合：没有伪造的验证，没有外部 
 
 ### 架构
 
-```mermaid
-flowchart TB
-    subgraph board["board/ — 三个界面，一份真相"]
-        store["store.py<br/>(python)"]
-        cli["storecli.py<br/>(CLI/JSON)"]
-        mcp["mcp_server.py<br/>(MCP tools)"]
-    end
-    subgraph kernel["harness/ — 内核（零插件导入）"]
-        K["解析计费 · 契约挂载校验<br/>config→hash · 链式账本 · 感知隔离"]
-    end
-    subgraph cards["plugins/ — 卡片（纯数据 manifest.toml）"]
-        E["embodiment_robosuite / embodiment_robocasa"]
-        P["policies · reasoner · task · graphs · rsi"]
-        S["skill_* / mission_* records"]
-    end
-    subgraph runtimes["常驻 runtime — 每个仿真 venv 一个"]
-        R1["session-main<br/>(.venv: robosuite 1.5.2)"]
-        R2["session-robocasa<br/>(robocasa-venv: robosuite master)"]
-    end
-    EV["runs/ — 封存证据<br/>(哈希链 SessionLog)"]
-
-    UI["ph-station 驾驶舱<br/>(浏览器面板)"] -->|MCP / POST /api/board/fn| board
-    board --> kernel
-    kernel -->|挂载 + 解析| cards
-    board -->|submit_brief → inbox| runtimes
-    runtimes -->|治理回合| kernel
-    runtimes --> EV
-    board -->|只读| EV
-```
+![physical-harness 系统框图](images/physical-harness-v2.png)
 
 能力接缝是 `harness/definitions.py` 里的清单；契约是 `harness/contracts.py` 里的
 `runtime_checkable` Protocol——形状不对的 provider 会在挂载时失败，而不是在回合中途。内核只做五件事：
