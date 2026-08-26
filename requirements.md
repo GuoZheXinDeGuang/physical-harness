@@ -3,7 +3,7 @@
 The exact dependency manifest for **physical-harness**. The [README](README.md)
 has the short version; this file is what you follow when it isn't enough.
 
-The base install pulls **only `numpy` + `zstandard`** — the harness boots and
+The base install pulls **only `numpy`** — the harness boots and
 passes its base test lane on a machine with no simulator at all. Every simulator
 is an optional card, and the two GPU sim stacks (robosuite, robocasa) live in
 **separate venvs** because their `numpy`/`mujoco`/`robosuite` pins are mutually
@@ -32,7 +32,7 @@ Dependency groups from [`pyproject.toml`](pyproject.toml):
 
 | Group | Packages | For |
 |---|---|---|
-| base (always) | `numpy>=1.26`, `zstandard>=0.22` | kernel, evidence log |
+| base (always) | `numpy>=1.26` | kernel |
 | `[dev]` | `pytest>=8`, `pytest-timeout>=2`, `ruff==0.16.4`, `mcp==2.0.0` | tests + lint; `mcp` because the both-faces tests import `board/mcp_server` |
 | `[cockpit]` | `mcp==2.0.0` | console MCP seam (`board/mcp_server.py`) only. Pinned: dsh is an RC, so the wire stays fixed |
 

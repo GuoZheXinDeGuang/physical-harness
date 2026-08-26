@@ -70,7 +70,6 @@ separate sim venv. Full manifest: [requirements.md](requirements.md).
 | Library | Version | Extra / venv | For | License |
 |---|---|---|---|---|
 | numpy | >=1.26 | base | arrays, RNG, the whole numeric core | BSD-3 |
-| zstandard | >=0.22 | base | episode-log compression | BSD |
 | pytest, pytest-timeout | >=8, >=2 | `[dev]` | test runner | MIT |
 | ruff | ==0.16.4 | `[dev]` | lint/format | MIT |
 | mcp | ==2.0.0 | `[dev]`, `[cockpit]` | `board/mcp_server.py` stdio JSON-RPC seam | MIT |
@@ -89,7 +88,7 @@ It is installed separately — see its README.
 **Base harness (no GPU, no network, no API key):**
 
 ```bash
-uv venv && uv pip install -e ".[dev]"     # base deps = numpy + zstandard, plus test tools
+uv venv && uv pip install -e ".[dev]"     # base deps = numpy only, plus test tools
 python -m pytest -m "not robosuite and not robocasa"   # base lane
 ```
 
