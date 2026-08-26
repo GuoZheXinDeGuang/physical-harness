@@ -91,6 +91,29 @@ class TaskPlanner(Protocol):
 
 
 @runtime_checkable
+class RecoveryStrategy(Protocol):
+    """One named repair shape an embodiment card declares via ``[recoveries.*]``.
+
+    Declared in the card's manifest.toml (``ref = "module:attr"``), folded by
+    ``harness.manifest.discover`` like mounts/campaigns, and read through
+    ``plugins/rsi/repertoire.py`` -- which isinstance-checks each resolved attr
+    against this shape so a wrong-shaped strategy fails at load, not mid-repair.
+    ``steps`` is ``(phase, duration, dx, dy)`` tuples in the declaring card's own
+    phase vocabulary; a card declaring none has no recovery primitives at all.
+    """
+
+    name: str
+    steps: tuple[tuple[str, int, float, float], ...]
+    rationale: str
+
+    @property
+    def length(self) -> int: ...
+
+    @property
+    def uses_feedback(self) -> bool: ...
+
+
+@runtime_checkable
 class SkillGraph(Protocol):
     """Layer 2 seam: measured skills with preconditions, effects, failure modes, capability boundaries."""
 

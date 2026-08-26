@@ -129,7 +129,7 @@ def test_none_is_never_a_death():
 # ── c. the gate verdict ──────────────────────────────────────────────────────
 
 _OK_SUPPORT = {"supported": True, "reason": "driver ok",
-               "repertoire": repertoire.for_card(repertoire.ROBOSUITE)}
+               "repertoire": repertoire.strategies_for("embodiment_robosuite")}
 
 
 def _verdict(cal, support=_OK_SUPPORT):
@@ -188,12 +188,21 @@ def test_a_no_go_verdict_names_the_missing_capability():
                                            for m in v["missing_capability"])
 
 
-# ── the repertoire registration the boundary rests on ────────────────────────
+# ── the repertoire declaration the boundary rests on ─────────────────────────
 
-def test_every_repertoire_strategy_is_registered_to_an_embodiment_card():
-    assert repertoire.for_card(repertoire.ROBOSUITE) == repertoire.names()
+def test_every_repertoire_strategy_is_declared_by_an_embodiment_card():
+    assert repertoire.strategies_for("embodiment_robosuite") == repertoire.names()
 
 
-def test_an_unregistered_card_has_no_recovery_primitives():
-    """The whole point: absence is reportable, not fillable."""
-    assert repertoire.for_card("embodiment_robocasa") == []
+def test_an_undeclaring_card_has_no_recovery_primitives():
+    """The whole point: absence is reportable, not fillable. robocasa's card
+    declares no [recoveries.*] because none exist -- and that stays honest."""
+    assert repertoire.strategies_for("embodiment_robocasa") == []
+
+
+def test_every_folded_strategy_satisfies_the_contract():
+    from harness.contracts import RecoveryStrategy
+
+    assert repertoire.names(), "the fold must surface the robosuite repertoire"
+    for name in repertoire.names():
+        assert isinstance(repertoire.strategy(name), RecoveryStrategy)

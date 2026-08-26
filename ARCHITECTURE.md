@@ -64,7 +64,12 @@ identity. There is no "quietly tweaked a constant".
 perception, drivers (e.g. how "navigate to the fridge" maps onto wheels), and
 predicates (e.g. "is the object inside the microwave?"). Each embodiment card gets
 its own venv (robosuite and robocasa have mutually exclusive numpy ABIs — isolation
-is cheaper than reconciliation) and neither knows the other exists.
+is cheaper than reconciliation) and neither knows the other exists. The card also
+declares its RSI recovery repair shapes — `[recoveries.<name>] ref = "module:attr"`
+in its manifest, folded by `discover()` like mounts/campaigns and isinstance-checked
+against the `RecoveryStrategy` Protocol at load. A card declaring none has no
+recovery primitives, and the RSI chain says so verbatim instead of borrowing another
+embodiment's.
 
 **Mission card**: one task's graph definition — how nodes connect, which driver
 each node uses, which predicate verifies it. The manifest.toml is **pure data**, no
@@ -267,7 +272,10 @@ physical-harness/
 **Embodiment card（本体卡）**：一个机器人 + 仿真器的全套——环境构造、感知、驱动
 （driver，如"导航到冰箱"怎么用轮子实现）、判定谓词（predicate，如"物体在微波炉
 里吗"）。每张本体卡配独立 venv（robosuite 与 robocasa 的 numpy ABI 互斥，隔离比
-调和便宜），互相不知道对方存在。
+调和便宜），互相不知道对方存在。RSI 恢复原语也由本体卡在自己的 manifest 里声明
+（`[recoveries.<name>] ref = "module:attr"`，由 `discover()` 像 mounts/campaigns
+一样折叠，加载时按 `RecoveryStrategy` Protocol 做 isinstance 校验）；没声明的卡
+就是没有恢复原语，RSI 链原样报告，不借别的本体的。
 
 **Mission card（任务卡）**：一个任务的图定义——节点怎么连、每个节点用哪个驱动、用
 哪个谓词验证。manifest.toml 是**纯数据**，没有逻辑，所以加任务不可能弄坏内核。

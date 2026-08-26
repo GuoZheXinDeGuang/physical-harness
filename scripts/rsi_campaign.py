@@ -344,8 +344,8 @@ def embodiment_card(binding: dict) -> str:
 
     A binding that names its own ``env`` rides a second simulator; one that omits
     it rides the base fold's default. Either way the card name is the middle
-    component of the provider ref -- the same string ``plugins/rsi/repertoire.py``
-    registers repair shapes against.
+    component of the provider ref -- the same plugin dir name whose manifest
+    declares ``[recoveries.*]`` repair shapes.
     """
     from plugins.rsi.governed import DEFAULT_ENV_REF
 
@@ -400,7 +400,7 @@ def recovery_support(task: str, node: dict) -> dict:
 
     out["driver"] = type(driver).__name__
     out["card"] = card = embodiment_card(binding)
-    out["repertoire"] = strategies = repertoire.for_card(card)
+    out["repertoire"] = strategies = repertoire.strategies_for(card)
     # Every blocker, not just the first: "this embodiment has no primitives" and
     # "this node is not reachable by the campaign path" are independent facts and
     # an operator told only one of them would fix the wrong thing.
@@ -408,8 +408,8 @@ def recovery_support(task: str, node: dict) -> dict:
     if not strategies:
         blockers.append(
             f"该本体（卡 {card}）无注册恢复原语，RSI 无从下手: "
-            "plugins/rsi/repertoire.py 里没有一条 Strategy 注册到这张卡。"
-            f"robosuite 侧的 servo_descend/servo_probe 是模板（{repertoire.for_card('embodiment_robosuite')}），"
+            "该卡的 manifest.toml 没有声明任何 [recoveries.*]。"
+            f"robosuite 侧的 servo_descend/servo_probe 是模板（{repertoire.strategies_for('embodiment_robosuite')}），"
             "但它们说的是 tabletop 的 above/descend/close/lift 词汇，换本体即无意义。"
             "为新本体注册恢复原语是先决条件，不是本次可以现编的东西。")
     missing = [m for m in RECOVERY_PROTOCOL if not hasattr(driver, m)]

@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 605 passed
+pass       : 608 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -51,6 +51,15 @@ wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +3 over the campaign-progress-nested snapshot (605→608 pass, skips
+unchanged) is recoveries-in-manifest: embodiment cards now declare
+`[recoveries.<name>] ref = "module:attr"` in their own manifest.toml, folded by
+`harness.manifest.discover()` (duplicate names loud) and read by
+`plugins/rsi/repertoire.py` through the `RecoveryStrategy` Protocol. +2 in
+`test_manifest.py` (duplicate-recovery collision, fold records the declaring
+card) and +1 in `test_rsi_mechanism.py` (every folded strategy satisfies the
+contract). Sim-free, no seeds burned.
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`

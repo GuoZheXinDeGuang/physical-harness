@@ -128,6 +128,22 @@ def test_duplicate_capability_across_manifests_is_loud(tmp_path):
         discover(tmp_path)
 
 
+def test_duplicate_recovery_across_manifests_is_loud(tmp_path):
+    body = '[recoveries.regrasp]\nref = "plugins.embodiment_robosuite.recoveries:REGRASP"\n'
+    _write_manifest(tmp_path, "card_a", body)
+    _write_manifest(tmp_path, "card_b", body)
+    with pytest.raises(ValueError, match="duplicate recovery 'regrasp'"):
+        discover(tmp_path)
+
+
+def test_recoveries_fold_records_the_declaring_card(tmp_path):
+    """name -> (card, ref): repertoire needs to answer strategies_for(card)."""
+    _write_manifest(tmp_path, "card_a",
+                    '[recoveries.regrasp]\nref = "m.recoveries:REGRASP"\n')
+    reg = discover(tmp_path)
+    assert reg.recoveries == {"regrasp": ("card_a", "m.recoveries:REGRASP")}
+
+
 def test_a_task_and_a_campaign_may_share_a_name(tmp_path):
     """Independent name spaces: only a second card claiming the SAME kind collides."""
     _write_manifest(tmp_path, "card", '[task_bindings.stack]\n'

@@ -140,6 +140,6 @@ plugin/card model, and how to write a card all live in [ARCHITECTURE.md](ARCHITE
 
 Always use `python -m pytest` (not `bin/pytest`, which drops cwd from `sys.path` and yields
 spurious collection errors). The **base fast lane** is `pytest -m "not robosuite and not
-robocasa"`, run isolated with the sim cards absent: **605 passed, 29 skipped, 28 deselected**.
+robocasa"`, run isolated with the sim cards absent: **608 passed, 29 skipped, 28 deselected**.
 The snapshot format and the isolation recipe are in [docs/base-gate.md](docs/base-gate.md); refresh
 that file and this line in the same commit whenever the count moves.

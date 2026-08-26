@@ -193,8 +193,8 @@ def test_every_strategy_resolves_to_offset_steps():
     # The actor resolves heights from PHASE_HEIGHT merged with STACK_PHASE_HEIGHT
     # (recovery._HEIGHT); a place-shaped strategy legitimately names the latter.
     from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT
-    from plugins.rsi.repertoire import REPERTOIRE
-    for s in REPERTOIRE:
+    from plugins.rsi.repertoire import names, strategy
+    for s in (strategy(n) for n in names()):
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:
             assert name in PHASE_HEIGHT or name in STACK_PHASE_HEIGHT or name.startswith("servo_"), (
