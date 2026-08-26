@@ -25,11 +25,31 @@ class NavToObjectDriver(D.NavigateDriver):
     """NavigateDriver whose dock is computed NEAR A NAMED OBJECT on the fixture
     (``compute_robot_base_placement_pose(..., ref_object=...)``): a long counter
     has one generic dock but the can/tupperware sits at a specific run of it.
-    Everything else -- empty and carry legs both -- is the parent verbatim."""
+
+    The EMPTY leg is heading-first: while far, drive FACING the travel direction
+    (the wheeled base cannot strafe -- holding the dock yaw across a long
+    cross-kitchen leg turns most of the error into a dead vy channel), settle to
+    the dock yaw inside the last stretch; on a stall (window displacement under
+    2 cm over 20 steps: wedged on the spawn dock's furniture) reverse straight
+    back 25 steps and resume. Measured on recycle_cans scratch seeds: the
+    parent's hold-dock-yaw empty leg moved 0.03-0.13 m on 4/6 cross-kitchen
+    legs; heading-first completes a 4.2 m leg (seed 4243, 136 steps) and leaves
+    near-dock legs untouched. No path planning -- a mid-route blocking counter
+    is still the charter's honest failure surface. The carry leg is the parent's
+    stow+arc recipe verbatim."""
+
+    #: stall detector + recovery knobs (probe-measured; geometry, not per-scene).
+    STALL_WIN = 20
+    STALL_EPS = 0.02
+    REV_STEPS = 25
+    REV_V = -0.6
+    HEADING_FAR = 0.6   # beyond this, face the travel direction, not the dock
 
     def __init__(self, fixture_name: str, obj_name: str, carry: bool = False):
         super().__init__(fixture_name, carry=carry)
         self.obj_name = obj_name
+        self._hist: list = []
+        self._rev = 0
 
     def _target(self, env):
         if self._goal is None:
@@ -40,6 +60,30 @@ class NavToObjectDriver(D.NavigateDriver):
                 env, fx, ref_object=self.obj_name)
             self._goal = (np.asarray(pos[:2], float), float(ori[2]))
         return self._goal
+
+    def act(self, env, obs):
+        if self.carry:
+            return super().act(env, obs)
+        gxy, gyaw = self._target(env)
+        xy, _ = D._base_pose(env)
+        self._hist.append(xy.copy())
+        vec = np.asarray(gxy) - xy
+        d = float(np.linalg.norm(vec))
+        if self._rev > 0:
+            self._rev -= 1
+        elif (len(self._hist) > self.STALL_WIN and d > 0.45
+              and np.linalg.norm(self._hist[-1]
+                                 - self._hist[-1 - self.STALL_WIN]) < self.STALL_EPS):
+            self._rev = self.REV_STEPS
+            self._hist.clear()
+        if self._rev > 0:
+            a = D._zero()
+            a[7] = self.REV_V
+            a[D.MODE] = D.GRIP_CLOSE  # +1 == base mode
+            return a
+        heading = (float(np.arctan2(vec[1], vec[0]))
+                   if d > self.HEADING_FAR else gyaw)
+        return D._base_action(env, gxy, heading, grip=D.GRIP_OPEN)
 
 
 class PointPlaceDriver:
@@ -82,8 +126,12 @@ class PointPlaceDriver:
                 self.phase = "retreat"
             return D._arm_action(env, np.array([c[0], c[1], c[2] + 0.02]),
                                  D.GRIP_OPEN)
-        # retreat: up and clear, gripper open
-        return D._arm_action(env, np.array([eef[0], eef[1], c[2] + 0.25]),
+        # retreat: up AND back toward the base, gripper open -- straight-up alone
+        # leaves the eef ~0.2 m over the dropped object, inside gripper_obj_far's
+        # 0.25 m release gate (measured: the drop landed, only the gate held out)
+        xy, psi = D._base_pose(env)
+        back = xy + 0.35 * np.array([np.cos(psi), np.sin(psi)])
+        return D._arm_action(env, np.array([back[0], back[1], c[2] + 0.35]),
                              D.GRIP_OPEN)
 
 

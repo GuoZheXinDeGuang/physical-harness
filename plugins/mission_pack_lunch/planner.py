@@ -37,7 +37,12 @@ from harness.registry import load_provider
 
 # ── card constants ────────────────────────────────────────────────────────────
 #: PackFoodByTemp's own object names; temperature is the name's own attribute.
-ITEMS: tuple[str, ...] = ("cold0", "cold1", "hot0", "hot1")
+#: Chain order is shallow-reach-first: the open-counter item (hot1, on a plate
+#: beside the stove), then the stove-pan item (hot0), then the fridge-rack items
+#: (cold0/cold1) -- appliance-interior grasps are the measured hard tail
+#: (calibration-r1's fridge enclosure finding), so the graph banks the
+#: reachable work before attacking them.
+ITEMS: tuple[str, ...] = ("hot1", "hot0", "cold0", "cold1")
 
 #: The deterministic temperature -> container assignment (the decide node's
 #: function AND the driver stage table's authoring source).
@@ -227,7 +232,8 @@ def _mk_at(name: str):
 
 def _mk_grasped(name: str):
     """SECURE_DZ-shaped grasp verify (see mission_recycle_cans: never the bare
-    check_obj_grasped latch)."""
+    check_obj_grasped latch; the segment's own sealed SECURE_DZ success is the
+    alternative z-evidence after a disturbed retry)."""
     def factory():
         grasped = load_provider(f"{_P}:obj_grasped_any", {"name": name})
 
@@ -238,7 +244,9 @@ def _mk_grasped(name: str):
             if not pos0:
                 return {"success": False}
             risen = _obj_z(ep.env, name) > float(pos0[2]) + SECURE_DZ
-            return {"success": bool(grasped(ep.env) and risen)}
+            seg_secure = bool((ctx.nodes_out.get(f"grasp-{name}") or {})
+                              .get("success"))
+            return {"success": bool(grasped(ep.env) and (risen or seg_secure))}
         return pred
     return factory
 

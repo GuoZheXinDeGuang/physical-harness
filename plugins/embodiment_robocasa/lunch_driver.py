@@ -38,9 +38,11 @@ def _stages() -> dict[str, tuple[Any, int]]:
         table[f"grasp_{item}"] = (lambda o=item: D.GraspDriver(o), 600)
         # loaded leg docks NEAR THE TARGET TUPPERWARE's run of the long dining
         # counter, not the counter's generic dock (ref_object-addressed).
+        # 700: cross-kitchen loaded legs measured >450 capped steps (see
+        # recycle_driver) -- same stow+arc recipe, same budget.
         table[f"carry_{item}"] = (
             lambda t=tub, o=item: X.NavToObjectDriver(
-                "dining_counter", t, carry=True), 450)
+                "dining_counter", t, carry=True), 700)
         table[f"pack_{item}"] = (
             lambda o=item, t=tub: X.ReceptaclePlaceDriver(o, t), 300)
     return table

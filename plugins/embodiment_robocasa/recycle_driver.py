@@ -83,8 +83,10 @@ def _stages() -> dict[str, tuple[Any, int]]:
         table[f"nav_{can}"] = (
             lambda h=home, c=can: X.NavToObjectDriver(h, c), 250)
         table[f"grasp_{can}"] = (lambda c=can: D.GraspDriver(c), 600)
+        # 700: a cross-kitchen loaded leg measured 553 capped steps (stow 80 +
+        # VCAP arc over 3.5 m, seed 4243) -- 450 starved it just short.
         table[f"carry_{can}"] = (
-            lambda: D.NavigateDriver("stove", carry=True), 450)
+            lambda: D.NavigateDriver("stove", carry=True), 700)
         table[f"drop_{can}"] = (
             lambda c=can, s=CANS.index(can): ClusterDropDriver(c, s), 300)
     return table

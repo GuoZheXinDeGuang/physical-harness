@@ -236,10 +236,15 @@ def _mk_at(name: str):
 
 
 def _mk_grasped(name: str):
-    """SECURE_DZ-shaped grasp verify: grasped by robocasa's oracle AND the can's
-    live z risen SECURE_DZ above its surveyed entry z. Never the bare
-    ``check_obj_grasped`` -- that latch passes with the gripper merely touching
-    the can (carry-probe's false-positive finding)."""
+    """SECURE_DZ-shaped grasp verify: never the bare ``check_obj_grasped`` --
+    that latch passes with the gripper merely touching the can (carry-probe's
+    false-positive finding). The z-rise evidence is EITHER the can's live z
+    above its surveyed entry z, OR the grasp segment's own sealed success --
+    GraspDriver.done is itself SECURE_DZ-gated from segment-entry z, which stays
+    truthful when a failed first attempt knocked the can somewhere lower and the
+    in-episode retry grasped it from there (measured: seed 4243 can2, the
+    survey-z-only verify falsely failed a real regrasp). Both branches still
+    require the latch to hold NOW."""
     def factory():
         grasped = load_provider(f"{_P}:obj_grasped_any", {"name": name})
 
@@ -250,7 +255,9 @@ def _mk_grasped(name: str):
             if not pos0:
                 return {"success": False}
             risen = _obj_z(ep.env, name) > float(pos0[2]) + SECURE_DZ
-            return {"success": bool(grasped(ep.env) and risen)}
+            seg_secure = bool((ctx.nodes_out.get(f"grasp-{name}") or {})
+                              .get("success"))
+            return {"success": bool(grasped(ep.env) and (risen or seg_secure))}
         return pred
     return factory
 

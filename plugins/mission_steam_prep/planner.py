@@ -216,7 +216,8 @@ v_at_pot = _wrap(f"{_P}:base_near_obj", {"name": POT, "th": 1.5})
 
 
 def v_veg_grasped():
-    """SECURE_DZ vs the surveyed entry z (the veg has not moved yet)."""
+    """SECURE_DZ vs the surveyed entry z, or the grasp segment's own sealed
+    SECURE_DZ success after a disturbed retry (see mission_recycle_cans)."""
     grasped = load_provider(f"{_P}:obj_grasped_any", {"name": VEG})
 
     def pred(node: Mapping, ctx) -> dict:
@@ -226,7 +227,8 @@ def v_veg_grasped():
         if not pos0:
             return {"success": False}
         risen = _obj_z(ep.env, VEG) > float(pos0[2]) + SECURE_DZ
-        return {"success": bool(grasped(ep.env) and risen)}
+        seg_secure = bool((ctx.nodes_out.get("grasp-veg") or {}).get("success"))
+        return {"success": bool(grasped(ep.env) and (risen or seg_secure))}
     return pred
 
 
@@ -257,7 +259,8 @@ def v_veg_held():
         if z0 is None:
             return {"success": False}
         risen = _obj_z(ep.env, VEG) > float(z0) + SECURE_DZ
-        return {"success": bool(grasped(ep.env) and risen)}
+        seg_secure = bool((ctx.nodes_out.get("regrasp-veg") or {}).get("success"))
+        return {"success": bool(grasped(ep.env) and (risen or seg_secure))}
     return pred
 
 
@@ -273,7 +276,8 @@ def v_veg_in_pot():
 
 
 def v_pot_held():
-    """SECURE_DZ vs the surveyed pot z (the pot has not moved until now)."""
+    """SECURE_DZ vs the surveyed pot z, or the grasp segment's own sealed
+    SECURE_DZ success after a disturbed retry (see mission_recycle_cans)."""
     grasped = load_provider(f"{_P}:obj_grasped_any", {"name": POT})
 
     def pred(node: Mapping, ctx) -> dict:
@@ -283,7 +287,8 @@ def v_pot_held():
         if not pos0:
             return {"success": False}
         risen = _obj_z(ep.env, POT) > float(pos0[2]) + SECURE_DZ
-        return {"success": bool(grasped(ep.env) and risen)}
+        seg_secure = bool((ctx.nodes_out.get("grasp-pot") or {}).get("success"))
+        return {"success": bool(grasped(ep.env) and (risen or seg_secure))}
     return pred
 
 

@@ -76,7 +76,7 @@ _STAGES: dict[str, tuple[Any, int]] = {
     "faucet_off":  (lambda: FaucetStubDriver(on=False), 60),
     "regrasp_veg": (lambda: D.GraspDriver("vegetable1"), 600),
     "carry_veg":   (lambda: X.NavToObjectDriver("stove_counter", "pot",
-                                                carry=True), 450),
+                                                carry=True), 700),
     "pot_veg":     (lambda: X.ReceptaclePlaceDriver("vegetable1", "pot"), 300),
     "grasp_pot":   (lambda: D.GraspDriver("pot"), 600),
     "burner_pot":  (lambda: BurnerPlaceDriver("pot"), 300),
