@@ -102,9 +102,37 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
     raise KeyError(fn)
 
 
+def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
+    """Resident line-JSON loop over the SAME dispatch (``storecli serve``).
+
+    One request object per line ({"fn", "name"?, "after"?, "relation"?,
+    "after_ts"?, "wait_ms"?}), one JSON reply line per request, strictly in
+    order, flushed. The ph-station bridge keeps one of these alive for the
+    取景窗 long poll: the ~60ms interpreter+import spawn cost was the measured
+    browser fps ceiling, and this moves it off the per-frame path. Errors map
+    to the same ``{"error": ...}`` dicts as one-shot mode and NEVER end the
+    loop; EOF does.
+    """
+    for line in stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            result = dispatch(req.get("fn", ""), req.get("name"), runs, status, progress,
+                              int(req.get("after", 0)), req.get("relation"),
+                              float(req.get("after_ts", 0.0)), int(req.get("wait_ms", 0)))
+        except KeyError:
+            result = {"error": f"unknown fn: {req.get('fn', '')}"}
+        except Exception as exc:  # bad JSON / rejected name / anything: reply, keep serving
+            result = {"error": str(exc)}
+        print(json.dumps(result), file=stdout, flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="list_stores|store|heldout|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|list_stores|store|heldout|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
@@ -117,6 +145,8 @@ def main(argv=None) -> int:
     runs = args.runs.resolve()
     status = args.status.resolve() if args.status else runs.parent / "STATUS.md"
     progress = args.progress.resolve() if args.progress else runs.parent / "progress.md"
+    if args.fn == "serve":
+        return serve(sys.stdin, sys.stdout, runs, status, progress)
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
                           args.after_ts, args.wait_ms)

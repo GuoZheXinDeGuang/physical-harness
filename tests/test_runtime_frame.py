@@ -340,3 +340,36 @@ def test_wait_ms_passes_through_both_faces(tmp_path, monkeypatch):
                       tmp_path / "S.md", tmp_path / "p.md",
                       after_ts=12.5, wait_ms=250)
     assert seen == [(12.5, 250), (12.5, 250)]
+
+
+def test_storecli_serve_loop(tmp_path):
+    """`storecli serve`: one line-JSON request -> one in-order reply line via
+    the SAME dispatch; an unknown fn or rejected name replies {"error"} and the
+    loop keeps serving (the bridge's resident frame worker rides this)."""
+    import io
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    sd = _session(runs)
+    (sd / "frame.jpg").write_bytes(b"\xff\xd8jpegish\xff\xd9")
+    ts = round((sd / "frame.jpg").stat().st_mtime, 3)
+    reqs = "\n".join([
+        json.dumps({"fn": "runtime_frame", "name": "session-main"}),
+        json.dumps({"fn": "runtime_frame", "name": "session-main", "after_ts": ts}),
+        json.dumps({"fn": "nope"}),
+        json.dumps({"fn": "runtime_frame", "name": "../session-main"}),
+        "not json",
+        json.dumps({"fn": "runtime_frame", "name": "session-main"}),
+    ])
+    out = io.StringIO()
+    rc = storecli.serve(io.StringIO(reqs + "\n"), out,
+                        runs, tmp_path / "S.md", tmp_path / "p.md")
+    assert rc == 0
+    lines = [json.loads(l) for l in out.getvalue().splitlines()]
+    assert len(lines) == 6, "every request gets exactly one reply line"
+    assert lines[0]["ts"] == ts and "jpeg_b64" in lines[0]
+    assert lines[1] == {"unchanged": True, "ts": ts, "age_s": lines[1]["age_s"]}
+    assert lines[2] == {"error": "unknown fn: nope"}
+    assert lines[3] == {"error": "unknown session"}, "safe_child still guards"
+    assert "error" in lines[4], "bad JSON replies, never kills the loop"
+    assert "jpeg_b64" in lines[5], "the loop still serves after errors"
