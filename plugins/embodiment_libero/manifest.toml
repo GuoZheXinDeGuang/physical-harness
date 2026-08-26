@@ -1,0 +1,20 @@
+# The LIBERO embodiment card (SKELETON): the VLA benchmark suite behind the same
+# embodiment.env seam the robosuite/robocasa cards own. It rides a third venv
+# (sims/libero-venv: py3.10, robosuite 1.4.0 + mujoco 2.3.2 + numpy 1.22.4 --
+# LIBERO's pins are 2022-era and cannot share either existing interpreter) and
+# will ride its own resident runtime, per docs/sim-adaptation.md (LIBERO §).
+#
+# enabled = false -> installed but INACTIVE, exactly the robocasa precedent: it
+# re-claims embodiment.env, so discover() keeps it out of the folded base plan
+# (base_profile sha untouched) while plugin_doctor can still check it by path.
+enabled = false
+
+actuation = "sim"
+needs_sim = true
+# The third-party surface no OTHER card may import (test_boundaries reads this).
+# "libero" is the LIBERO namespace package; robosuite/mujoco are its substrate
+# (1.4.0-era APIs -- NOT the robosuite the other two cards speak).
+third_party = ["libero", "robosuite", "mujoco"]
+
+[mounts."embodiment.env"]
+ref = "plugins.embodiment_libero:provider"

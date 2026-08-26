@@ -35,11 +35,10 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 615 passed
-skips      : 31 skipped
+pass       : 605 passed
+skips      : 30 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
-             [2] test_policy_vla_remote.py:136,151  policy_remote extra not installed
              [1] test_reducers.py:171         cloned weights not present
              [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
@@ -47,22 +46,20 @@ skips      : 31 skipped
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
+             [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~5.0s
+wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +10/+2 over the campaign-progress-fix snapshot (605→615 pass, 29→31 skips)
-is the `policy_vla_remote` card (vlm-graph plan §3b): +10 base-lane tests
-(`test_policy_vla_remote.py` -- the handshake reconcile gate incl. the
-tuple/list and advertised-unnorm_key cases, the chunk driver over a stub
-client, the PolicyFactory shape, and the doctor's probe-then-SKIP degradation
-when no policy server listens) and +2 skips (the msgpack codec round-trip and
-the live websocket handshake+inference test, which need the `policy_remote`
-extra -- both verified green in a venv that has it). Sim-free, no seeds
-burned; `test_vault.py`'s package pin moves 17→18 (the new inactive card is
-listed like every card).
+The +1 skip over the campaign-progress-scan snapshot (29→30, pass unchanged at
+605) is the LIBERO scaffold (docs/sim-adaptation.md §5): `tests/test_libero_
+marker.py`'s marker self-proof, libero venv only (`sims/libero-venv`, py3.10 --
+LIBERO's 2022-era pins cannot share either existing interpreter), plus the
+inactive `plugins/embodiment_libero/` card (enabled=false, so the base fold and
+its sha are untouched -- the robocasa precedent). In the libero venv
+`-m libero` on that file is 1 passed.
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`
@@ -139,8 +136,9 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `594 passed, 21 skipped` (the 18 robocasa-marked
-items also skip in the harness .venv — robocasa is not installed there either; they
+Full-suite parity (card present): `594 passed, 22 skipped` (the 18 robocasa-marked
+items also skip in the harness .venv — robocasa is not installed there either, and
+the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —
 nav-microwave unloaded (fridge blocks the seed-7 aisle) / close-door /

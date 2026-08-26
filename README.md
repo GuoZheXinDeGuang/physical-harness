@@ -62,12 +62,13 @@ or a separate sim venv. Full manifest: [requirements.md](requirements.md).
 | pytest, pytest-timeout | >=8, >=2 | `[dev]` | test runner | MIT |
 | ruff | ==0.16.4 | `[dev]` | lint/format | MIT |
 | mcp | ==2.0.0 | `[dev]`, `[cockpit]` | `board/mcp_server.py` stdio JSON-RPC seam | MIT |
-| websockets, msgpack | >=12, >=1.0 | `[policy_remote]` | `plugins/policy_vla_remote` VLA policy-server transport (vendored StarVLA protocol) | BSD-3 / Apache-2.0 |
 | mujoco | ==3.3.7 | `[embodiment_robosuite]` (.venv) | sim physics — pinned (>=3.4 renames `qM`→`M`) | Apache-2.0 |
 | robosuite | ==1.5.2 | `[embodiment_robosuite]` (.venv) | Panda/Sawyer manipulation env | MIT |
 | robosuite | master @5ce6643 | robocasa-venv | RoboCasa needs `load_model_on_init` (not in 1.5.2) | MIT |
 | robocasa | 1.0.1 @a07e365 | robocasa-venv | long-horizon kitchen missions (+23 GB assets) | MIT |
 | mujoco / numpy | 3.3.1 / 2.2.5 | robocasa-venv | RoboCasa hard-pins; numpy 2.x ABI is why it can't share .venv | Apache / BSD |
+| libero | master @8f1084e | libero-venv (py3.10) | VLA benchmark suite (assets bundled in-repo, ~405 MB) | MIT |
+| robosuite / mujoco / numpy | 1.4.0 / 2.3.2 / 1.22.4 | libero-venv | LIBERO's 2022-era pins; see docs/sim-adaptation.md §5 | MIT / Apache / BSD |
 
 The **operator UI companion** ([ph-station](https://github.com/Z-Robotics-Lab/ph-station)) is an
 MIT-licensed cockpit on a Node 22 + pnpm toolchain (dockview-react, tabler-icons). It is installed
@@ -141,6 +142,6 @@ plugin/card model, and how to write a card all live in [ARCHITECTURE.md](ARCHITE
 
 Always use `python -m pytest` (not `bin/pytest`, which drops cwd from `sys.path` and yields
 spurious collection errors). The **base fast lane** is `pytest -m "not robosuite and not
-robocasa"`, run isolated with the sim cards absent: **615 passed, 31 skipped, 28 deselected**.
+robocasa"`, run isolated with the sim cards absent: **605 passed, 30 skipped, 28 deselected**.
 The snapshot format and the isolation recipe are in [docs/base-gate.md](docs/base-gate.md); refresh
 that file and this line in the same commit whenever the count moves.
