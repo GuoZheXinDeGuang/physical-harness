@@ -23,6 +23,11 @@ def pytest_configure(config):
         "robocasa: needs the robocasa venv (robocasa+robosuite-master); "
         "auto-skipped when robocasa is unimportable (harness .venv)",
     )
+    config.addinivalue_line(
+        "markers",
+        "libero: needs the libero venv (LIBERO+robosuite-1.4); "
+        "auto-skipped when libero is unimportable (harness .venv)",
+    )
 
 
 def _auto_skip(items, pkg, marker, reason):
@@ -42,4 +47,8 @@ def pytest_collection_modifyitems(config, items):
     _auto_skip(
         items, "robocasa", "robocasa",
         "robocasa unimportable (robocasa venv only)",
+    )
+    _auto_skip(
+        items, "libero", "libero",
+        "libero unimportable (libero venv only)",
     )
