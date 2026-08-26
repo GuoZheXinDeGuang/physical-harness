@@ -19,7 +19,9 @@ privileged feature read and capability resolve is charged, so the sim-to-real ga
 measurable ablation curve rather than a worry.
 
 Charter: [GOAL.md](GOAL.md) · internals: [ARCHITECTURE.md](ARCHITECTURE.md) · agent handbook:
-[CLAUDE.md](CLAUDE.md).
+[CLAUDE.md](CLAUDE.md). These three files anchor the project's direction and
+rules — do not modify them lightly; GOAL.md in particular is fixed and changes
+only by the operator's decision.
 
 ## Architecture
 
@@ -170,7 +172,8 @@ robosuite/MuJoCo（或 RoboCasa）回合：没有伪造的验证，没有外部 
 特权特征读取与能力解析都会被计费，于是 sim-to-real 差距变成一条可测量的消融曲线，而不再是一种担忧。
 
 宪章见 [GOAL.md](GOAL.md) · 内部结构见 [ARCHITECTURE.md](ARCHITECTURE.md) · 智能体手册见
-[CLAUDE.md](CLAUDE.md)。
+[CLAUDE.md](CLAUDE.md)。这三份文件锚定项目的方向与规则，请勿轻易修改；GOAL.md 是固定的，
+只能由操作员决定变更。
 
 ### 架构
 
