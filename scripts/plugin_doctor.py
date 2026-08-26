@@ -68,6 +68,7 @@ _DETERMINISM = {
     "percept.model": "required",       # a percept stand-in must be pure in (seed, draw)
     "task.planner": "required",        # a plan is a symbol graph, same brief -> same graph
     "reasoner.proposer": "untrusted",  # an LLM reasoner: validate the shape, never diff it
+    "model.endpoint": "untrusted",     # a chat transport: probe + shape, never diff
 }
 
 
@@ -149,6 +150,19 @@ def _smoke_reasoner(prov, ctx: _Ctx):
     return "ok"  # untrusted: shape only, never diffed
 
 
+def _smoke_model_endpoint(prov, ctx: _Ctx):
+    # Same stance as _smoke_reasoner: probe first, SKIP when no endpoint is up
+    # (GPU held, no API key) -- the shape passed Tier A and an LLM reply is
+    # never diffed anyway.
+    if not prov.available():
+        raise DoctorSkip("model endpoint unreachable -- probed and skipped "
+                         "(untrusted: shape validated Tier A, live chat not run)")
+    out = prov.chat([{"role": "user", "content": "Reply with the single word: ok"}],
+                    max_tokens=8, temperature=0.0)
+    assert isinstance(out, str) and out, "chat must return a non-empty str"
+    return "ok"  # untrusted: shape only, never diffed
+
+
 def _smoke_skill(prov, ctx: _Ctx):
     rec = {"kind": "doctor_probe", "value": 1}
     digest = prov.publish(rec)
@@ -170,6 +184,7 @@ _SMOKES = {
     "percept.model": _smoke_percept,
     "task.planner": _smoke_planner,
     "reasoner.proposer": _smoke_reasoner,
+    "model.endpoint": _smoke_model_endpoint,
     "graph.skill": _smoke_skill,
     "graph.scene": _smoke_scene,
 }

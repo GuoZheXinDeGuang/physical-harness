@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 608 passed
+pass       : 611 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -52,14 +52,20 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +3 over the campaign-progress-nested snapshot (605→608 pass, skips
-unchanged) is recoveries-in-manifest: embodiment cards now declare
-`[recoveries.<name>] ref = "module:attr"` in their own manifest.toml, folded by
-`harness.manifest.discover()` (duplicate names loud) and read by
-`plugins/rsi/repertoire.py` through the `RecoveryStrategy` Protocol. +2 in
-`test_manifest.py` (duplicate-recovery collision, fold records the declaring
-card) and +1 in `test_rsi_mechanism.py` (every folded strategy satisfies the
-contract). Sim-free, no seeds burned.
+The +1 over the model-endpoint snapshot (610→611 pass, skips unchanged at 29)
+is `tests/test_skill_contracts.py`: the §2b interface pass pinned -- the
+skills_root store satisfies the SkillLibrary protocol (inheritance over
+SkillGraph keeps runtime isinstance working) and the Skill protocol's
+name/args/binding triple matches the real CATALOGUE + SKILL_SPECS rows.
+Sim-free, no seeds burned.
+
+The +5 over the campaign-progress-fix snapshot (605→610 pass, skips unchanged
+at 29) is `tests/test_model_endpoint.py`, the `model.endpoint` seam
+(vlm-graph plan §1b): ModelEndpoint contract conformance, preset/per-field
+config resolution, the OpenAI chat shape end to end against a local stdlib
+HTTP server (lazy GET /models resolution, Bearer auth from the NAMED env var,
+opts pass-through), dead-endpoint graceful degrade, and the plugin_doctor
+Tier-B SKIP. Sim-free, no seeds burned.
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`
@@ -136,7 +142,9 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `594 passed, 21 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `642 passed, 26 skipped` (measured 2026-08-27
+with the sealed runs/ evidence present; this line had lagged several test-adding
+commits — the repeat-offender rule below exists for exactly that) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —

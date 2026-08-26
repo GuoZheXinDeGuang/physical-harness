@@ -22,6 +22,10 @@ CAPABILITIES: tuple[Definition, ...] = (
     Definition("task.planner", contracts.TaskPlanner,
                "Layer 1 seam: decomposes a task+scene+skill catalogue into a "
                "skill-call graph. Authors symbols, reads no ground truth."),
+    Definition("model.endpoint", contracts.ModelEndpoint,
+               "One seam for every model call: an OpenAI-compatible chat "
+               "endpoint (local sglang or hosted API -- same shape, different "
+               "base_url). Probed, never assumed present."),
     Definition("graph.skill", contracts.SkillGraph,
                "Layer 2 seam: measured skills with preconditions/effects/failure modes."),
     Definition("graph.scene", contracts.SceneGraph,
