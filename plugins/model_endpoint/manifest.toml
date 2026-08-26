@@ -1,0 +1,24 @@
+# The model-endpoint card: ONE OpenAI-compatible chat client behind the
+# model.endpoint seam (docs/vlm-graph-paper-plan.md §1b). Local sglang and
+# hosted APIs are the same shape; a preset is a filled-in {base_url,
+# api_key_env, model} config, overridable per-field in params.
+#
+# enabled = false -> installed but INACTIVE: no consumer resolves
+# model.endpoint yet (planner_vlm arrives on its own lane), and flipping it on
+# moves the folded base plan sha -- a new experiment identity. Doctor still
+# checks the card at this path (card_mounts ignores enabled). To activate: set
+# enabled = true when the first consumer mounts.
+enabled = false
+
+# needs_sim = false: a chat transport reads no simulator. The endpoint being
+# down is a graceful Tier-B SKIP (available() probe), never a red.
+needs_sim = false
+
+[mounts."model.endpoint"]
+ref = "plugins.model_endpoint:provider"
+# preset = "local_sglang" (the 4090 sglang serving; model resolved lazily from
+# GET /models) or "deepseek" (hosted API; export DEEPSEEK_API_KEY). These params
+# enter the plan sha, so WHICH endpoint answered is configuration identity --
+# the api key rides an env var name, never a value, keeping secrets out of the
+# hash chain.
+params = { preset = "local_sglang" }

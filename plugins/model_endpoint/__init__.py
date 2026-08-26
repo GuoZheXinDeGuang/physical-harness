@@ -1,0 +1,111 @@
+"""Model-endpoint card: the ONE client behind every model call (plan §1b).
+
+There is no "DeepSeek vs local Qwen" choice to wire: both are OpenAI-compatible
+``/chat/completions`` servers, so the seam is a single
+``harness.contracts.ModelEndpoint`` config ``{base_url, api_key_env, model}``
+and a preset is just a filled-in config. The card owns the HTTP client (stdlib
+urllib, the ``governor.proposer.qwen38_transport`` stance); every model-driven
+seat (a VLM planner, a model proposer, ph-station's agent) consumes the mounted
+contract and nothing else imports an HTTP library.
+
+Distinct from ``plugins/model_qwen``: that card fills the ``reasoner.proposer``
+seam (evidence brief -> proposal, via LlmProposer's schema-gated parse); this
+card is the raw chat transport underneath such seats. The api key is named by
+ENV VAR, never by value, so the manifest params -- which enter the plan sha --
+carry configuration identity without leaking a secret into the hash chain.
+
+``available()`` probes GET /models (one short request); a consumer and
+``plugin_doctor`` degrade to a graceful SKIP when no endpoint is up -- the
+model_qwen precedent, verbatim.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+#: preset name -> the {base_url, api_key_env, model} triple. A preset is config,
+#: not code: our machines point at the local sglang serving (Qwen3.8 on the
+#: 4090; model=None resolves lazily from GET /models because launch_qwen38.sh
+#: publishes the model *path* as the id -- qwen38_transport's lesson), GPU-less
+#: users flip the manifest params to "deepseek" and export DEEPSEEK_API_KEY.
+PRESETS: dict[str, dict[str, str | None]] = {
+    "local_sglang": {"base_url": "http://127.0.0.1:30000/v1",
+                     "api_key_env": "QWEN38_API_KEY", "model": None},
+    "deepseek": {"base_url": "https://api.deepseek.com/v1",
+                 "api_key_env": "DEEPSEEK_API_KEY", "model": "deepseek-chat"},
+}
+
+
+class OpenAICompatEndpoint:
+    """``harness.contracts.ModelEndpoint`` over any /v1 chat-completions server."""
+
+    def __init__(self, *, preset: str | None = None, base_url: str | None = None,
+                 api_key_env: str | None = None, model: str | None = None,
+                 timeout: float = 60.0) -> None:
+        cfg: dict[str, str | None] = dict(PRESETS[preset]) if preset else {}
+        if base_url is not None:
+            cfg["base_url"] = base_url
+        if api_key_env is not None:
+            cfg["api_key_env"] = api_key_env
+        if model is not None:
+            cfg["model"] = model
+        if not cfg.get("base_url"):
+            raise ValueError("model endpoint needs a preset or an explicit base_url")
+        self._base = str(cfg["base_url"]).rstrip("/")
+        self._key_env = cfg.get("api_key_env")
+        self._model = cfg.get("model")
+        self._timeout = timeout
+
+    @property
+    def identity(self) -> str:
+        """The endpoint identity a consumer stamps into content hashes: which
+        model, at which base_url (the model_qwen precedent -- identity is
+        content, never an env var smuggled past the sha). ``model=None`` means
+        not yet lazily resolved; consumers hashing an identity should chat (or
+        set ``model``) first."""
+        return f"openai_compat(model={self._model},base={self._base})"
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        key = os.environ.get(self._key_env) if self._key_env else None
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
+
+    def _get_json(self, url: str, timeout: float) -> Any:
+        req = urllib.request.Request(url, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.load(resp)
+
+    def available(self, timeout: float = 3.0) -> bool:
+        """One GET /models decides whether the endpoint answers at all. An auth
+        rejection (hosted API, key env unset) is an OSError too -- honestly
+        unavailable, since chat() would fail the same way."""
+        try:
+            self._get_json(f"{self._base}/models", timeout)
+            return True
+        except OSError:
+            return False
+
+    def chat(self, messages: Sequence[Mapping], **opts: Any) -> str:
+        """POST /chat/completions, OpenAI shape; ``opts`` pass through to the
+        body untouched (temperature, max_tokens, seed, response_format, ...) --
+        decode discipline belongs to the consumer, this is a transport."""
+        if self._model is None:
+            self._model = self._get_json(
+                f"{self._base}/models", self._timeout)["data"][0]["id"]
+        body = json.dumps({"model": self._model, "messages": list(messages),
+                           **opts}).encode()
+        req = urllib.request.Request(f"{self._base}/chat/completions",
+                                     data=body, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            reply = json.load(resp)
+        return reply["choices"][0]["message"]["content"]
+
+
+def provider(**params: Any) -> OpenAICompatEndpoint:
+    return OpenAICompatEndpoint(**params)

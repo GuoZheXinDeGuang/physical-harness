@@ -91,6 +91,26 @@ class TaskPlanner(Protocol):
 
 
 @runtime_checkable
+class ModelEndpoint(Protocol):
+    """The one model seam: an OpenAI-compatible chat-completions endpoint.
+
+    A local sglang serving and a hosted API (DeepSeek/OpenAI/...) are the same
+    shape with a different base_url, so every model-driven seat (a VLM planner,
+    a model proposer, ph-station's agent) consumes this ONE contract and the
+    provider card owns the HTTP client -- nothing else imports one. ``messages``
+    is the OpenAI chat dict shape (``[{"role", "content"}]``; multimodal content
+    is the same shape with content-part lists); ``opts`` pass through to the
+    request body (temperature, max_tokens, seed, response_format, ...); the
+    return is the reply text. ``available()`` is a light HTTP probe so consumers
+    and plugin_doctor degrade to a graceful skip when no endpoint is up -- the
+    model_qwen precedent.
+    """
+
+    def chat(self, messages: Sequence[Mapping], **opts: Any) -> str: ...
+    def available(self) -> bool: ...
+
+
+@runtime_checkable
 class SkillGraph(Protocol):
     """Layer 2 seam: measured skills with preconditions, effects, failure modes, capability boundaries."""
 

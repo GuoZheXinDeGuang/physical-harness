@@ -45,14 +45,15 @@ def test_fold_over_real_runs():
     by_id = {n["id"]: n for n in g["nodes"]}
     edges = {(e["rel"], e["src"], e["dst"]) for e in g["edges"]}
 
-    # the three mounted skills + the 17 cards + the 9 capabilities are all present
+    # the three mounted skills + the 18 cards + the 10 capabilities are all present
     # (12th card: the M7 clear_workspace persistent-episode mission; 13th: the
     # inactive embodiment_robocasa second-simulator card, listed like every card;
     # 14th-17th: the M7 robocasa persistent-episode missions -- kitchen_thaw,
-    # recycle_cans, pack_lunch, steam_prep).
+    # recycle_cans, pack_lunch, steam_prep; 18th: the inactive model_endpoint
+    # chat-transport card, whose model.endpoint seam is the 10th capability).
     assert {STACK, ADC, EB} <= set(by_id)
-    assert sum(n["kind"] == "package" for n in g["nodes"]) == 17
-    assert sum(n["kind"] == "capability" for n in g["nodes"]) == 9
+    assert sum(n["kind"] == "package" for n in g["nodes"]) == 18
+    assert sum(n["kind"] == "capability" for n in g["nodes"]) == 10
 
     stack = by_id[STACK]
     assert stack["kind"] == "skill" and stack["task"] == "stack"
