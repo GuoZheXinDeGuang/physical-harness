@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 552 passed
+pass       : 556 passed
 skips      : 24 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -46,10 +46,16 @@ skips      : 24 skipped
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.3s
+wall time  : ~4.6s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +4 over the carry-probe snapshot (552→556) is the viewport upgrade
+(`test_runtime_frame.py` 9→13 items): the PH_FRAMES_SIZE parse fallback, the
+wait_ms long poll answering on a frame change, its timeout falling back to the
+usual short/error replies (wait_ms=0 staying immediate), and the wait_ms
+passthrough on both faces. All sim-free and unmarked, so 4 add to both lanes.
 
 The +2 skips over the frames-overlay snapshot (22→24) are the carry-probe
 driver tests (`test_robocasa_drivers.py` 9→11 items): +1 secure-grasp GREEN
@@ -71,7 +77,7 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `583 passed, 21 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `587 passed, 21 skipped` (the 18 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —

@@ -17,7 +17,8 @@ mjData and consumes no rng (mjv_updateScene/mjr_render are read-only; the one
 the existing state), so frames cannot perturb episode determinism.
 
 Frame cadence is a STEP interval, not a wall clock: time-based throttling would
-make the dump sequence depend on host load. ~4fps at the 20Hz control rate.
+make the dump sequence depend on host load. Every step (~30fps on a paced
+rollout); size/quality tunables sit below with the measured costs.
 """
 
 from __future__ import annotations
@@ -36,13 +37,30 @@ _PATH: str | None = None
 _BASE_REF = "plugins.embodiment_robosuite:provider"
 
 #: Dump every Nth env step. A step interval, not a time throttle, so the dump
-#: sequence is deterministic per episode. 2 keeps the on-disk frame near the
-#: sim's step rate (~10 dumps/s on a paced robosuite rollout) so the browser
-#: poller, not the writer, is the viewport's fps ceiling.
-EVERY = 2
+#: sequence is deterministic per episode. 1 = every step: measured on the 4090
+#: EGL stack a 640x480 offscreen render is ~0.2ms and the JPEG encode ~2ms
+#: against a ~30ms paced step, so per-step dumping costs the sim <10% and the
+#: reader (the board's long-poll), not the writer, is the viewport fps ceiling.
+EVERY = 1
 
-#: Frame size (~400px wide: crisp in a dashboard grid cell, still a <30KB JPEG).
-WIDTH, HEIGHT = 400, 300
+
+def _size(raw: str) -> tuple[int, int]:
+    """Parse a WxH spec (e.g. ``640x480``); anything malformed falls back to
+    the 640x480 default -- a bad env var degrades resolution, never the frames."""
+    try:
+        w, h = raw.lower().split("x")
+        return int(w), int(h)
+    except ValueError:
+        return 640, 480
+
+
+#: Frame size, overridable per boot via PH_FRAMES_SIZE=WxH (default 640x480:
+#: fills a dashboard grid cell; ~15-50KB as a q70 JPEG depending on the scene).
+WIDTH, HEIGHT = _size(os.environ.get("PH_FRAMES_SIZE", "640x480"))
+
+#: JPEG quality: 70 keeps the 640x480 frame's b64-over-RPC hop cheap (~2x the
+#: old 400x300 q80 bytes for 2.6x the pixels).
+QUALITY = 70
 
 #: Offscreen camera preference, first present in the model wins: the robocasa
 #: kitchen head cam, then the robosuite tabletop views. None (free camera) as
@@ -78,7 +96,7 @@ def dump(env) -> None:
         from PIL import Image
 
         tmp = _PATH + ".tmp"
-        Image.fromarray(px[::-1]).save(tmp, "JPEG", quality=80)
+        Image.fromarray(px[::-1]).save(tmp, "JPEG", quality=QUALITY)
         os.replace(tmp, _PATH)
     except Exception:
         pass

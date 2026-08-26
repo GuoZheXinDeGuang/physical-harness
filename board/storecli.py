@@ -37,7 +37,8 @@ def _read(path: Path) -> str:
 
 
 def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path,
-             after: int = 0, relation: str | None = None, after_ts: float = 0.0):
+             after: int = 0, relation: str | None = None, after_ts: float = 0.0,
+             wait_ms: int = 0):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -87,7 +88,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
-        return bs.read_runtime_frame(path, after_ts)
+        return bs.read_runtime_frame(path, after_ts, wait_ms)
     if fn == "runtime_events":
         path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
@@ -111,13 +112,14 @@ def main(argv=None) -> int:
     parser.add_argument("--progress", type=Path, default=None, help="progress.md for the rounds feed (default: <runs>/../progress.md)")
     parser.add_argument("--after", type=int, default=0, help="runtime_events cursor: return only events with seq > AFTER")
     parser.add_argument("--after-ts", type=float, default=0.0, help="runtime_frame cursor: the ts last displayed; unchanged file -> short {unchanged} reply")
+    parser.add_argument("--wait-ms", type=int, default=0, help="runtime_frame long poll: block up to WAIT_MS for the frame to change past --after-ts before answering (capped board-side)")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
     status = args.status.resolve() if args.status else runs.parent / "STATUS.md"
     progress = args.progress.resolve() if args.progress else runs.parent / "progress.md"
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
-                          args.after_ts)
+                          args.after_ts, args.wait_ms)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2

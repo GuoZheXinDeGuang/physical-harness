@@ -252,3 +252,91 @@ def test_robocasa_offscreen_frame(tmp_path):
     img = Image.open(tmp_path / "frame.jpg")
     assert img.size == (frame_dump.WIDTH, frame_dump.HEIGHT)
     assert float(np.asarray(img).std()) > 1.0, "a real scene, not a flat frame"
+
+
+def test_frames_size_env_parse():
+    """PH_FRAMES_SIZE parsing: WxH wins, anything malformed falls back to the
+    640x480 default (a bad env var degrades resolution, never the frames)."""
+    assert frame_dump._size("400x300") == (400, 300)
+    assert frame_dump._size("640X480") == (640, 480)
+    assert frame_dump._size("garbage") == (640, 480)
+    assert frame_dump._size("") == (640, 480)
+
+
+def test_wait_ms_long_polls_until_the_frame_changes(tmp_path):
+    """wait_ms blocks past an unchanged cursor and answers the moment the
+    writer replaces the frame -- the 取景窗 long poll that lets the browser's
+    to-hand fps track the dump rate instead of a fixed poll period."""
+    import threading
+    import os as _os
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    sd = _session(runs)
+    (sd / "frame.jpg").write_bytes(b"\xff\xd8old\xff\xd9")
+    ts = round((sd / "frame.jpg").stat().st_mtime, 3)
+
+    def _replace():
+        tmp = sd / "frame.jpg.tmp"
+        tmp.write_bytes(b"\xff\xd8new\xff\xd9")
+        _os.utime(tmp, (ts + 1.0, ts + 1.0))  # force a newer mtime
+        _os.replace(tmp, sd / "frame.jpg")
+
+    t = threading.Timer(0.05, _replace)
+    t.start()
+    try:
+        import time as _time
+        t0 = _time.monotonic()
+        got = bs.read_runtime_frame(sd, after_ts=ts, wait_ms=1000)
+        elapsed = _time.monotonic() - t0
+    finally:
+        t.join()
+    assert "jpeg_b64" in got and got["ts"] > ts, "the NEW frame, not a timeout"
+    assert elapsed < 0.9, "answered on change, not at the deadline"
+
+
+def test_wait_ms_times_out_to_the_usual_replies(tmp_path):
+    """An unchanged (or absent) frame under wait_ms answers AFTER the wait with
+    the same short/error replies the immediate path gives -- and wait_ms=0
+    stays the old immediate behavior."""
+    import time as _time
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    sd = _session(runs)
+    # absent file: waits, then the usual error
+    t0 = _time.monotonic()
+    assert bs.read_runtime_frame(sd, wait_ms=60) == {"error": "no frame"}
+    assert _time.monotonic() - t0 >= 0.05
+    # unchanged file: waits, then the usual short reply
+    (sd / "frame.jpg").write_bytes(b"\xff\xd8jpegish\xff\xd9")
+    ts = round((sd / "frame.jpg").stat().st_mtime, 3)
+    t0 = _time.monotonic()
+    short = bs.read_runtime_frame(sd, after_ts=ts, wait_ms=60)
+    assert _time.monotonic() - t0 >= 0.05
+    assert short["unchanged"] is True and short["ts"] == ts
+    # wait_ms=0: immediate short reply (no sleep path touched)
+    t0 = _time.monotonic()
+    assert bs.read_runtime_frame(sd, after_ts=ts)["unchanged"] is True
+    assert _time.monotonic() - t0 < 0.05
+
+
+def test_wait_ms_passes_through_both_faces(tmp_path, monkeypatch):
+    """CLI and MCP forward wait_ms verbatim into the ONE board.store function
+    (the byte-thin passthrough discipline; the wait itself is tested above)."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    _session(runs)
+    ms.configure(runs)
+    seen: list[tuple] = []
+
+    def _spy(path, after_ts=0.0, wait_ms=0):
+        seen.append((after_ts, wait_ms))
+        return {"unchanged": True, "ts": after_ts, "age_s": 0.0}
+
+    monkeypatch.setattr(bs, "read_runtime_frame", _spy)
+    ms.runtime_frame("session-main", 12.5, 250)
+    storecli.dispatch("runtime_frame", "session-main", runs,
+                      tmp_path / "S.md", tmp_path / "p.md",
+                      after_ts=12.5, wait_ms=250)
+    assert seen == [(12.5, 250), (12.5, 250)]

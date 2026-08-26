@@ -405,7 +405,16 @@ def read_runtime_status(session_dir: str | Path) -> dict | None:
         return None
 
 
-def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0) -> dict:
+#: Long-poll bounds for read_runtime_frame: the blocking wait is capped (a
+#: wedged caller frees itself inside the RPC timeout budget) and the file is
+#: re-stat'ed on a short tick (the writer dumps ~every 30ms, so 10ms keeps the
+#: added detection latency under half a frame).
+_FRAME_WAIT_CAP_MS = 2000
+_FRAME_WAIT_TICK_S = 0.01
+
+
+def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0,
+                       wait_ms: int = 0) -> dict:
     """The resident runtime's LIVE viewport frame for one session
     (``<session>/frame.jpg``, written by scripts/frame_dump.py: overwritten in
     place while a task runs). Same live-state family as runtime_status: a plain
@@ -418,25 +427,44 @@ def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0) -> dict:
 
     ``after_ts`` is the poller's cursor (the ``ts`` it last displayed): when the
     file has not changed since, the reply is the short
-    ``{"unchanged": true, "ts": ..., "age_s": ...}`` -- no read, no b64 -- so a
-    fast poll (~200ms) costs bytes only when there is a new frame. The cursor
-    compares against the same round(mtime, 3) the full reply carries.
+    ``{"unchanged": true, "ts": ..., "age_s": ...}`` -- no read, no b64. The
+    cursor compares against the same round(mtime, 3) the full reply carries.
+
+    ``wait_ms`` turns the read into a LONG POLL: instead of answering an
+    unchanged (or absent) file immediately, re-stat it every
+    ``_FRAME_WAIT_TICK_S`` until it changes or ``wait_ms`` (capped at
+    ``_FRAME_WAIT_CAP_MS``) elapses, THEN answer as usual. The browser viewport
+    re-issues the call the moment a reply lands, so its to-hand fps tracks the
+    writer's dump rate with zero idle polling; ``wait_ms=0`` keeps the old
+    immediate-answer behavior on every face.
     Absent or unreadable file (including mid-replace) -> ``{"error": "no frame"}``.
     """
     path = Path(session_dir) / "frame.jpg"
-    try:
-        ts = round(path.stat().st_mtime, 3)
+    deadline = (time.monotonic() + min(int(wait_ms), _FRAME_WAIT_CAP_MS) / 1000.0
+                if wait_ms > 0 else None)
+    while True:
+        try:
+            ts = round(path.stat().st_mtime, 3)
+        except OSError:
+            if deadline is not None and time.monotonic() < deadline:
+                time.sleep(_FRAME_WAIT_TICK_S)
+                continue
+            return {"error": "no frame"}
         if after_ts and ts <= after_ts:
+            if deadline is not None and time.monotonic() < deadline:
+                time.sleep(_FRAME_WAIT_TICK_S)
+                continue
             return {"unchanged": True, "ts": ts,
                     "age_s": round(max(time.time() - ts, 0.0), 3)}
-        raw = path.read_bytes()
-        # re-stat AFTER the read: an os.replace between stat and read would pair
-        # the new bytes with the old ts and wedge the poller's cursor one frame back.
-        ts = round(path.stat().st_mtime, 3)
-    except OSError:
-        return {"error": "no frame"}
-    return {"jpeg_b64": base64.b64encode(raw).decode("ascii"),
-            "ts": ts, "age_s": round(max(time.time() - ts, 0.0), 3)}
+        try:
+            raw = path.read_bytes()
+            # re-stat AFTER the read: an os.replace between stat and read would
+            # pair the new bytes with the old ts and wedge the cursor one frame back.
+            ts = round(path.stat().st_mtime, 3)
+        except OSError:
+            return {"error": "no frame"}
+        return {"jpeg_b64": base64.b64encode(raw).decode("ascii"),
+                "ts": ts, "age_s": round(max(time.time() - ts, 0.0), 3)}
 
 
 def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
