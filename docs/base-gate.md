@@ -35,26 +35,35 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 605 passed
-skips      : 30 skipped
+pass       : 633 passed
+skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
-             [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
+             [1] test_plugin_doctor.py:307    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
              [12] test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
+             [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.8s
+wall time  : ~5.3s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +1 skip over the campaign-progress-scan snapshot (29→30, pass unchanged at
-605) is the LIBERO scaffold (docs/sim-adaptation.md §5): `tests/test_libero_
+The +28 pass / +3 skip over the campaign-progress-scan snapshot (605→633,
+29→32) is the merge of the five vlm-graph build tracks, each verified
+additively and re-measured isolated after the merge: +3 recoveries-fold
+(vlm-recov), +6 model_endpoint seam + skill contracts (vlm-seam), +9
+untrusted-planner hardening (vlm-valid), +10 policy_vla_remote transport
+(vlm-policy, its 2 protocol-layer tests skip without the `[policy_remote]`
+extra), +1 skip LIBERO marker self-proof (vlm-libero). Below, the older
+increments this supersedes.
+
+The +1 skip of the LIBERO scaffold (docs/sim-adaptation.md §5): `tests/test_libero_
 marker.py`'s marker self-proof, libero venv only (`sims/libero-venv`, py3.10 --
 LIBERO's 2022-era pins cannot share either existing interpreter), plus the
 inactive `plugins/embodiment_libero/` card (enabled=false, so the base fold and
