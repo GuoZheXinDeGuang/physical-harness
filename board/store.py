@@ -405,26 +405,38 @@ def read_runtime_status(session_dir: str | Path) -> dict | None:
         return None
 
 
-def read_runtime_frame(session_dir: str | Path) -> dict:
+def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0) -> dict:
     """The resident runtime's LIVE viewport frame for one session
     (``<session>/frame.jpg``, written by scripts/frame_dump.py: overwritten in
-    place, ~4fps while a task runs). Same live-state family as runtime_status:
-    a plain read, never a chain row, no verify.
+    place while a task runs). Same live-state family as runtime_status: a plain
+    read, never a chain row, no verify.
 
     Returns ``{"jpeg_b64": ..., "ts": <mtime>, "age_s": <now - mtime>}`` -- the
     b64 is encoded HERE so every face ships the same dict and the TS side only
     decodes (zero business logic downstream). ``age_s`` lets a poller show a
     stale-frame placeholder without trusting its own clock against the file's.
+
+    ``after_ts`` is the poller's cursor (the ``ts`` it last displayed): when the
+    file has not changed since, the reply is the short
+    ``{"unchanged": true, "ts": ..., "age_s": ...}`` -- no read, no b64 -- so a
+    fast poll (~200ms) costs bytes only when there is a new frame. The cursor
+    compares against the same round(mtime, 3) the full reply carries.
     Absent or unreadable file (including mid-replace) -> ``{"error": "no frame"}``.
     """
     path = Path(session_dir) / "frame.jpg"
     try:
+        ts = round(path.stat().st_mtime, 3)
+        if after_ts and ts <= after_ts:
+            return {"unchanged": True, "ts": ts,
+                    "age_s": round(max(time.time() - ts, 0.0), 3)}
         raw = path.read_bytes()
-        ts = path.stat().st_mtime
+        # re-stat AFTER the read: an os.replace between stat and read would pair
+        # the new bytes with the old ts and wedge the poller's cursor one frame back.
+        ts = round(path.stat().st_mtime, 3)
     except OSError:
         return {"error": "no frame"}
     return {"jpeg_b64": base64.b64encode(raw).decode("ascii"),
-            "ts": round(ts, 3), "age_s": round(max(time.time() - ts, 0.0), 3)}
+            "ts": ts, "age_s": round(max(time.time() - ts, 0.0), 3)}
 
 
 def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:

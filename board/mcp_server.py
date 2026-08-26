@@ -135,13 +135,16 @@ def runtime_status(name: str = _DEFAULT_SESSION) -> dict | None:
 
 
 @mcp.tool()
-def runtime_frame(name: str = _DEFAULT_SESSION) -> dict:
+def runtime_frame(name: str = _DEFAULT_SESSION, after_ts: float = 0.0) -> dict:
     """One runtime session's LIVE viewport frame (runs/<session>/frame.jpg,
     dumped offscreen by the frames overlay while a task runs): {jpeg_b64, ts,
-    age_s}, or {"error": "no frame"} when none has been dumped. Live state,
+    age_s}, or {"error": "no frame"} when none has been dumped. ``after_ts`` is
+    the poller's cursor (the ts last displayed): an unchanged file returns the
+    short {"unchanged": true, "ts", "age_s"} with no image bytes. Live state,
     never chain evidence. ``name`` defaults to session-main."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
-    return bs.read_runtime_frame(path) if path else {"error": "unknown session"}
+    return (bs.read_runtime_frame(path, after_ts) if path
+            else {"error": "unknown session"})
 
 
 @mcp.tool()

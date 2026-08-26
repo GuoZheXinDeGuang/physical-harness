@@ -35,12 +35,14 @@ _PATH: str | None = None
 #: that never mount this overlay.
 _BASE_REF = "plugins.embodiment_robosuite:provider"
 
-#: Dump every Nth env step: ~4fps at the 20Hz control rate. A step interval, not
-#: a time throttle, so the dump sequence is deterministic per episode.
-EVERY = 5
+#: Dump every Nth env step. A step interval, not a time throttle, so the dump
+#: sequence is deterministic per episode. 2 keeps the on-disk frame near the
+#: sim's step rate (~10 dumps/s on a paced robosuite rollout) so the browser
+#: poller, not the writer, is the viewport's fps ceiling.
+EVERY = 2
 
-#: Frame size (<=320px wide for a cheap poll payload).
-WIDTH, HEIGHT = 320, 240
+#: Frame size (~400px wide: crisp in a dashboard grid cell, still a <30KB JPEG).
+WIDTH, HEIGHT = 400, 300
 
 #: Offscreen camera preference, first present in the model wins: the robocasa
 #: kitchen head cam, then the robosuite tabletop views. None (free camera) as
@@ -76,7 +78,7 @@ def dump(env) -> None:
         from PIL import Image
 
         tmp = _PATH + ".tmp"
-        Image.fromarray(px[::-1]).save(tmp, "JPEG", quality=75)
+        Image.fromarray(px[::-1]).save(tmp, "JPEG", quality=80)
         os.replace(tmp, _PATH)
     except Exception:
         pass

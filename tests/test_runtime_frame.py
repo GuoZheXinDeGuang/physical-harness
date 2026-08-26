@@ -187,6 +187,39 @@ def test_faces_are_byte_identical(tmp_path, monkeypatch):
                           tmp_path / "S.md", tmp_path / "p.md")
 
 
+def test_after_ts_short_circuits_on_every_face(tmp_path, monkeypatch):
+    """The poller's cursor: an unchanged file returns the short {unchanged, ts,
+    age_s} reply (no image bytes) on all three faces; a stale cursor still gets
+    the full frame."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    sd = _session(runs)
+    (sd / "frame.jpg").write_bytes(b"\xff\xd8jpegish\xff\xd9")
+    ts = round((sd / "frame.jpg").stat().st_mtime, 3)
+    monkeypatch.setattr(bs, "time", types.SimpleNamespace(time=lambda: ts + 2.0))
+    ms.configure(runs)
+
+    full = bs.read_runtime_frame(sd)
+    assert full["ts"] == ts and "jpeg_b64" in full
+
+    short = bs.read_runtime_frame(sd, after_ts=ts)
+    assert short == {"unchanged": True, "ts": ts, "age_s": 2.0}
+    assert "jpeg_b64" not in short
+
+    # stale cursor (an older frame's ts) -> the full frame again
+    assert "jpeg_b64" in bs.read_runtime_frame(sd, after_ts=ts - 5.0)
+    # cursor 0 (first poll) -> full
+    assert "jpeg_b64" in bs.read_runtime_frame(sd, after_ts=0.0)
+
+    def _same(a, b):
+        return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+    assert _same(ms.runtime_frame("session-main", ts), short)
+    assert _same(storecli.dispatch("runtime_frame", "session-main", runs,
+                                   tmp_path / "S.md", tmp_path / "p.md",
+                                   after_ts=ts), short)
+
+
 def test_absent_frame_reads_as_error_on_every_face(tmp_path):
     runs = tmp_path / "runs"
     runs.mkdir()

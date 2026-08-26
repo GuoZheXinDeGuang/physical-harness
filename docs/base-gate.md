@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 551 passed
+pass       : 552 passed
 skips      : 24 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -58,12 +58,12 @@ driver tests (`test_robocasa_drivers.py` 9→11 items): +1 secure-grasp GREEN
 latches (the fingers never enclosed the meat — local-archive/robocasa-adapt/
 carry-probe.md). Base-lane PASS count untouched (all robocasa-marked).
 
-The +7 over the phase-5 snapshot (544→551) is the frames overlay
+The +8 over the phase-5 snapshot (544→552) is the frames overlay
 (`test_runtime_frame.py`: the never-raise dump contract, the step-interval
-frame write, the frames mount overlay as pure config, and runtime_frame's
-three-face equivalence). All sim-free and unmarked but one (the robocasa live
-frame proof, marked), so 7 add to both lanes and 1 skips outside the robocasa
-venv.
+frame write, the frames mount overlay as pure config, runtime_frame's
+three-face equivalence, and the after_ts unchanged short-circuit the 取景窗
+fast poll rides). All sim-free and unmarked but one (the robocasa live frame
+proof, marked), so 8 add to both lanes and 1 skips outside the robocasa venv.
 
 The +15 over the phase-4 snapshot (529→544) is phase 5's routing tests:
 `test_session_routing.py` (9: the session param across board fn / storecli / mcp
@@ -71,7 +71,7 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `582 passed, 21 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `583 passed, 21 skipped` (the 18 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —

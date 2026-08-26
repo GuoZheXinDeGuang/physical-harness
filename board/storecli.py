@@ -37,7 +37,7 @@ def _read(path: Path) -> str:
 
 
 def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path,
-             after: int = 0, relation: str | None = None):
+             after: int = 0, relation: str | None = None, after_ts: float = 0.0):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -87,7 +87,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
-        return bs.read_runtime_frame(path)
+        return bs.read_runtime_frame(path, after_ts)
     if fn == "runtime_events":
         path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
@@ -110,12 +110,14 @@ def main(argv=None) -> int:
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
     parser.add_argument("--progress", type=Path, default=None, help="progress.md for the rounds feed (default: <runs>/../progress.md)")
     parser.add_argument("--after", type=int, default=0, help="runtime_events cursor: return only events with seq > AFTER")
+    parser.add_argument("--after-ts", type=float, default=0.0, help="runtime_frame cursor: the ts last displayed; unchanged file -> short {unchanged} reply")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
     status = args.status.resolve() if args.status else runs.parent / "STATUS.md"
     progress = args.progress.resolve() if args.progress else runs.parent / "progress.md"
     try:
-        result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation)
+        result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
+                          args.after_ts)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2
