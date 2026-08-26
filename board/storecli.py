@@ -55,6 +55,8 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         return bv.node(bv.build_graph(runs), name or "")
     if fn == "vault_neighbors":
         return bv.neighbors(bv.build_graph(runs), name or "", relation)
+    if fn == "campaign_progress":
+        return bs.campaign_progress(runs)
     if fn == "sessions":
         return bs.discover_sessions(runs)
     if fn == "ledger":
@@ -132,7 +134,7 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|list_stores|store|heldout|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")

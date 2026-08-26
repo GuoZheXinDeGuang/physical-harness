@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 557 passed
+pass       : 563 passed
 skips      : 24 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -46,10 +46,17 @@ skips      : 24 skipped
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.6s
+wall time  : ~6.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +6 over the viewport snapshot (557→563) is the live campaign-progress
+heartbeat (`tests/test_campaign_progress.py`, 6 items): the atomic
+progress.json writer + its never-raise contract, the tracker's python-side
+rolling-stat fold, the board scan's running/stale/done split (mid-write
+skipped) and empty-runs case, and campaign_progress's three-face byte
+equivalence. All sim-free and unmarked, so 6 add to both lanes.
 
 The +5 over the carry-probe snapshot (552→557) is the viewport upgrade
 (`test_runtime_frame.py` 9→14 items): the PH_FRAMES_SIZE parse fallback, the
@@ -79,7 +86,7 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `588 passed, 21 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `594 passed, 21 skipped` (the 18 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —

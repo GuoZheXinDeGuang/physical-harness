@@ -223,11 +223,23 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     seeds = _seeds(args.seeds)
+    # live progress heartbeat (runs/<store>/progress.json) beside --out: the
+    # console's 演进 panel reads it while the battery runs. Best-effort by
+    # contract -- tracker/write_progress never raise into the battery.
+    tick = None
+    if args.out is not None:
+        from scripts.campaign_progress import tracker
+        tick = tracker(args.out.parent, len(seeds), label=f"{TASK} {args.seeds}")
     if args.workers <= 1 or len(seeds) == 1:
-        rows = [_probe_one(s) for s in seeds]
+        rows = []
+        for s in seeds:
+            rows.append(_probe_one(s))
+            if tick is not None:
+                tick(rows[-1])
     else:
         from harness.executor import LocalPoolExecutor
-        rows = LocalPoolExecutor().map(_probe_one, seeds, workers=args.workers)
+        rows = LocalPoolExecutor().map(_probe_one, seeds, workers=args.workers,
+                                       on_result=tick)
     rows.sort(key=lambda r: r["seed"])
     summary = summarize(rows)
     if args.out is not None:

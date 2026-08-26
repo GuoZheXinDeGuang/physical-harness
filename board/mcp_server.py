@@ -102,6 +102,14 @@ def heldout(name: str) -> dict:
 
 
 @mcp.tool()
+def campaign_progress() -> list[dict]:
+    """Every live campaign heartbeat under runs/ (runs/*/progress.json, written
+    per finished episode by script-path batteries): done/total/label/rolling
+    stats + a running flag. Live state, never sealed evidence."""
+    return bs.campaign_progress(_Cfg.runs)
+
+
+@mcp.tool()
 def sessions() -> list[dict]:
     """Every runtime session under runs/, newest first (with chain badges)."""
     return bs.discover_sessions(_Cfg.runs)

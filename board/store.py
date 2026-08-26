@@ -262,6 +262,45 @@ def list_stores(runs_dir: str | Path) -> list[dict]:
     return sorted(stores, key=lambda s: s["mtime"], reverse=True)
 
 
+#: A campaign heartbeat older than this reads as stale/finished, not running.
+#: Episodes finish every few seconds under a worker pool; two minutes of silence
+#: means the battery exited (or died) without reaching total.
+_PROGRESS_RUNNING_S = 120
+
+
+def campaign_progress(runs_dir: str | Path) -> list[dict]:
+    """Every live campaign heartbeat under runs/ (``runs/*/progress.json``,
+    written per finished episode by scripts/campaign_progress.py), newest first.
+
+    Live state, not sealed evidence (same family as runtime_status): no chain
+    verify, a mid-write or malformed file is skipped and the next poll recovers.
+    Each row is the heartbeat's payload (done/total/started_ts/updated_ts/label
+    + the rolling stats the writer folded) plus ``name`` (the store dir) and
+    ``running``: updated within the freshness window AND not yet at total. The
+    rolling statistics arrive pre-folded from the python writer -- the TS panel
+    only displays them (ETA is a pure display conversion of started_ts/done)."""
+    runs_dir = Path(runs_dir)
+    now = time.time()
+    out = []
+    for p in sorted(runs_dir.iterdir()):
+        if not p.is_dir():
+            continue
+        try:
+            row = json.loads((p / "progress.json").read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not (isinstance(row, dict)
+                and isinstance(row.get("done"), int)
+                and isinstance(row.get("total"), int)):
+            continue
+        updated = row.get("updated_ts")
+        fresh = isinstance(updated, (int, float)) and now - updated < _PROGRESS_RUNNING_S
+        out.append({**row, "name": p.name,
+                    "running": fresh and row["done"] < row["total"]})
+    out.sort(key=lambda r: r.get("updated_ts") or 0, reverse=True)
+    return out
+
+
 def heldout_blocks(runs_dir: str | Path, store_name: str) -> dict:
     """The multi-block held-out comparison for a campaign: its own scored block
     plus every sibling ``<name>-rescore-*`` store's rescored block. Each block
