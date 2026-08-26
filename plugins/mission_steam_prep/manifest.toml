@@ -1,0 +1,23 @@
+# The steam_prep PERSISTENT-EPISODE mission card (M7 on RoboCasa). Dropping this
+# dir makes {"kind":"task","task":"steam_prep"} an accepted brief. NO [mounts.*]
+# (base_profile sha untouched); pure data + a deterministic planner over the
+# base's persistent-episode runner.
+#
+# GRAPH-FIRST card: the 21-node five-phase graph + predicates are complete; the
+# faucet segments run an honest stub (no sink-handle driver exists yet -- the
+# hinge-arc actuation gap), so the mission's E2E frontier is the water-on verify,
+# xfail-marked "awaiting sink driver" in tests/test_robocasa_missions.py. The
+# graph enters the vault/UI now; the capability lands later, the card unchanged.
+needs_sim = true
+
+[task_bindings.steam_prep]
+env = "plugins.embodiment_robocasa:provider"
+percept = "plugins.embodiment_robocasa.percept:provider"
+policy = "plugins.embodiment_robocasa.steam_driver:provider"
+planner = "plugins.mission_steam_prep.planner:provider"
+catalogue = "plugins.mission_steam_prep.planner:CATALOGUE"
+oracles = "plugins.mission_steam_prep.planner:ORACLES"
+predicates = "plugins.mission_steam_prep.planner:PREDICATES"
+episodic = true
+episode = "plugins.mission_steam_prep.planner:EPISODE"
+segment_specs = "plugins.mission_steam_prep.planner:SEGMENT_SPECS"

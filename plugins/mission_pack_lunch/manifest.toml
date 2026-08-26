@@ -1,0 +1,22 @@
+# The pack_lunch PERSISTENT-EPISODE mission card (M7 on RoboCasa). Dropping this
+# dir makes {"kind":"task","task":"pack_lunch"} an accepted brief. NO [mounts.*]
+# (base_profile sha untouched); pure data + a deterministic planner over the
+# base's persistent-episode runner -- the kitchen_thaw pattern, per-item loop
+# with a temperature->container decide node.
+#
+# needs_sim: the ONE episode is a real robocasa PackFoodByTemp world (2 hot + 2
+# cold items, three far-apart fixtures) the sixteen segment nodes drive. No
+# sibling import (all refs via load_provider -- tests/test_boundaries.py).
+needs_sim = true
+
+[task_bindings.pack_lunch]
+env = "plugins.embodiment_robocasa:provider"
+percept = "plugins.embodiment_robocasa.percept:provider"
+policy = "plugins.embodiment_robocasa.lunch_driver:provider"
+planner = "plugins.mission_pack_lunch.planner:provider"
+catalogue = "plugins.mission_pack_lunch.planner:CATALOGUE"
+oracles = "plugins.mission_pack_lunch.planner:ORACLES"
+predicates = "plugins.mission_pack_lunch.planner:PREDICATES"
+episodic = true
+episode = "plugins.mission_pack_lunch.planner:EPISODE"
+segment_specs = "plugins.mission_pack_lunch.planner:SEGMENT_SPECS"

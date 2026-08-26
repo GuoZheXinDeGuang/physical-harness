@@ -24,6 +24,13 @@ from harness.spec import EpisodeSpec
 #: task is registered for phase 2 (docs/sim-adaptation.md §3).
 TASKS: dict[str, dict] = {
     "kitchen_thaw": {"env": "MicrowaveThawingFridge", "object_key": "meat_pos"},
+    # Long-horizon composite missions (install report §3.2). object_key names the
+    # FIRST target's pose key -- the single-object seams (percept.object_estimate,
+    # lifted) read it; the mission graphs verify every object via their own
+    # predicate layers, not this key.
+    "recycle_cans": {"env": "RecycleSodaCans", "object_key": "can1_pos"},
+    "pack_lunch": {"env": "PackFoodByTemp", "object_key": "hot0_pos"},
+    "steam_prep": {"env": "MultistepSteaming", "object_key": "vegetable1_pos"},
 }
 
 #: robocasa's mobile-manipulator embodiment (Panda arm + Omron base). The kitchen

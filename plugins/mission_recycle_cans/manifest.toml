@@ -1,0 +1,24 @@
+# The recycle_cans PERSISTENT-EPISODE mission card (M7 on RoboCasa). Dropping this
+# dir makes {"kind":"task","task":"recycle_cans"} an accepted brief. It declares NO
+# [mounts.*], so base_profile's sha is untouched; it composes the base's generic
+# persistent-episode runner + node-kind machinery and adds only this mission's
+# PURE DATA vocabulary + planner -- the kitchen_thaw pattern, per-can loop shape.
+#
+# needs_sim: the ONE episode is a real robocasa RecycleSodaCans world (four cans,
+# whole-kitchen navigation) the sixteen segment nodes drive and the perceive/
+# verify nodes read live. No sibling import (env/percept/predicates/driver all by
+# ref via load_provider -- tests/test_boundaries.py); the robocasa card owns the
+# third-party surface.
+needs_sim = true
+
+[task_bindings.recycle_cans]
+env = "plugins.embodiment_robocasa:provider"
+percept = "plugins.embodiment_robocasa.percept:provider"
+policy = "plugins.embodiment_robocasa.recycle_driver:provider"
+planner = "plugins.mission_recycle_cans.planner:provider"
+catalogue = "plugins.mission_recycle_cans.planner:CATALOGUE"
+oracles = "plugins.mission_recycle_cans.planner:ORACLES"
+predicates = "plugins.mission_recycle_cans.planner:PREDICATES"
+episodic = true
+episode = "plugins.mission_recycle_cans.planner:EPISODE"
+segment_specs = "plugins.mission_recycle_cans.planner:SEGMENT_SPECS"

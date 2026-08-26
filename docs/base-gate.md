@@ -35,8 +35,8 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 563 passed
-skips      : 24 skipped
+pass       : 580 passed
+skips      : 28 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
@@ -44,12 +44,23 @@ skips      : 24 skipped
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
              [11] test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
+             [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~6.0s
+wall time  : ~4.6s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +17/+4 over the campaign-progress snapshot (563→580 pass, 24→28 skips) is
+the three robocasa composite mission cards (`mission_recycle_cans` 32-node,
+`mission_pack_lunch` 31-node, `mission_steam_prep` 21-node graph-first):
++17 base-lane graph-shape/binding tests (`test_mission_recycle_cans.py` 5,
+`test_mission_pack_lunch.py` 6, `test_mission_steam_prep.py` 6 -- pure-data
+planner + discover() fold checks, sim-free) and +4 skips from the new
+`test_robocasa_missions.py` (3 live env/predicate smokes + 1 strict xfail
+"awaiting sink driver", robocasa venv only). In the robocasa venv,
+`-m robocasa` on this tree is 16 passed + 6 xfailed.
 
 The +6 over the viewport snapshot (557→563) is the live campaign-progress
 heartbeat (`tests/test_campaign_progress.py`, 6 items): the atomic

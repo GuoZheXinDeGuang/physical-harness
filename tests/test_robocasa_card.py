@@ -27,7 +27,8 @@ def _obs_sig(obs) -> np.ndarray:
 @pytest.mark.robocasa
 def test_env_make_reset_close():
     emb = provider()
-    assert emb.tasks() == ("kitchen_thaw",)
+    assert emb.tasks() == ("kitchen_thaw", "pack_lunch", "recycle_cans",
+                            "steam_prep")
     spec = EpisodeSpec(seed=7, task="kitchen_thaw")
     assert emb.object_key(spec) == "meat_pos"
 

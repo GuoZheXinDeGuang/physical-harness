@@ -45,12 +45,13 @@ def test_fold_over_real_runs():
     by_id = {n["id"]: n for n in g["nodes"]}
     edges = {(e["rel"], e["src"], e["dst"]) for e in g["edges"]}
 
-    # the three mounted skills + the 14 cards + the 9 capabilities are all present
+    # the three mounted skills + the 17 cards + the 9 capabilities are all present
     # (12th card: the M7 clear_workspace persistent-episode mission; 13th: the
     # inactive embodiment_robocasa second-simulator card, listed like every card;
-    # 14th: the M7 mission_kitchen_thaw persistent-episode mission on robocasa).
+    # 14th-17th: the M7 robocasa persistent-episode missions -- kitchen_thaw,
+    # recycle_cans, pack_lunch, steam_prep).
     assert {STACK, ADC, EB} <= set(by_id)
-    assert sum(n["kind"] == "package" for n in g["nodes"]) == 14
+    assert sum(n["kind"] == "package" for n in g["nodes"]) == 17
     assert sum(n["kind"] == "capability" for n in g["nodes"]) == 9
 
     stack = by_id[STACK]
