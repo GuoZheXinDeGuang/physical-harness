@@ -35,6 +35,7 @@ Dependency groups from [`pyproject.toml`](pyproject.toml):
 | base (always) | `numpy>=1.26` | kernel |
 | `[dev]` | `pytest>=8`, `pytest-timeout>=2`, `ruff==0.16.4`, `mcp==2.0.0` | tests + lint; `mcp` because the both-faces tests import `board/mcp_server` |
 | `[cockpit]` | `mcp==2.0.0` | console MCP seam (`board/mcp_server.py`) only. Pinned: dsh is an RC, so the wire stays fixed |
+| `[policy_remote]` | `websockets>=12`, `msgpack>=1.0` | the `plugins/policy_vla_remote` websocket transport (StarVLA/openpi policy servers); its protocol tests skip when absent |
 
 Run the base lane isolated (a fresh process where `robosuite` is genuinely
 unimportable) — never as a subset of a full green run. Snapshot format and the
