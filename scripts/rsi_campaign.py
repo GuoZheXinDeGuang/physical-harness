@@ -101,7 +101,19 @@ def allocate(ledger: list[dict], *, floor: int = 0, cal=None, dev=None,
             "dev": (lo + CAL_N, lo + CAL_N + DEV_N - 1),
             "heldout": (lo + CAL_N + DEV_N, hi - 1)}
     pinned = {"cal": cal, "dev": dev, "heldout": heldout}
-    return {k: (tuple(v) if v is not None else auto[k]) for k, v in pinned.items()}
+    blocks = {k: (tuple(v) if v is not None else auto[k]) for k, v in pinned.items()}
+    # Pinned blocks bypass the split above, so re-assert disjointness HERE.
+    # ``Preregistration`` catches a dev/held-out overlap too, but only at step d
+    # -- after the calibration set has already been paid for -- and it never sees
+    # the calibration block at all.
+    for a, b in (("cal", "dev"), ("cal", "heldout"), ("dev", "heldout")):
+        (alo, ahi), (blo, bhi) = blocks[a], blocks[b]
+        if alo <= bhi and blo <= ahi:
+            raise ValueError(
+                f"{a} block [{alo},{ahi}] overlaps {b} block [{blo},{bhi}]; "
+                "the three roles must be disjoint (a block that both calibrates "
+                "and gates is not evidence)")
+    return blocks
 
 
 def seeds(block: tuple[int, int]) -> list[int]:

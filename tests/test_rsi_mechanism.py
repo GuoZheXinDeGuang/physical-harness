@@ -59,6 +59,17 @@ def test_allocate_honours_a_pinned_calibration_block():
     assert pinned["dev"] == auto["dev"] and pinned["heldout"] == auto["heldout"]
 
 
+def test_allocate_refuses_pinned_blocks_that_overlap():
+    """Pinning bypasses the contiguous split, so disjointness is re-asserted at
+    claim time. Preregistration catches a dev/held-out overlap too, but only
+    after the calibration set has already been paid for -- and it never sees the
+    calibration block."""
+    with pytest.raises(ValueError, match="overlaps"):
+        allocate(_ledger((0, 999, "burned")), dev=(2000, 2299), heldout=(2200, 2399))
+    with pytest.raises(ValueError, match="overlaps"):
+        allocate(_ledger((0, 999, "burned")), cal=(2000, 2149), dev=(2100, 2399))
+
+
 def test_allocate_refuses_past_the_seed_overflow_ceiling():
     """spec.seed*7919+11 overflows int32 above SEED_CEILING; a block handed back
     from up there would crash on its first episode, so refuse at claim time."""

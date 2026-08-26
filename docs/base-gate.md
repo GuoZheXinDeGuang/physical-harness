@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 601 passed
+pass       : 602 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -52,10 +52,10 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +21 over the mission-E2E snapshot (580→601 pass, skips unchanged at 29) is
-the generic RSI mechanism (`docs/rsi-mechanism.md`): `test_rsi_mechanism.py`'s 19
+The +22 over the mission-E2E snapshot (580→602 pass, skips unchanged at 29) is
+the generic RSI mechanism (`docs/rsi-mechanism.md`): `test_rsi_mechanism.py`'s 20
 pure-dict tests over the chain's three judgement points -- seed-block allocation
-(4), first-death attribution onto the governable node (4), the six-criterion
+(5), first-death attribution onto the governable node (4), the six-criterion
 go/no-go verdict incl. the honest-NO-GO paths (9), plus the repertoire's
 per-embodiment registration (2) -- and 2 in `test_campaign_progress.py` for the
 heartbeat fields the console's stage badge reads. Sim-free, no seeds burned.
