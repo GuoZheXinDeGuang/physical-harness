@@ -1,8 +1,22 @@
-# physical-harness
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/zlab-logo.webp">
+    <img src="images/zlab-logo-dark.webp" alt="Z Robotics Lab" height="40" align="top">
+  </picture>
+  physical-harness
+</h1>
 
-![Python](https://img.shields.io/badge/python-3.11--3.12-blue) ![NumPy](https://img.shields.io/badge/numpy-%3E%3D1.26-blue) ![License](https://img.shields.io/badge/license-Apache--2.0-green) ![MuJoCo](https://img.shields.io/badge/MuJoCo-3.3.7-orange) ![robosuite](https://img.shields.io/badge/robosuite-1.5.2-orange) ![RoboCasa](https://img.shields.io/badge/RoboCasa-1.0.1-orange) ![pytest](https://img.shields.io/badge/tests-pytest-yellow)
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11--3.12-blue" alt="Python">
+  <img src="https://img.shields.io/badge/numpy-%3E%3D1.26-blue" alt="NumPy">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License">
+  <img src="https://img.shields.io/badge/MuJoCo-3.3.7-orange" alt="MuJoCo">
+  <img src="https://img.shields.io/badge/robosuite-1.5.2-orange" alt="robosuite">
+  <img src="https://img.shields.io/badge/RoboCasa-1.0.1-orange" alt="RoboCasa">
+  <img src="https://img.shields.io/badge/tests-pytest-yellow" alt="pytest">
+</p>
 
-English | [简体中文](#简体中文)
+<p align="center">English | <a href="#简体中文">简体中文</a></p>
 
 **An agentic harness for robot skills: frozen-policy execution, sealed evidence, and pre-registered skill evolution.**
 
