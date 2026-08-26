@@ -56,6 +56,31 @@ def nondet_percept_provider():  # referenced by ref from the red fixture manifes
     return _NonDetPercept()
 
 
+class _NonDetPlanner:
+    """A model-backed planner: right shape, fresh node id every call. With the
+    explicit ``deterministic = False`` marker the doctor validates shape and
+    never diffs; without it the determinism-required policy reddens it."""
+
+    deterministic = False
+
+    def plan(self, brief):
+        return {"goal": "g", "nodes": [{"id": f"n-{random.random()}",
+                                        "skill": "s", "args": {}, "after": []}],
+                "verify": []}
+
+
+class _NonDetPlannerUnmarked(_NonDetPlanner):
+    deterministic = True  # claims determinism it does not have -> diffed -> red
+
+
+def nondet_planner_provider():
+    return _NonDetPlanner()
+
+
+def nondet_planner_unmarked_provider():
+    return _NonDetPlannerUnmarked()
+
+
 def _card(tmp_path: Path, name: str, body: str) -> Path:
     d = tmp_path / name
     d.mkdir()
@@ -93,6 +118,24 @@ def test_doctor_reddens_a_non_deterministic_percept(tmp_path):
     a = [r for r in rep.results if r.tier == "A" and r.name == "percept.model"]
     assert a and a[0].status == "PASS"
     b = [r for r in rep.results if r.tier == "B" and r.name == "percept.model"]
+    assert b and b[0].status == "FAIL" and "non-deterministic" in b[0].detail
+
+
+def test_doctor_exempts_a_planner_that_declares_nondeterminism(tmp_path):
+    body = ('[mounts."task.planner"]\n'
+            'ref = "tests.test_plugin_doctor:nondet_planner_provider"\n')
+    rep = check(_card(tmp_path, "vlm_planner", body))
+    assert rep.green, _fails(rep)
+    b = [r for r in rep.results if r.tier == "B" and r.name == "task.planner"]
+    assert b and b[0].status == "PASS" and "not diffed" in b[0].detail
+
+
+def test_doctor_reddens_a_nondeterministic_planner_without_the_marker(tmp_path):
+    body = ('[mounts."task.planner"]\n'
+            'ref = "tests.test_plugin_doctor:nondet_planner_unmarked_provider"\n')
+    rep = check(_card(tmp_path, "flaky_planner", body))
+    assert not rep.green
+    b = [r for r in rep.results if r.tier == "B" and r.name == "task.planner"]
     assert b and b[0].status == "FAIL" and "non-deterministic" in b[0].detail
 
 

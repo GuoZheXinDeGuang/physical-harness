@@ -76,6 +76,29 @@ def test_verify_fault_drops_the_object_but_keeps_the_rest():
     assert "clear-milk" in ids and "clear-can" in ids  # the others survive
 
 
+def test_replan_keeps_a_done_clear_node_for_a_dropped_object():
+    # The real loop's fault carries nodes_done; a dropped object whose segment
+    # already succeeded keeps that node verbatim (validate_plan replan-stability
+    # refuses a graph that loses finished work), while its failing verify goes.
+    p = ClearWorkspacePlanner()
+    brief = {"task": "clear_workspace"}
+    p.plan(brief)
+    nxt = p.plan({**brief, "fault": {
+        "kind": "node_failure", "node": "verify-cereal",
+        "nodes_done": ["survey", "plan-order", "clear-milk", "verify-milk",
+                       "clear-bread", "verify-bread", "clear-cereal"]}})
+    ids = [n["id"] for n in nxt["nodes"]]
+    assert "clear-cereal" in ids and "verify-cereal" not in ids
+    kept = next(n for n in nxt["nodes"] if n["id"] == "clear-cereal")
+    assert kept["skill"] == "clear" and kept["args"] == {"object": "cereal"} \
+        and kept["kind"] == "segment"
+    # still verify-covered, and the whole graph clears the hardened validator
+    assert {"after": "clear-cereal", "predicate": "lifted"} in nxt["verify"]
+    done = [{"id": "clear-cereal", "skill": "clear", "args": {"object": "cereal"}}]
+    ok, msg = validate_plan(nxt, CATALOGUE, ORACLES, done=done)
+    assert ok, msg
+
+
 def test_segment_fault_retries_then_skips_past_budget():
     p = ClearWorkspacePlanner()
     brief = {"task": "clear_workspace"}

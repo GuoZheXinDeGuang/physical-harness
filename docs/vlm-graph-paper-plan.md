@@ -31,20 +31,21 @@ mechanism the boundary was written for.
 
 Four hardening items the scouts identified as real gaps (in priority order):
 
-1. **Doctor exemption for non-deterministic planners.** `plugin_doctor`
-   currently double-runs planners and diffs (determinism-required kind). Copy
-   the existing `_smoke_reasoner` precedent: `available()` probe + "shape
-   validated, not diffed".
-2. **Replan stability rule (new validator check).** Attribution, per-node
-   billing, and completed-node skipping all key on node ids across replans.
-   Today that stability is a free side effect of determinism. Add to
-   `validate_plan`: a replan must preserve `{id, skill, args}` of every node
-   the fault reports as done. Without this, RSI first-death attribution drifts
-   and finished work gets re-billed.
-3. **Verify-coverage rule (new validator check).** Validator only requires
-   verify non-empty; a VLM can emit 6 action nodes with 1 verify edge and the
-   misses fail silently. Require every manipulate/segment node to be covered by
-   a verify edge. (Repo's own lesson: audit oracles before trusting them.)
+1. **Doctor exemption for non-deterministic planners.** ✅ landed (vlm-valid).
+   `plugin_doctor` double-runs planners and diffs (determinism-required kind);
+   a provider declaring `deterministic = False` is now "shape validated, not
+   diffed", and `_smoke_planner` gained the `available()` endpoint probe — the
+   `_smoke_reasoner` precedent, verbatim.
+2. **Replan stability rule (new validator check).** ✅ landed (vlm-valid).
+   Attribution, per-node billing, and completed-node skipping all key on node
+   ids across replans. `validate_plan` now takes the workload's own done-node
+   ledger (`{id, skill, args}` each) and refuses a replan that drops or
+   rewrites any of them; the fault-adaptive clear_workspace planner retains a
+   dropped object's finished clear-X node to comply.
+3. **Verify-coverage rule (new validator check).** ✅ landed (vlm-valid).
+   Every manipulate/segment node must be covered by a verify-list edge or a
+   verify-kind successor node; all committed planners already satisfied it.
+   (Repo's own lesson: audit oracles before trusting them.)
 4. **Graph-as-evidence.** Plan shas already enter the sealed log. For anything
    feeding calibration or the seed ledger, the emitted graph must be
    generate-once-then-frozen per (task, seed): first emission is cached and

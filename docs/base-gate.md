@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 605 passed
+pass       : 614 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -51,6 +51,19 @@ wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +9 over the campaign-progress-fix snapshot (605→614 pass, skips unchanged
+at 29) is the untrusted-planner hardening (docs/vlm-graph-paper-plan.md §1
+items 1-3): `validate_plan` grows two refusals — replan stability (a replan
+must carry every completed node's {id, skill, args} verbatim; the workload
+feeds its own done-ledger, and the fault-adaptive clear_workspace planner now
+retains a dropped object's finished clear-X node) and verify coverage (every
+manipulate/segment node needs a verify-list edge or a verify-kind successor) —
+and `plugin_doctor` gains the non-determinism exemption for planners declaring
+`deterministic = False` ("shape validated, not diffed", the _smoke_reasoner
+precedent, plus the `available()` endpoint probe on the planner smoke).
+6 tests in test_task_seam.py, 1 in test_clear_workspace.py, 2 in
+test_plugin_doctor.py. Sim-free, no seeds burned.
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`
@@ -127,7 +140,7 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `594 passed, 21 skipped` (the 18 robocasa-marked
+Full-suite parity (card present): `645 passed, 26 skipped` (the 18 robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —
