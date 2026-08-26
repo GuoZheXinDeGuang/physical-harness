@@ -1,5 +1,220 @@
 # Architecture
 
+English | [简体中文](#简体中文)
+
+In one sentence: **a system built so that the claim "the robot's skill improved"
+cannot lie** — frozen policies execute tasks, hash-chained logs seal the evidence,
+and a preregistered statistical pipeline evolves the skills. The kernel is tiny;
+robots, simulators, and tasks are all pluggable cards.
+
+## 0. Three design laws
+
+The whole architecture follows from three laws:
+
+1. **Execution and evolution are separated (two modes).** During real work the
+   policy is frozen — not a byte changes. Only evolution mode may produce new
+   skills, and a new skill must pass statistical tests before it is installed.
+2. **Evidence precedes conclusions.** Every episode is sealed into a hash-chained
+   log — change one byte and the chain breaks. Experiment designs (seeds,
+   hypotheses, thresholds) are preregistered and sealed *before* anything runs;
+   there is no revising after the fact.
+3. **Minimal kernel, everything else is a card.** The kernel knows no robot, no
+   simulator, no task — all of them plug in through declarative manifests.
+
+## 1. Repository layout
+
+```
+physical-harness/
+├── harness/        kernel: episode loop, hash-chained session log, privilege budget
+├── plugins/        cards: everything "concrete"
+│   ├── embodiment_robosuite/   tabletop-arm card (env + perception + drivers + predicates)
+│   ├── embodiment_robocasa/    kitchen-robot card (same shape, different deps)
+│   ├── mission_*/              mission cards (task graph + planner, pure-data manifest)
+│   ├── task/                   generic task machinery: graph execution, verify, replan
+│   └── rsi/                    skill-evolution engine: gates, paired tests, campaigns
+├── board/          the single public face ("one store, three faces")
+├── scripts/        resident runtimes + evolution entry points
+├── runs/           evidence store (gitignored, machine-local)
+└── tests/          600+ tests; the base lane is green with zero simulators installed
+```
+
+## 2. Kernel (harness/) — exactly three guarantees
+
+**Episode loop.** An episode is one complete life of a world, from reset to close.
+Every task is an instance of this loop.
+
+**Session log (hash chain).** Every event (a mount, a node execution, a verify
+result, a campaign outcome) appends one row carrying the hash of the previous row.
+Tamper with any row afterwards and `verify()` catches the broken chain. Audit here
+is not a process — it is arithmetic.
+
+**Privilege budget.** In simulation you can cheat: read an object's true pose
+directly (privileged, god's-eye information). Real robots have no such luxury. The
+kernel meters every privileged read, and every installed skill ships with a
+privilege ablation curve — gains earned by cheating show up in the ablation.
+
+Configuration integrity: everything that could change an experimental conclusion
+(what was mounted, with what parameters) folds into one content hash
+(`MountPlan.sha`). Different config = different hash = a different experiment
+identity. There is no "quietly tweaked a constant".
+
+## 3. Cards (plugins/) — three kinds
+
+**Embodiment card**: one robot + simulator, complete — env construction,
+perception, drivers (e.g. how "navigate to the fridge" maps onto wheels), and
+predicates (e.g. "is the object inside the microwave?"). Each embodiment card gets
+its own venv (robosuite and robocasa have mutually exclusive numpy ABIs — isolation
+is cheaper than reconciliation) and neither knows the other exists.
+
+**Mission card**: one task's graph definition — how nodes connect, which driver
+each node uses, which predicate verifies it. The manifest.toml is **pure data**, no
+logic, so adding a task cannot break the kernel.
+
+**RSI card**: the evolution engine, §6.
+
+The boundary rule between cards is **provider by ref**: a card may not import
+another card's code. It names a string reference in its manifest
+(`"plugins.embodiment_robocasa:provider"`) that the kernel resolves at mount time,
+where a Protocol isinstance check fails fast — a wrong shape errors at mount, never
+inside an episode. Standing boundary tests turn red on any sneaky cross-card import.
+
+## 4. The task graph — why a graph, not a script
+
+A script hard-codes "grasp, walk, place" and can only start over on failure. We
+split a task into a node graph with four node kinds:
+
+| kind | what it does | example |
+|---|---|---|
+| perceive | look at the world | "what is in the kitchen?" |
+| decide | make a choice | "which can first?" |
+| segment | execute a motion (the only node that acts) | "navigate to the fridge" |
+| verify | check live world state — **never trusts the segment's self-report** | "did we actually arrive?" |
+
+The core mechanism is **in-episode replan**: when a verify fails, the world is not
+reset — the plan is repaired and retried *in the same world*. Like fumbling a cup:
+you re-grasp on the spot, you don't go home and restart the day. One episode can
+carry dozens of manipulations with local recovery — that is where long-horizon
+capability comes from. Long tasks run in one persistent episode
+(`episodic: true`): environment, observations, and execution cursor survive across
+nodes.
+
+One more law: **rendering is live state, not evidence**. Viewport frames and
+screenshots never enter the session-log chain.
+
+## 5. Board and runtimes — how the outside world uses the system
+
+**The board is the only door.** One set of functions, three faces: a Python API
+(`board/store.py`), a CLI (`storecli`), and an MCP server (for AI agents). All
+three change together — miss one and a test catches it. Reads are unrestricted;
+writes have exactly one entry: `submit_brief`.
+
+**A brief is a pure selector plus budgets** — no implementation inside:
+
+```json
+{"kind":"task",     "task":"kitchen_thaw", "seed":11, "max_replans":3}
+{"kind":"campaign", "campaign":"stack", "dev":[41000,41999], "heldout":[42000,42199]}
+{"kind":"rsi",      "task":"kitchen_thaw"}
+```
+
+Which code runs is decided server-side from the manifests; any extra key in a brief
+is rejected. The execution entry point is not injectable.
+
+**A runtime is a resident process** with almost embarrassingly simple logic: watch
+one inbox directory, claim files by atomic rename (which makes double-claiming
+impossible), move finished work to done/ or failed/. No message queue, no database
+— filesystem atomicity is enough. One runtime, one venv, one session directory per
+simulator.
+
+**The hard boundary between the two modes**: mode is a per-session property,
+default EXECUTION (fail-safe: real work can never trigger evolution). At boot, the
+mode + skill manifest + mount hash are sealed as row zero of the chain. An
+execution-mode runtime rejects campaign/rsi briefs outright, and before every task
+re-folds the skill directory digest against the boot manifest — files smuggled in
+out-of-band are caught. Only evolution mode writes to the skill store; execution
+mode mounts only established (held-out-passed) frozen SkillRecords.
+
+## 6. RSI — how skills improve scientifically
+
+The unit of evolution is a **rule**: "when observable feature X crosses threshold
+T, run recovery action R." Example: `finger_gap < 0.0096 → regrasp` (fingers
+closed too far means nothing was caught — grasp again).
+
+One `{"kind":"rsi","task":X}` triggers a seven-step chain; each step blocks one way
+of fooling yourself:
+
+| step | what | blocks |
+|---|---|---|
+| 1 calibration | 150 baseline episodes, per-node first-death attribution | picking bottlenecks by gut feeling |
+| 2 mechanical gates | six hard criteria, scored in code; fail = stop | loosening standards because you want to proceed |
+| 3 prereg | seeds/hypotheses/thresholds sealed (content hash) before running | changing the story afterwards |
+| 4 dev campaign | search candidate rules; paired same-seed McNemar against the parent (count fixed vs broken) | mistaking luck for improvement |
+| 5 blind twin | same recovery action fired unconditionally; the rule must beat it | credit for "knowing when" that has no value |
+| 6 held-out | fresh seeds, scored exactly once, then burned forever | retaking the exam until it passes |
+| 7 fold-in | the established rule becomes a frozen SkillRecord in the runtime | — |
+
+Three things no agent is allowed to touch: the target node is chosen by
+first-death attribution (not cherry-picked for a flattering result); thresholds
+come from the search algorithm; and if an embodiment has no registered recovery
+primitive, the honest answer is "nothing to work with" — no inventing an action on
+the spot.
+
+**Honest nulls and honest NO-GOs are valid deliverables.** When the gates say the
+failures are capability gaps rather than governable mistakes, the correct move is
+to build capability — not to bend a threshold until something promotes. Null
+results in the ledger are worth as much as wins: they chart where the capability
+boundary actually is.
+
+**Seeds are exam questions**: simulation is deterministic, same seed = same world.
+A burned seed block is retired forever (a one-shot ledger, enforced at the
+scheduling boundary). Calibration blocks are the exception: calibration never
+gates, so it may be re-measured freely.
+
+## 7. Evidence (runs/)
+
+Per-session sealed logs, SkillRecords, and campaign artifacts — all content-hash
+named (filename = hash of content; edit the content and the name no longer
+matches, the chain breaks). Not in git: it is this machine's lab notebook. The
+repository ships the machine that *produces* evidence, not the evidence itself.
+Outsiders read evidence through the board, never by picking through files.
+
+## 8. UI (ph-station, separate repository)
+
+One red line: **zero business logic in the frontend**. The browser panels
+(execution graph, process flow, trajectory, sim viewport, skill-vault lineage,
+evolution progress) are pure views; every piece of state crosses a single HTTP
+surface (`POST /api/board/<fn>`) from the board. The frontend computes nothing —
+so it cannot compute wrongly, and every number on screen traces back to the hash
+chain.
+
+## 9. Invariants (verified by standing tests)
+
+- Seen means recorded: capability resolution, mounts, privileged reads all land in
+  the chained log; tampering is caught by `verify()`.
+- Every hashed config field must appear in the canonical serialization (tested).
+- Boots with zero plugins: with `plugins/` empty the base lane is green — the
+  kernel is genuinely sim-agnostic.
+- Judgement-type claims must pass blind twin + held-out; headline numbers span at
+  least three seed blocks.
+- Execution mode never writes the skill store; real-robot cards
+  (`actuation:real`) are refused by sim runtimes.
+
+```
+one sentence from you → brief → inbox → runtime mounts cards, runs the graph
+                                   ↓
+                     verify at every step; replan in place on failure
+                                   ↓
+                     everything sealed into the hash chain (runs/)
+                                   ↓
+      the UI only reads the board; RSI only grows skills out of evidence
+```
+
+**Execution never writes. Evolution never lies. The frontend never computes.
+Evidence never changes.**
+
+---
+
+# 简体中文
+
 一句话定位：**一个让"机器人技能变好了"这句话没法骗人的系统**——冻结策略执行任务、
 哈希链封存证据、预注册的统计流程演化技能。内核极小，机器人/仿真器/任务全是插拔卡片。
 
