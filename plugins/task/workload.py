@@ -494,6 +494,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
 
     plan: Mapping = {}
     nodes_out: dict[str, dict] = {}
+    # The workload's OWN ledger of finished work ({id, skill, args} per done
+    # node), fed to validate_plan on every replan: the untrusted planner must
+    # carry each entry verbatim or the graph is refused (replan stability).
+    done_specs: dict[str, dict] = {}
     faults: list[dict] = []
     actuations = 0
     replans = 0
@@ -520,7 +524,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         brief = {**brief, "scene": scene.snapshot({}),
                  "budget": max_actuations - actuations}
         plan = planner.plan(brief)
-        ok, msg = validate_plan(plan, catalogue, oracles)
+        ok, msg = validate_plan(plan, catalogue, oracles,
+                                done=tuple(done_specs.values()))
         # Operational feed (harness.opstream; never chain evidence): the FULL
         # node graph, the moment it exists, so the execution-graph panel draws
         # the plan while the first node is still running.
@@ -580,6 +585,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                     if extra in result:
                         entry[extra] = result[extra]
                 nodes_out[node["id"]] = entry
+                if entry["success"]:
+                    done_specs[node["id"]] = {"id": node["id"],
+                                              "skill": node["skill"],
+                                              "args": dict(node["args"])}
                 # A node faults when its own oracle says False, whatever its kind:
                 # a manipulate node surfaces a failed terminal STAGE in `left`; a
                 # perceive/decide/verify node has no stages, so its own

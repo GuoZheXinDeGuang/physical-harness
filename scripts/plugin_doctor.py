@@ -132,6 +132,12 @@ def _smoke_percept(prov, ctx: _Ctx):
 
 
 def _smoke_planner(prov, ctx: _Ctx):
+    # _smoke_reasoner's precedent: a model-backed planner exposes `available()`;
+    # when its endpoint is down, skip loudly rather than red (shape passed Tier A).
+    probe = getattr(prov, "available", None)
+    if probe is not None and not probe():
+        raise DoctorSkip("planner endpoint unreachable -- probed and skipped "
+                         "(shape validated Tier A, live plan not run)")
     plan = prov.plan(ctx.brief)
     assert plan.get("goal") is not None and plan.get("nodes"), "plan lacks goal/nodes"
     return json.dumps(plan, sort_keys=True, default=str)
@@ -307,6 +313,12 @@ def check(plugin_dir: str | Path) -> Report:
         if smoke is None:  # e.g. exec.rollouts / ground_truth: no episode smoke
             continue
         policy = _DETERMINISM.get(cap)
+        # Non-determinism exemption (the _smoke_reasoner precedent, generalised):
+        # a determinism-required provider that EXPLICITLY declares
+        # ``deterministic = False`` (an LLM planner) is validated for shape only,
+        # never double-run-diffed -- the untrusted policy, opted into loudly.
+        if policy == "required" and getattr(prov, "deterministic", True) is False:
+            policy = "exempt"
         try:
             out = smoke(prov, ctx)
             if policy == "required":
@@ -316,7 +328,10 @@ def check(plugin_dir: str | Path) -> Report:
                             f"non-deterministic (policy: required): {out!r} != {again!r}")
                     continue
             rep.add("B", cap, "PASS",
-                    "deterministic" if policy == "required" else (policy or "shape"))
+                    "deterministic" if policy == "required"
+                    else "shape validated, not diffed (provider declares "
+                         "deterministic=False)" if policy == "exempt"
+                    else (policy or "shape"))
         except DoctorSkip as skip:
             rep.add("B", cap, "SKIP", str(skip))
         except Exception as exc:  # noqa: BLE001 -- a smoke that raises is a red
