@@ -44,15 +44,22 @@ def write_progress(out_dir: str | Path, done: int, total: int, *,
         pass
 
 
-def tracker(out_dir: str | Path, total: int, label: str | None = None):
+def tracker(out_dir: str | Path, total: int, label: str | None = None,
+            extra: dict | None = None):
     """Per-episode progress callback for a battery's result loop.
 
     Returns ``tick(row)``: call it with each finished episode row (any dict; a
     probe row's ``thawed``/``success`` counts as a success, ``first_death``
     feeds the rolling histogram) and it folds the stats and rewrites
     progress.json. Row-shape tolerant so future campaign scripts reuse it
-    unchanged. tick itself never raises (write_progress swallows)."""
+    unchanged. tick itself never raises (write_progress swallows).
+
+    ``extra`` is merged into every write, for a battery that is one LEG of a
+    longer run and wants each heartbeat to say which leg. The generic RSI chain
+    stamps its ``stage`` here, so the console names the stage during the long
+    calibration too, not only at the stage boundaries."""
     started = time.time()
+    fixed = dict(extra or {})
     done = 0
     succeeded = 0
     first_death: Counter = Counter()
@@ -67,11 +74,11 @@ def tracker(out_dir: str | Path, total: int, label: str | None = None):
             if isinstance(fd, str) and fd != "none":
                 first_death[fd] += 1
         write_progress(out_dir, done, total, label=label, started_ts=started,
-                       extra={"succeeded": succeeded,
+                       extra={**fixed, "succeeded": succeeded,
                               "first_death": dict(first_death)})
 
     # write the 0/total row up front so the card appears as soon as the battery
     # starts, not after its first (possibly minutes-long) episode
     write_progress(out_dir, 0, total, label=label, started_ts=started,
-                   extra={"succeeded": 0, "first_death": {}})
+                   extra={**fixed, "succeeded": 0, "first_death": {}})
     return tick

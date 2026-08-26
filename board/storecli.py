@@ -8,6 +8,13 @@ renders the byte-identical dict the LLM gets -- no second statistics layer, no
 reinterpretation. The fork host bridge (packages/host/dsh-ph-board) execFiles
 this and JSON.parses stdout verbatim.
 
+This face is READ-only. The write face is board/mcp_server.py's ``submit_brief``,
+which takes the three brief kinds -- ``task``, ``campaign``, and ``rsi`` (the
+generic self-improvement chain, minimal form ``{"kind":"rsi","task":"<task>"}``;
+docs/rsi-mechanism.md). An rsi run heartbeats ``runs/<store>/progress.json`` with a
+``stage`` field (calibrate / gate / dev / done) that ``campaign_progress`` below
+forwards verbatim, so the cockpit's 演进 panel shows where the chain is.
+
 Name-addressed reads (store/heldout/session) go through board.store.safe_child,
 the one audited traversal guard, so a ``../`` name can never escape runs_dir.
 

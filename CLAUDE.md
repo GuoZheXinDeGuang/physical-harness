@@ -11,7 +11,15 @@ brief 是**纯选择器 + 预算**，provider 由服务端按 manifest 选；多
 ```
 {"kind":"task", "task":"kitchen_thaw", "seed":420011, "max_replans":3, "max_actuations":40}
 {"kind":"campaign", "campaign":"stack", "dev":[41000,41999], "heldout":[42000,42199]}
+{"kind":"rsi", "task":"kitchen_thaw"}
 ```
+
+`kind:"rsi"` 是**通用自我提升链**（进化态限定）：最小形态**只要任务名**，领块→标定→门禁→
+prereg→dev→held-out→折入，runtime 自己走完。细节见 `docs/rsi-mechanism.md`。三条你不许插手：
+
+- **目标节点由首死归因选**，不是你挑（想覆盖就传 `node`，覆盖会写进裁决书）。
+- **阈值由 `plugins/rsi/stats/search.py` 搜**，不是你定。
+- **本体没注册恢复原语就明说「无从下手」**，不许现编一个动作凑上去。
 
 session 决定投给哪个机器人：`session-main`（robosuite）/ `session-robocasa`（厨房，
 另一个解释器、另一套依赖）。不确定就先 `sessions()` 看一眼谁活着。

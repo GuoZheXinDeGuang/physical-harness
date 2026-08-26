@@ -20,7 +20,9 @@ server below; the exported deliverable is a self-contained HTML report.
   `ledger`, `rounds`), each one call into `board.store` returning the same dicts,
   plus `submit_brief`, which drops a brief into the
   resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —
-  the tool never becomes the authority).
+  the tool never becomes the authority). Three brief kinds: `task`, `campaign`,
+  and `rsi` — the generic self-improvement chain, minimal form
+  `{"kind":"rsi","task":"<task>"}` (`docs/rsi-mechanism.md`).
 
 ## Layout
 

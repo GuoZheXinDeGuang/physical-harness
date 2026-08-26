@@ -1,0 +1,188 @@
+"""The generic RSI chain's three JUDGEMENT points, pinned.
+
+Everything else in scripts/rsi_campaign.py is plumbing that a real run exercises;
+these three decide things, and a silent regression in any of them would be
+invisible until it had already burned a block:
+
+* ``allocate`` -- which seeds get claimed (an off-by-one here reuses a burned block)
+* ``attribute`` -- which node the campaign will target (the caller must not choose)
+* ``gate`` -- whether anything runs at all (the honest-NO-GO path)
+
+All pure functions over dicts: no sim, no seeds burned, base lane.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from plugins.rsi import repertoire
+from scripts.rsi_campaign import (
+    CAL_N,
+    DEV_N,
+    HELDOUT_N,
+    SEED_CEILING,
+    allocate,
+    attribute,
+    gate,
+    seeds,
+)
+
+
+def _ledger(*ranges):
+    return [{"lo": lo, "hi": hi, "state": state} for lo, hi, state in ranges]
+
+
+# ── a. allocation ────────────────────────────────────────────────────────────
+
+def test_allocate_splits_one_contiguous_block_disjointly():
+    blocks = allocate(_ledger((0, 999, "burned")))
+    assert blocks["cal"] == (1000, 1000 + CAL_N - 1)
+    assert blocks["dev"] == (1000 + CAL_N, 1000 + CAL_N + DEV_N - 1)
+    assert blocks["heldout"][1] - blocks["heldout"][0] + 1 == HELDOUT_N
+    # disjoint AND contiguous: the whole claim is one interval, no gaps to leak
+    used = sorted(sum((seeds(b) for b in blocks.values()), []))
+    assert used == list(range(1000, 1000 + CAL_N + DEV_N + HELDOUT_N))
+
+
+def test_allocate_steps_over_burned_and_reserved_ranges():
+    # a burned range sitting inside the naive first fit must push the claim past it
+    blocks = allocate(_ledger((0, 99, "burned"), (200, 5000, "reserved")))
+    assert blocks["cal"][0] == 5001
+
+
+def test_allocate_honours_a_pinned_calibration_block():
+    """Calibration never gates, so re-measuring an old block is legal and normal;
+    pinning it must not disturb the dev/held-out claim."""
+    auto = allocate(_ledger((0, 999, "burned")))
+    pinned = allocate(_ledger((0, 999, "burned")), cal=(40000, 40149))
+    assert pinned["cal"] == (40000, 40149)
+    assert pinned["dev"] == auto["dev"] and pinned["heldout"] == auto["heldout"]
+
+
+def test_allocate_refuses_past_the_seed_overflow_ceiling():
+    """spec.seed*7919+11 overflows int32 above SEED_CEILING; a block handed back
+    from up there would crash on its first episode, so refuse at claim time."""
+    with pytest.raises(ValueError, match="overflow"):
+        allocate(_ledger((0, SEED_CEILING - 10, "burned")))
+
+
+# ── b/c. first-death attribution ─────────────────────────────────────────────
+
+_GRAPH = [
+    {"id": "survey", "skill": "survey", "kind": "perceive", "after": [], "args": {}},
+    {"id": "grasp-cube", "skill": "grasp", "kind": "manipulate",
+     "after": ["survey"], "args": {}},
+    {"id": "verify-grasp", "skill": "verify_grasp", "kind": "verify",
+     "after": ["grasp-cube"], "args": {}},
+    {"id": "build-stack", "skill": "stack", "kind": "manipulate",
+     "after": ["verify-grasp"], "args": {}},
+]
+
+
+def _cal(first_death: dict, *, n=150, successes=60, per_ep=3.0, budget_exhaust=0):
+    return {"task": "t", "n": n, "successes": successes,
+            "base_rate": successes / n, "graph": _GRAPH,
+            "first_death_by_node": first_death, "budget_exhaust": budget_exhaust,
+            "seconds_total": n * per_ep, "seconds_per_episode": per_ep,
+            "episodes": []}
+
+
+def test_verify_deaths_are_charged_back_to_the_node_they_verify():
+    """A verify node has nothing of its own to govern -- it is the oracle that
+    caught the preceding sub-goal dropping what it claimed. Its deaths belong to
+    that sub-goal, which is where a recovery would fire."""
+    att = attribute(_cal({"grasp-cube": 10, "verify-grasp": 25, "none": 60}))
+    assert att["governable"] == {"grasp-cube": 35}
+    assert att["target"] == "grasp-cube"
+
+
+def test_perceive_and_decide_deaths_are_charged_to_nobody():
+    """The M6 c3 attribution pivot: a chain dying at an ungoverned node is not an
+    RSI problem, and must not be laundered onto a downstream governable node."""
+    att = attribute(_cal({"survey": 40, "grasp-cube": 5, "none": 105}))
+    assert att["ungoverned"] == {"survey": 40}
+    assert att["governable_deaths"] == 5
+
+
+def test_target_is_the_most_deadly_governable_node_not_the_first():
+    att = attribute(_cal({"grasp-cube": 5, "build-stack": 30, "none": 115}))
+    assert att["target"] == "build-stack"
+    assert att["ranked"][0] == ("build-stack", 30)
+
+
+def test_none_is_never_a_death():
+    att = attribute(_cal({"none": 150}))
+    assert att["target"] is None and att["governable_deaths"] == 0
+
+
+# ── c. the gate verdict ──────────────────────────────────────────────────────
+
+_OK_SUPPORT = {"supported": True, "reason": "driver ok",
+               "repertoire": repertoire.for_card(repertoire.ROBOSUITE)}
+
+
+def _verdict(cal, support=_OK_SUPPORT):
+    return gate(cal, attribute(cal), support, workers=10)
+
+
+def test_gate_passes_a_healthy_calibration():
+    v = _verdict(_cal({"grasp-cube": 60, "none": 90}, successes=90))
+    assert v["proceed"] and v["failed"] == [] and v["target_node"] == "grasp-cube"
+
+
+@pytest.mark.parametrize("successes,criterion", [(0, "c1_base_degenerate"),
+                                                 (150, "c1_base_degenerate"),
+                                                 (140, "c2_base_ceiling")])
+def test_gate_refuses_a_degenerate_or_ceilinged_base_rate(successes, criterion):
+    """0%/100% has no residual to learn from; >=0.90 is an honest null. Either
+    way not one dev seed is worth burning."""
+    deaths = {"grasp-cube": 150 - successes} if successes < 150 else {}
+    v = _verdict(_cal({**deaths, "none": successes}, successes=successes))
+    assert not v["proceed"] and criterion in v["failed"]
+    assert v["target_node"] is None
+
+
+def test_gate_refuses_when_budget_exhaustion_dominates_the_failures():
+    """A mission dying on its own budget measures the budget, not the policy --
+    the fix is config, never RSI."""
+    v = _verdict(_cal({"grasp-cube": 90, "none": 60}, successes=60,
+                      budget_exhaust=50))
+    assert not v["proceed"] and "c3_budget_exhaust_dominant" in v["failed"]
+
+
+def test_gate_refuses_when_the_chain_mostly_dies_ungoverned():
+    v = _verdict(_cal({"survey": 60, "grasp-cube": 30, "none": 60}, successes=60))
+    assert not v["proceed"] and "c4_attribution" in v["failed"]
+
+
+def test_gate_refuses_when_the_embodiment_registers_no_recovery_primitive():
+    """The honest boundary. An embodiment with nothing in the repertoire gets
+    told so verbatim -- a tabletop program is never substituted for it."""
+    none_registered = {"supported": False, "repertoire": [],
+                       "reason": "该本体（卡 embodiment_robocasa）无注册恢复原语"}
+    v = _verdict(_cal({"grasp-cube": 90, "none": 60}, successes=60), none_registered)
+    assert not v["proceed"] and "c5_recovery_primitive" in v["failed"]
+    assert "无注册恢复原语" in " ".join(v["missing_capability"])
+
+
+def test_gate_refuses_a_calibration_plus_one_generation_over_the_time_budget():
+    v = _verdict(_cal({"grasp-cube": 90, "none": 60}, successes=60, per_ep=600.0))
+    assert not v["proceed"] and "c6_wall_clock" in v["failed"]
+
+
+def test_a_no_go_verdict_names_the_missing_capability():
+    """A NO-GO is a finished result, not an error: it must READ as one."""
+    v = _verdict(_cal({"none": 150}, successes=150))
+    assert v["missing_capability"] and all(isinstance(m, str)
+                                           for m in v["missing_capability"])
+
+
+# ── the repertoire registration the boundary rests on ────────────────────────
+
+def test_every_repertoire_strategy_is_registered_to_an_embodiment_card():
+    assert repertoire.for_card(repertoire.ROBOSUITE) == repertoire.names()
+
+
+def test_an_unregistered_card_has_no_recovery_primitives():
+    """The whole point: absence is reportable, not fillable."""
+    assert repertoire.for_card("embodiment_robocasa") == []

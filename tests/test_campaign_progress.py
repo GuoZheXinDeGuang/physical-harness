@@ -88,6 +88,27 @@ def test_campaign_progress_running_vs_stale_vs_done(tmp_path):
     assert rows[-1]["name"] == "stale-cal"
 
 
+def test_campaign_progress_forwards_freshness_apart_from_running(tmp_path):
+    """An rsi chain's LAST heartbeat carries the gate verdict AND sits at
+    done == total, so a console keyed only on `running` would retire the card at
+    the exact moment the result appears. `fresh` is the separate fold that keeps
+    it displayable; a genuinely old heartbeat is neither."""
+    by_name = {r["name"]: r for r in bs.campaign_progress(_fixture(tmp_path))}
+    assert by_name["done-cal"]["running"] is False
+    assert by_name["done-cal"]["fresh"] is True
+    assert by_name["stale-cal"]["fresh"] is False
+
+
+def test_tracker_stamps_a_fixed_extra_on_every_heartbeat(tmp_path):
+    """The generic RSI chain rides its `stage` here so the console names the
+    stage during the long calibration, not only at the stage boundaries."""
+    tick = tracker(tmp_path / "c", 2, label="x", extra={"stage": "calibrate"})
+    assert json.loads((tmp_path / "c" / "progress.json").read_text())["stage"] == "calibrate"
+    tick({"success": True})
+    row = json.loads((tmp_path / "c" / "progress.json").read_text())
+    assert row["stage"] == "calibrate" and row["done"] == 1 and row["succeeded"] == 1
+
+
 def test_campaign_progress_empty_runs(tmp_path):
     (tmp_path / "runs").mkdir()
     assert bs.campaign_progress(tmp_path / "runs") == []

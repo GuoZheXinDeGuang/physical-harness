@@ -275,8 +275,9 @@ def campaign_progress(runs_dir: str | Path) -> list[dict]:
     Live state, not sealed evidence (same family as runtime_status): no chain
     verify, a mid-write or malformed file is skipped and the next poll recovers.
     Each row is the heartbeat's payload (done/total/started_ts/updated_ts/label
-    + the rolling stats the writer folded) plus ``name`` (the store dir) and
-    ``running``: updated within the freshness window AND not yet at total. The
+    + the rolling stats the writer folded) plus ``name`` (the store dir),
+    ``fresh`` (updated within the freshness window) and ``running`` (fresh AND
+    not yet at total). The
     rolling statistics arrive pre-folded from the python writer -- the TS panel
     only displays them (ETA is a pure display conversion of started_ts/done)."""
     runs_dir = Path(runs_dir)
@@ -295,7 +296,12 @@ def campaign_progress(runs_dir: str | Path) -> list[dict]:
             continue
         updated = row.get("updated_ts")
         fresh = isinstance(updated, (int, float)) and now - updated < _PROGRESS_RUNNING_S
-        out.append({**row, "name": p.name,
+        # ``fresh`` is forwarded on its own because ``running`` folds it away:
+        # an rsi chain's LAST heartbeat carries the gate verdict AND sits at
+        # done == total, so a reader keyed only on ``running`` would retire the
+        # card at the exact moment the result appears. Both booleans are decided
+        # here, python-side; the panel only filters on them.
+        out.append({**row, "name": p.name, "fresh": fresh,
                     "running": fresh and row["done"] < row["total"]})
     out.sort(key=lambda r: r.get("updated_ts") or 0, reverse=True)
     return out
@@ -352,7 +358,13 @@ def session_inbox(runs_dir: str | Path, session: str) -> Path | None:
     into the returned inbox, exactly as the read faces resolve a session through
     ``safe_child(is_session)``. Same one audited guard, so a ``../`` name can
     never route a brief outside runs_dir and only a session with a resident
-    runtime (its ``session-log/rows.jsonl`` exists) is a legal target."""
+    runtime (its ``session-log/rows.jsonl`` exists) is a legal target.
+
+    Three brief kinds land here -- ``task`` (run a mission once), ``campaign`` (a
+    named hand-written campaign script) and ``rsi`` (the generic self-improvement
+    chain, minimal form ``{"kind":"rsi","task":"<task>"}``; docs/rsi-mechanism.md).
+    This function routes all three identically: the resident runtime's
+    ``_BRIEF_KEYS`` stays the sole authority on what a brief may say."""
     path = safe_child(runs_dir, session, is_session)
     return (path / "inbox") if path else None
 

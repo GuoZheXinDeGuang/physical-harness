@@ -334,6 +334,35 @@ def _mount_plan(binding: dict, skills_root: Path, render: bool = False,
         Patch("runtime", override=tuple(override)),))
 
 
+def task_brief(task: str, binding: dict) -> dict:
+    """The ``plugins.task.workload`` brief for one task binding.
+
+    The ONE place a manifest binding becomes a workload brief: catalogue/oracles
+    always, PREDICATES for a heterogeneous mission, the episode block for a
+    persistent one -- every value reached by ref, never carried in a JSON brief.
+    Shared by the resident runtime and by the generic RSI probe
+    (scripts/rsi_campaign.py), so a calibration set runs the byte-identical brief
+    a live task run does; a second copy of this assembly is exactly the drift that
+    would make a calibration measure a different mission than the one that ships.
+    """
+    wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
+              "oracles": _load_attr(binding["oracles"])}
+    # A heterogeneous mission (perceive/decide/verify nodes) declares a PREDICATES
+    # table by ref beside catalogue/oracles; thread it so the loop can resolve each
+    # kindful node's machine oracle. Manipulate-only bindings omit it.
+    if "predicates" in binding:
+        wbrief["predicates"] = _load_attr(binding["predicates"])
+    # A persistent-episode mission (M7) opts in with episodic=true and names its
+    # ONE-episode block + per-sub-goal segment_specs by ref beside the rest; thread
+    # them so workload.run opens the single world and drives each segment in it.
+    # Non-episodic bindings omit these -- the fresh-per-node path, byte-identical.
+    if binding.get("episodic"):
+        wbrief["episodic"] = True
+        wbrief["episode"] = _load_attr(binding["episode"])
+        wbrief["segment_specs"] = _load_attr(binding["segment_specs"])
+    return wbrief
+
+
 def _run_task(brief: dict, rt: Runtime) -> dict:
     """Build a fresh kernel on the shared log and run one governed plan loop.
 
@@ -357,22 +386,7 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     kernel = Kernel(CAPABILITIES, log=rt.log)
     kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render,
                              frames=rt.frames))
-    wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
-              "oracles": _load_attr(binding["oracles"])}
-    # A heterogeneous mission (perceive/decide/verify nodes) declares a PREDICATES
-    # table by ref beside catalogue/oracles; thread it so the loop can resolve each
-    # kindful node's machine oracle. Manipulate-only bindings omit it.
-    if "predicates" in binding:
-        wbrief["predicates"] = _load_attr(binding["predicates"])
-    # A persistent-episode mission (M7) opts in with episodic=true and names its
-    # ONE-episode block + per-sub-goal segment_specs by ref beside the rest; thread
-    # them so workload.run opens the single world and drives each segment in it.
-    # Non-episodic bindings omit these -- the fresh-per-node path, byte-identical.
-    if binding.get("episodic"):
-        wbrief["episodic"] = True
-        wbrief["episode"] = _load_attr(binding["episode"])
-        wbrief["segment_specs"] = _load_attr(binding["segment_specs"])
-    return workload.run(wbrief, kernel, seed=seed,
+    return workload.run(task_brief(task, binding), kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations)
 
 
@@ -390,6 +404,25 @@ def _declared_ranges(brief: dict) -> list[tuple[int, int]]:
             lo, hi = int(pair[0]), int(pair[1])
             ranges.append((min(lo, hi), max(lo, hi)))
     return ranges
+
+
+def _assert_unburned(brief: dict, what: str) -> None:
+    """The seed-ledger guard (non-negotiable invariant): the one prose ledger
+    becomes one enforced check at the scheduling boundary. Reject BEFORE spawning
+    if the declared dev∪heldout intersects any burned range (inclusive intervals).
+
+    Shared by the campaign and rsi paths. An rsi brief usually declares nothing
+    (the chain allocates), so its scheduler fills dev/heldout in from the
+    allocation and calls this with the SAME ``_declared_ranges`` reader -- the
+    guard is never routed around, only fed.
+    """
+    burned = _burned_ranges()
+    for lo, hi in _declared_ranges(brief):
+        for blo, bhi in burned:
+            if lo <= bhi and blo <= hi:
+                raise ValueError(
+                    f"seed-ledger overlap: {what} declares [{lo},{hi}] "
+                    f"which hits burned [{blo},{bhi}]")
 
 
 def _copy_skills(src: Path, dst: Path) -> list[str]:
@@ -473,16 +506,7 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     # already-absolute path is that absolute path, so both forms resolve here.
     script = REPO_ROOT / script
 
-    # seed-ledger guard (non-negotiable invariant): the one prose ledger becomes
-    # one enforced check at the scheduling boundary. Reject BEFORE spawning if
-    # the declared dev∪heldout intersects any burned range (inclusive intervals).
-    burned = _burned_ranges()
-    for lo, hi in _declared_ranges(brief):
-        for blo, bhi in burned:
-            if lo <= bhi and blo <= hi:
-                raise ValueError(
-                    f"seed-ledger overlap: campaign {name!r} declares [{lo},{hi}] "
-                    f"which hits burned [{blo},{bhi}]")
+    _assert_unburned(brief, name)
 
     out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
     proc = subprocess.run(
@@ -499,12 +523,90 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
                    "prereg_sha": _prereg_sha(out), "skills": copied})
 
 
+def _rsi_blocks(brief: dict) -> dict:
+    """Claim this rsi brief's cal/dev/held-out blocks off the LIVE ledger.
+
+    Allocation happens HERE, server-side, for the same reason provider refs do:
+    a brief that could name its own seed blocks could name a burned one. The
+    operator may pin a block (``cal``/``dev``/``heldout`` as ``[lo,hi]``) -- pinning
+    a calibration block is the normal case since calibration never gates -- but
+    whatever comes out is fed straight back through ``_assert_unburned``.
+    """
+    from scripts.rsi_campaign import allocate
+
+    def pin(key):
+        v = brief.get(key)
+        return (int(v[0]), int(v[1])) if v is not None else None
+
+    return allocate(parse_ledger(STATUS_MD.read_text()),
+                    floor=int(brief.get("floor", 0)),
+                    cal=pin("cal"), dev=pin("dev"), heldout=pin("heldout"))
+
+
+def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
+    """Schedule one GENERIC RSI chain: `{"kind":"rsi","task":"<task>"}` and the
+    runtime walks allocate -> calibrate -> gate -> prereg -> dev -> held-out ->
+    fold, for ANY installed task.
+
+    Same shape as ``_run_campaign`` -- allocate, guard the ledger, spawn the
+    script as a subprocess (two-state discipline: a campaign never runs inside
+    the resident runtime's process), fold published skills into the shared root,
+    note it in the chain. What differs is only that the seed blocks are computed
+    rather than declared, and that the chain may stop honestly at the gate, in
+    which case the store holds a verdict and no skills.
+    """
+    task = brief["task"]
+    if task not in rt.task_bindings:
+        raise ValueError(f"no task binding for {task!r}; install a plugin that "
+                         f"declares it (known: {sorted(rt.task_bindings)})")
+    blocks = _rsi_blocks(brief)
+    # the SAME guard the campaign path uses, fed the allocated blocks. cal is
+    # deliberately absent: a calibration block never gates and stays re-measurable.
+    _assert_unburned({"dev": [list(blocks["dev"])], "heldout": [list(blocks["heldout"])]},
+                     f"rsi {task!r}")
+
+    out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
+    cmd = [sys.executable, str(REPO_ROOT / "scripts/rsi_campaign.py"),
+           "--task", task, "--out", str(out),
+           "--workers", str(int(brief.get("workers", 10)))]
+    for key in ("cal", "dev", "heldout"):
+        cmd += [f"--{key}", f"{blocks[key][0]}:{blocks[key][1]}"]
+    if brief.get("node"):
+        cmd += ["--node", str(brief["node"])]
+    proc = subprocess.run(cmd, cwd=str(REPO_ROOT),
+                          env={**os.environ, "MUJOCO_GL": "egl"},
+                          capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"rsi chain for {task!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+
+    report = json.loads((out / "rsi_report.json").read_text())
+    copied = _copy_skills(out / "skills", rt.skills_root)
+    rt.log.append("runtime.rsi_scheduled", {
+        "brief": brief_id, "task": task, "out": str(out),
+        "blocks": report.get("blocks"), "stage": report.get("stage"),
+        "gate": {"proceed": report["gate"]["proceed"],
+                 "failed": report["gate"]["failed"],
+                 "target_node": report["gate"]["target_node"]},
+        "prereg_sha": report.get("preregistration_sha") or _prereg_sha(out),
+        "skills": copied,
+        "ledger_entry": report.get("ledger_entry"),
+    })
+
+
 #: A brief is a selector plus budgets -- nothing else. Providers are chosen
 #: server-side (the manifest union's task_bindings / campaigns); any other key
 #: is rejected.
+#:
+#: ``rsi`` is the GENERIC evolution brief: it names a TASK, not a hand-written
+#: campaign script, and the runtime walks the whole discipline chain for it. Its
+#: optional keys are all overrides of things the chain would otherwise decide
+#: from measurement -- ``node`` overrides the attribution's target (recorded in
+#: the verdict), ``cal``/``dev``/``heldout`` pin a block instead of allocating.
 _BRIEF_KEYS = {
     "task": {"kind", "task", "seed", "max_replans", "max_actuations"},
     "campaign": {"kind", "campaign", "dev", "heldout"},
+    "rsi": {"kind", "task", "node", "cal", "dev", "heldout", "workers", "floor"},
 }
 
 
@@ -545,15 +647,15 @@ def _process(rt: Runtime, path: Path) -> None:
                         "skills-root mutated mid-session (execution mode): "
                         f"boot manifest {list(rt.skills_manifest)} != {current}")
             _run_task(brief, rt)
-        elif kind == "campaign":
-            # v4.1 hard rule: a campaign brief is accepted ONLY in evolution mode.
-            # Rejection, not neutralization -- same pattern as the injected-key
-            # defense: a real task run provably triggers no RSI.
+        elif kind in ("campaign", "rsi"):
+            # v4.1 hard rule: an evolution brief is accepted ONLY in evolution
+            # mode. Rejection, not neutralization -- same pattern as the
+            # injected-key defense: a real task run provably triggers no RSI.
             if rt.mode != "evolution":
                 raise ValueError(
-                    f"campaign briefs are accepted only in evolution mode "
+                    f"{kind} briefs are accepted only in evolution mode "
                     f"(session mode is {rt.mode!r})")
-            _run_campaign(brief, rt, brief_id)
+            (_run_campaign if kind == "campaign" else _run_rsi)(brief, rt, brief_id)
         else:
             raise ValueError(f"unknown brief kind {kind!r}")
     except Exception as exc:  # noqa: BLE001 -- escape hatch: crash-safety lives here

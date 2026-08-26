@@ -20,14 +20,33 @@ from dataclasses import dataclass
 #: (phase, duration, dx, dy) -- the offset displaces the goal in the table plane.
 Step = tuple[str, int, float, float]
 
+#: The embodiment CARD every strategy below was authored against.
+#:
+#: ``plugins/rsi/servo.py``'s RecoveryActor turns a phase name into an action via
+#: ``harness/spec_tabletop.py``'s PHASE_HEIGHT/STACK_PHASE_HEIGHT -- a tabletop
+#: arm's above/descend/close/lift/place vocabulary. That vocabulary means nothing
+#: on another embodiment, so a repair shape is registered TO a card, and a card
+#: with no registration has no recovery primitives at all.
+#:
+#: This registration is the honest boundary, and it exists because the obvious
+#: cheaper test is WRONG: ``plugins/embodiment_robocasa/kitchen_driver.py`` defines
+#: ``retarget`` and ``on_handback`` as documented NO-OPS, so a ``hasattr`` probe
+#: reports that kitchen driver as governable while a fired rule would silently do
+#: nothing. Presence of a method is not presence of a primitive.
+ROBOSUITE = "embodiment_robosuite"
+
 
 @dataclass(frozen=True, slots=True)
 class Strategy:
-    """One named repair shape."""
+    """One named repair shape, registered to the embodiment card it is a repair ON."""
 
     name: str
     steps: tuple[Step, ...]
     rationale: str
+    #: Plugin dir name of the embodiment card whose action/phase vocabulary this
+    #: program is written in. Defaulted, so every strategy below reads as it did;
+    #: a second embodiment's repairs declare their own card explicitly.
+    card: str = ROBOSUITE
 
     @property
     def length(self) -> int:
@@ -120,3 +139,11 @@ def strategy(name: str) -> Strategy:
 
 def names() -> list[str]:
     return [s.name for s in REPERTOIRE]
+
+
+def for_card(card: str) -> list[str]:
+    """Every repair shape registered for one embodiment card, or [] for a card
+    that has none. [] is the answer the RSI chain reports verbatim -- "this
+    embodiment has no registered recovery primitive" -- rather than substituting
+    a tabletop program written for a different robot."""
+    return [s.name for s in REPERTOIRE if s.card == card]

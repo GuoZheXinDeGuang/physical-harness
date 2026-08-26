@@ -212,8 +212,25 @@ def vault_neighbors(id: str, relation: str | None = None) -> dict:
 def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     """Drop a brief into a runtime session's inbox for it to claim.
 
-    A brief is a pure selector+budgets, e.g.
-    ``{"kind":"task","task":"stack","seed":90000}``. This tool does NO brief
+    A brief is a pure selector+budgets. Three kinds exist:
+
+    * ``{"kind":"task","task":"stack","seed":90000}`` -- run one mission once.
+    * ``{"kind":"campaign","campaign":"stack","dev":[[41000,41999]]}`` -- run a
+      named hand-written campaign script (evolution-mode sessions only).
+    * ``{"kind":"rsi","task":"kitchen_thaw"}`` -- the GENERIC self-improvement
+      chain (evolution-mode sessions only). **The minimal form is the task name
+      and nothing else.** The runtime allocates calibration/dev/held-out blocks
+      off the live seed ledger, runs the ungoverned calibration, scores the
+      go/no-go gate, picks the target node BY ATTRIBUTION, seals a prereg, runs
+      the dev generations, and scores held-out once iff something promotes.
+      Optional keys only OVERRIDE what it would otherwise decide from
+      measurement: ``node`` (pin the target node; the override is recorded in the
+      verdict), ``cal``/``dev``/``heldout`` (``[lo,hi]``, pin a block instead of
+      allocating), ``workers``, ``floor``. A NO-GO is a normal outcome -- the
+      chain stops at the gate, names the missing capability, and burns no dev
+      seed. See docs/rsi-mechanism.md.
+
+    This tool does NO brief
     validation and names NO provider: it only performs the shared atomic drop
     (brief_drop.drop -- temp write + os.replace) so the runtime never claims a
     half-written brief. The resident runtime re-validates ``_BRIEF_KEYS``
