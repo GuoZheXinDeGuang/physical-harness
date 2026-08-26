@@ -1,7 +1,7 @@
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="images/zlab-logo.webp">
-    <img src="images/zlab-logo-dark.webp" alt="Z Robotics Lab" height="40" align="top">
+    <img src="images/zlab-logo-dark.webp" alt="Z Robotics Lab" height="64" align="top">
   </picture>
   physical-harness
 </h1>
