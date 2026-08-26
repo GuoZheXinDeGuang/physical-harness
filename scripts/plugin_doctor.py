@@ -120,6 +120,13 @@ def _smoke_env(prov, ctx: _Ctx):
 
 
 def _smoke_policy(prov, ctx: _Ctx):
+    # A remote-transport policy (policy_vla_remote) exposes `available()` --
+    # a TCP probe of its server. Nothing listening is a skip, not a red: Tier A
+    # validated the shape, and the live inference needs the model-side process.
+    probe = getattr(prov, "available", None)
+    if probe is not None and not probe():
+        raise DoctorSkip("policy server unreachable -- probed and skipped "
+                         "(remote transport: shape validated Tier A)")
     action = tuple(prov.make_driver(ctx.spec).act(ctx.obs))
     assert len(action) > 0, "driver.act returned an empty action"
     return "ok"

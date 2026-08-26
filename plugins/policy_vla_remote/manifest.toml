@@ -1,0 +1,30 @@
+# The remote-VLA policy card: `policy.driver` over a websocket policy server
+# (StarVLA / openpi pi0.5 official server -- same msgpack+ndarray protocol; the
+# VLA stack stays in its own venv behind the socket, this side is
+# websockets+msgpack+numpy only: `pip install .[policy_remote]`).
+#
+# enabled = false -> installed but INACTIVE. It claims policy.driver, which
+# plugins/policies already owns, so discover() keeps it out of the folded plan
+# while plugin_doctor still checks it at this path. To activate: point a
+# session at it (or flip enabled and disable the incumbent) -- one card per
+# seam is the duplicate-loud rule (model_qwen precedent).
+enabled = false
+
+# needs_sim = false: a transport talks to a policy server, not a simulator.
+# Doctor Tier-A shapes it with zero deps installed (lazy client import);
+# Tier-B probes the port and SKIPs loudly when no server is listening.
+needs_sim = false
+third_party = ["websockets", "msgpack"]
+
+[mounts."policy.driver"]
+ref = "plugins.policy_vla_remote:provider"
+# The TRAINING observation contract, reconciled against the server's
+# first-frame handshake metadata at connect: any mismatch on an echoed key
+# raises (train/test drift fails loud at mount, never a silently lower success
+# rate), and the full handshake record rides the driver into episode evidence.
+# `views` has no handshake echo (the server refuses to own camera order) -- it
+# is the declared order the driver feeds, reported under
+# handshake["unverified"]. TEMPLATE values below: set per checkpoint (these
+# match the openpi LIBERO pi0.5 convention) before enabling; host/port default
+# to 127.0.0.1:8000 (openpi serve_policy.py's default) in the provider.
+params = { image_size = [224, 224], views = ["base_0_rgb", "left_wrist_0_rgb"], chunk = 10, unnorm_key = "libero_spatial_no_noops" }

@@ -35,10 +35,11 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 605 passed
-skips      : 29 skipped
+pass       : 615 passed
+skips      : 31 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
+             [2] test_policy_vla_remote.py:136,151  policy_remote extra not installed
              [1] test_reducers.py:171         cloned weights not present
              [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
@@ -47,10 +48,21 @@ skips      : 29 skipped
              [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.8s
+wall time  : ~5.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +10/+2 over the campaign-progress-fix snapshot (605→615 pass, 29→31 skips)
+is the `policy_vla_remote` card (vlm-graph plan §3b): +10 base-lane tests
+(`test_policy_vla_remote.py` -- the handshake reconcile gate incl. the
+tuple/list and advertised-unnorm_key cases, the chunk driver over a stub
+client, the PolicyFactory shape, and the doctor's probe-then-SKIP degradation
+when no policy server listens) and +2 skips (the msgpack codec round-trip and
+the live websocket handshake+inference test, which need the `policy_remote`
+extra -- both verified green in a venv that has it). Sim-free, no seeds
+burned; `test_vault.py`'s package pin moves 17→18 (the new inactive card is
+listed like every card).
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`

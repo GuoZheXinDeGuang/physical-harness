@@ -25,6 +25,11 @@ cockpit = ["mcp==2.0.0"]
 # robosuite"`) runs on a card-absent machine. Pinned: robosuite 1.5.2 calls
 # mj_fullM(..., data.qM); mujoco >=3.4 renamed qM -> M.
 embodiment_robosuite = ["mujoco==3.3.7", "robosuite==1.5.2"]
+# policy_remote: the policy_vla_remote card's transport surface (vendored
+# StarVLA websocket+msgpack protocol layer, MIT). The VLA model itself lives in
+# a separate venv behind the socket; base deps stay numpy-only, and the card's
+# tests skip when this extra is absent.
+policy_remote = ["websockets>=12", "msgpack>=1.0"]
 
 [project.scripts]
 governor = "governor.cli:main"
