@@ -78,6 +78,26 @@ another card's code. It names a string reference in its manifest
 where a Protocol isinstance check fails fast — a wrong shape errors at mount, never
 inside an episode. Standing boundary tests turn red on any sneaky cross-card import.
 
+### 3.1 Plug-point table — the closed list
+
+`harness/contracts.py` is the complete enumeration of plug points. One row per
+Protocol; **if a seam is not in this table, it is not a seam.**
+
+| Protocol | capability | methods | implemented by | validated at |
+|---|---|---|---|---|
+| EnvProvider | `embodiment.env` | `make_env(spec)`, `tasks()`, `object_key(spec)`, `success(obs, spec, start_z)` | embodiment_robosuite, embodiment_robocasa, harness.fakes | `Kernel.provide` isinstance at mount; doctor Tier-B env smoke |
+| GroundTruthState | `embodiment.ground_truth` (privileged) | `object_pose(obs, spec)` | embodiment cards; mounted only by campaigns needing oracle state | mount isinstance + privilege budget accounting per resolve |
+| PolicyFactory | `policy.driver` | `make_driver(spec)` | plugins/policies, embodiment cards | mount isinstance; doctor driver smoke |
+| PerceptModel | `percept.model` | `object_estimate(obs, spec, sensor_sd, draw)` | embodiment percept providers | mount isinstance; doctor **determinism-required** (double-run diff) |
+| RolloutExecutor | `exec.rollouts` | `map(fn, items, *, workers)` | harness.executor (base-owned, not a card) | mount isinstance |
+| Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner; model_qwen (inactive) | mount isinstance; doctor **untrusted** (shape only, `available()` probe → SKIP when down) |
+| TaskPlanner | `task.planner` | `plan(brief)` | planner_stack, mission planners; a VLM planner card later | mount isinstance; every emitted graph gated by `plugins/task/validate.py` before dispatch; doctor determinism-required |
+| ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`, `available()` | plugins/model_endpoint (inactive until a consumer mounts it) | mount isinstance; doctor untrusted (`available()` probe → SKIP when down) |
+| Skill | — (not a mount) | `name`, `args`, `binding` (descriptive: the CATALOGUE row + the SKILL_SPECS/SEGMENT_SPECS row) | card-authored dict tables, keyed by skill name | plan nodes checked against the catalogue by `validate_plan`; a missing execution binding fails loudly at dispatch, before actuation |
+| SkillGraph / SkillLibrary | `graph.skill` | `publish(record)` (evolution-mode install), `skills()` (execution-mode mount) | plugins/graphs `InMemorySkillGraph` over skills_root | mount isinstance; doctor publish-idempotence smoke; execution mode never publishes (mode gate in the runtime) |
+| SceneGraph | `graph.scene` | `snapshot(obs)` | plugins/graphs | mount isinstance; doctor snapshot smoke |
+| RecoveryStrategy | *(reserved — being defined by the recoveries-in-manifest work, plan §2.1)* | — | per-embodiment recovery primitives, declared in the owning card's manifest | — |
+
 ## 4. The task graph — why a graph, not a script
 
 A script hard-codes "grasp, walk, place" and can only start over on failure. We
@@ -278,6 +298,26 @@ physical-harness/
 manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），由内核在挂载
 时解析。挂载点做 Protocol isinstance 校验——形状不对当场报错，不流进 episode。
 边界测试常驻，偷 import 隔壁卡直接红。
+
+### 3.1 插槽表——封闭清单
+
+`harness/contracts.py` 是插槽的完整枚举，一个 Protocol 一行；**不在这张表里的，
+就不是插槽。**
+
+| Protocol | capability | 方法 | 谁实现 | 何处校验 |
+|---|---|---|---|---|
+| EnvProvider | `embodiment.env` | `make_env(spec)`、`tasks()`、`object_key(spec)`、`success(obs, spec, start_z)` | embodiment_robosuite、embodiment_robocasa、harness.fakes | 挂载时 `Kernel.provide` isinstance；doctor Tier-B env smoke |
+| GroundTruthState | `embodiment.ground_truth`（特权） | `object_pose(obs, spec)` | 本体卡；只有需要 oracle 状态的 campaign 才挂 | 挂载 isinstance + 每次 resolve 记特权账 |
+| PolicyFactory | `policy.driver` | `make_driver(spec)` | plugins/policies、本体卡 | 挂载 isinstance；doctor driver smoke |
+| PerceptModel | `percept.model` | `object_estimate(obs, spec, sensor_sd, draw)` | 本体卡感知 provider | 挂载 isinstance；doctor **强制确定性**（跑两次做 diff） |
+| RolloutExecutor | `exec.rollouts` | `map(fn, items, *, workers)` | harness.executor（base 自有，不是卡） | 挂载 isinstance |
+| Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner；model_qwen（未激活） | 挂载 isinstance；doctor **untrusted**（只验形状，`available()` 探测不通则 SKIP） |
+| TaskPlanner | `task.planner` | `plan(brief)` | planner_stack、mission planner；日后的 VLM planner 卡 | 挂载 isinstance；每张图 dispatch 前过 `plugins/task/validate.py`；doctor 强制确定性 |
+| ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`、`available()` | plugins/model_endpoint（有消费者挂载前保持未激活） | 挂载 isinstance；doctor untrusted（`available()` 探测不通则 SKIP） |
+| Skill | ——（不是挂载点） | `name`、`args`、`binding`（描述性：CATALOGUE 行 + SKILL_SPECS/SEGMENT_SPECS 行） | 卡内以技能名为键的 dict 表 | 计划节点由 `validate_plan` 对 catalogue 校验；缺执行绑定在 dispatch 处、任何动作之前就大声失败 |
+| SkillGraph / SkillLibrary | `graph.skill` | `publish(record)`（演化态写入）、`skills()`（执行态挂载读取） | plugins/graphs 的 `InMemorySkillGraph`（落在 skills_root） | 挂载 isinstance；doctor publish 幂等 smoke；执行态永不 publish（两态门在 runtime） |
+| SceneGraph | `graph.scene` | `snapshot(obs)` | plugins/graphs | 挂载 isinstance；doctor snapshot smoke |
+| RecoveryStrategy | *（预留——由 recoveries-in-manifest 战线定义，plan §2.1）* | —— | 各本体的恢复原语，在其所属卡的 manifest 里声明 | —— |
 
 ## 4. 任务图——为什么是图不是脚本
 

@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 610 passed
+pass       : 611 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -51,6 +51,13 @@ wall time  : ~4.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +1 over the model-endpoint snapshot (610→611 pass, skips unchanged at 29)
+is `tests/test_skill_contracts.py`: the §2b interface pass pinned -- the
+skills_root store satisfies the SkillLibrary protocol (inheritance over
+SkillGraph keeps runtime isinstance working) and the Skill protocol's
+name/args/binding triple matches the real CATALOGUE + SKILL_SPECS rows.
+Sim-free, no seeds burned.
 
 The +5 over the campaign-progress-fix snapshot (605→610 pass, skips unchanged
 at 29) is `tests/test_model_endpoint.py`, the `model.endpoint` seam
@@ -135,7 +142,7 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `641 passed, 26 skipped` (measured 2026-08-27
+Full-suite parity (card present): `642 passed, 26 skipped` (measured 2026-08-27
 with the sealed runs/ evidence present; this line had lagged several test-adding
 commits — the repeat-offender rule below exists for exactly that) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either; they
