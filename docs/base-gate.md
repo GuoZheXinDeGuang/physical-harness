@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-26, isolated, robosuite blocked)
 
 ```
-pass       : 602 passed
+pass       : 604 passed
 skips      : 29 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -51,6 +51,15 @@ wall time  : ~4.6s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +2 over the RSI-mechanism snapshot (602→604 pass, skips unchanged at 29) is
+`tests/test_kitchen_thaw_horizon.py`: the calibration-r2 finding pinned. The
+mission's EPISODE horizon had fallen below the six kitchen_driver segment caps
+summed (2000 vs 2350) after capability-r1 widened the grasp cap, so 110/150
+calibration episodes died on the clock -- the RSI gate's own
+`c3_budget_exhaust_dominant`. The card cannot import the driver card (plugin
+boundary), so its `_NOMINAL_STEPS` is a written-down copy; a test may import
+both, so both halves are pinned. Sim-free and unmarked, adds to both lanes.
 
 The +22 over the mission-E2E snapshot (580→602 pass, skips unchanged at 29) is
 the generic RSI mechanism (`docs/rsi-mechanism.md`): `test_rsi_mechanism.py`'s 20

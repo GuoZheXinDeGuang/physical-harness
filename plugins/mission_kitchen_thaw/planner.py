@@ -103,11 +103,24 @@ PREDICATES: dict[str, str] = {
 #: hard ceiling. percept_provider names the robocasa onboard percept so a future
 #: governed recovery re-reads the right sensor (no bundle fires today, so it is
 #: never touched -- declared for correctness, not for this E2E).
+#:
+#: NOMINAL = the six kitchen_driver segment caps summed (kitchen_driver._STAGES:
+#: 250 + 900 + 450 + 300 + 250 + 200). 2000 was set when the grasp cap was 260;
+#: capability-r1 raised it to 900 for the retry sequence and the nominal went
+#: 1710 -> 2350, i.e. ABOVE the horizon -- a single clean pass through the chain
+#: could no longer fit. Calibration r2 measured the consequence: horizon-exhaust
+#: 110/150, tripping m7 §3 gate 3 (a mission dying on the clock measures the
+#: budget, not the policy) and contaminating the first-death attribution gate 4
+#: reads. 4000 = the 2350 nominal + head-room for the in-episode replans
+#: (max_replans=3 re-drives the SAME segment; the two costly ones are grasp 900
+#: and the loaded nav 450). Recompute this the same way if a cap moves.
+_NOMINAL_STEPS = 2350
+
 EPISODE: dict[str, Any] = {
     "task": "kitchen_thaw",
     "percept_noise": 0.012,
     "percept_provider": "plugins.embodiment_robocasa.percept:provider",
-    "horizon": 2000,
+    "horizon": 4000,
 }
 
 #: Each segment skill -> the sub-goal task the kitchen_driver dispatches on (its

@@ -197,7 +197,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, default=REPO / "runs/kitchen-thaw-cal")
     ap.add_argument("--seal-calibration", action="store_true",
-                    help="append <out>/calibration.json to the already-sealed store")
+                    help="append a calibration record to the already-sealed store")
+    ap.add_argument("--calibration", type=Path, default=None,
+                    help="the probe JSON to seal (default <out>/calibration.json). "
+                         "A RE-calibration of the same block is legitimate -- the "
+                         "block never gates, so it stays re-measurable -- and lands "
+                         "under kind calibration_r2/r3/... beside the first, never "
+                         "over it (the store is append-only).")
     args = ap.parse_args()
     out = args.out
     store_exists = (out / "index.jsonl").exists()
@@ -207,10 +213,9 @@ def main() -> int:
             print(f"{out} holds no store; seal the prereg first", file=sys.stderr)
             return 2
         index = [json.loads(l) for l in (out / "index.jsonl").read_text().splitlines()]
-        if any(e["kind"] == "calibration" for e in index):
-            print("calibration already sealed; refusing to re-seal", file=sys.stderr)
-            return 2
-        cal_path = out / "calibration.json"
+        n = sum(e["kind"].startswith("calibration") for e in index)
+        kind = "calibration" if n == 0 else f"calibration_r{n + 1}"
+        cal_path = args.calibration or (out / "calibration.json")
         if not cal_path.exists():
             print(f"no {cal_path}; run probe_kitchen_thaw.py first", file=sys.stderr)
             return 2
@@ -218,8 +223,8 @@ def main() -> int:
         cal = json.loads(cal_path.read_text())
         cal["preregistration_sha"] = next(
             e["sha"] for e in index if e["kind"] == "preregistration")
-        cal_sha = store.put("calibration", cal)
-        print(f"calibration        {cal_sha[:12]}")
+        cal_sha = store.put(kind, cal)
+        print(f"{kind:18s} {cal_sha[:12]}")
         return 0
 
     if store_exists:
