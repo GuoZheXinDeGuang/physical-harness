@@ -179,10 +179,14 @@ runtime_up() {
   fi
   local log="$REPO/$session/runtime.log"
   # cd in a subshell so the runtime cmdline stays the canonical relative form
-  # (matches find_runtime on the next boot); nohup + parent-exit detaches it.
-  RT_PID="$(cd "$REPO" && { nohup env "${spawn_env[@]}" "$interp" \
+  # (matches find_runtime on the next boot). setsid, not just nohup: nohup only
+  # blocks SIGHUP, so a runtime stayed in the launching terminal's process group
+  # and a group-wide teardown (`kill -- -PGID`, an agent/CI session ending) took
+  # it down mid-campaign -- 140/153 calibration episodes lost that way on
+  # 2026-08-28. Its own session makes it survive whatever started it.
+  RT_PID="$(cd "$REPO" && { setsid env "${spawn_env[@]}" "$interp" \
       scripts/harness_runtime.py --session-dir "$session" "${render_flag[@]}" "$@" \
-      >>"$log" 2>&1 & echo $!; })"
+      >>"$log" 2>&1 < /dev/null & echo $!; })"
   RT_ADOPTED=0
   echo "cockpit: spawned resident runtime on $session (pid $RT_PID, render=$([ ${#render_flag[@]} -gt 0 ] && echo on || echo off), log $log)" >&2
 }
@@ -262,7 +266,11 @@ export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 RT_PID=""
 RT_ADOPTED=""
 if [ "$NO_RUNTIME" -eq 0 ]; then
-  runtime_up "$SESSION_DIR" ".venv/bin/python" 1
+  # --frames explicitly, not by the headless-GL auto-enable: a display-attached
+  # spawn (render=on) leaves MUJOCO_GL unset, which used to silently switch the
+  # 取景窗 OFF for a REMOTE operator -- the local window they cannot see was
+  # suppressing the browser viewport they use. The two compose in _mount_plan.
+  runtime_up "$SESSION_DIR" ".venv/bin/python" 1 --frames
 fi
 
 # --- web: adopt-or-spawn (same discipline as the runtime). A server already
