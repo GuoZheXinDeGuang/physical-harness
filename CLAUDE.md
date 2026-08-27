@@ -52,6 +52,15 @@ Three things are never yours to pick:
 `session` picks the robot: `session-main` (robosuite) / `session-robocasa`
 (kitchen; separate interpreter and dependencies). Unsure? Call `sessions()`.
 
+**Submitting does not block.** `submit_brief`/`run_task` hand back a handle;
+`brief_status(brief_id, wait_ms=…)` is the ONE call that says where the brief is
+(queued/running/done/failed/cancelled, with queue position and how long the thing
+ahead has been running) and what it did. Waiting out `wait_ms` is not an error —
+it means "still running", so wait again. Never rebuild a brief's fate by hand
+from `runtime_events` + `session` + `session_progress`. `cancel_brief(brief_id)`
+stops one; it lands at a node boundary, seals as `runtime.task_cancelled`, and is
+never counted as a failure.
+
 Read results through `runtime_events` / `session_progress` / `store` /
 `heldout` / `vault_node` — do not reassemble conclusions from raw files under
 `runs/`; sealed artifacts are chain-verified and the board is how you read them.

@@ -447,7 +447,8 @@ assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
 
 
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
-        max_replans: int = 3, max_actuations: int = 3) -> dict[str, Any]:
+        max_replans: int = 3, max_actuations: int = 3,
+        cancelled=None) -> dict[str, Any]:
     """Run one plan -> validate -> act -> verify -> replan loop through the kernel.
 
     ``brief`` carries task/catalogue/oracles (planner-facing vocabulary,
@@ -459,7 +460,15 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     already succeeded is skipped, never re-run or re-billed. Returns
     ``{success, goal, replans, actuations, nodes, faults}`` and closes with one
     ``task.plan_complete`` ledger note, win or lose.
-    """
+
+    ``cancelled`` is an optional zero-arg predicate -- the operator's stop probe,
+    read at the NODE BOUNDARY and nowhere else. Mid-rollout is not a boundary: a
+    persistent M7 episode would tear, and a half-driven segment is not evidence
+    of anything. A fired probe folds in as a terminal ``cancelled`` FAULT, so the
+    loop breaks to its single exit, the world closes exactly once, and the sealed
+    note says in its own faults that a human stopped it -- which is what keeps
+    board.store.session_progress from tallying it as a failure. ``None`` (the
+    default, and every non-runtime caller) is today's path, byte-identical."""
     planner = kernel.resolve("task.planner", consumer=CONSUMER)
     scene = kernel.resolve("graph.scene", consumer=CONSUMER)
     # Accounted even while the catalogue is hand-declared: graph.skill is where
@@ -545,6 +554,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             # succeeded is finished work, skipped without re-running or
             # re-billing -- a model-independent floor, like max_actuations.
             for node in plan["nodes"]:
+                # The one cancellation checkpoint: BEFORE dispatch, so the node
+                # that already started finishes and the shared episode is never
+                # torn mid-segment.
+                if cancelled is not None and cancelled():
+                    fault = {"kind": "cancelled", "node": node["id"],
+                             "msg": "cancelled by the operator before node "
+                                    f"{node['id']!r}"}
+                    break
                 prior = nodes_out.get(node["id"])
                 if prior is not None and prior["success"]:
                     continue
@@ -634,7 +651,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             success = True
             break
         faults.append(fault)
-        if fault["kind"] == "budget" or replans >= max_replans:
+        # budget and cancelled are TERMINAL faults: replanning around either
+        # would be the loop arguing with a floor the operator (or the budget)
+        # already set.
+        if fault["kind"] in ("budget", "cancelled") or replans >= max_replans:
             break
         replans += 1
         opstream.emit("replan", replan=replans, fault_kind=fault["kind"],

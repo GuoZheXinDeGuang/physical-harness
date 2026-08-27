@@ -26,8 +26,16 @@ Intake is a watched directory: an external writer drops ``inbox/<id>.json`` with
 ``os.replace`` (atomic, so the runtime never reads a half-written file); the
 runtime claims by ``os.rename`` into ``processing/`` (the loser of a race gets
 ``FileNotFoundError`` and moves on), runs it, then ``os.replace``s the file into
-``done/`` or ``failed/``. On boot any ``processing/*.json`` left by a crash is
-re-queued to ``inbox/`` (at-least-once).
+``done/``, ``failed/`` or ``cancelled/``. On boot any ``processing/*.json`` left
+by a crash is re-queued to ``inbox/`` (at-least-once).
+
+Cancellation is COOPERATIVE and one-directional: ``board.store.cancel_brief``
+drops a marker in ``cancel/<brief-id>`` and stops. This runtime is the only
+thing that acts on one -- at the claim, at each node boundary inside the
+workload, and on a 2s probe while a campaign/rsi subprocess runs (killed by
+process GROUP, so a worker pool leaves no orphans). It ends in ``cancelled/``
+under a ``runtime.task_cancelled`` row, never ``runtime.task_error``: an
+operator's stop and a system crash must stay separable in the evidence.
 
 Authority-laundering defense (non-negotiable): a brief names NO provider/mount
 ref. It is a pure selector+budgets -- ``{"kind":"task","task":"stack","seed":
@@ -55,6 +63,7 @@ import importlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -65,7 +74,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from board.store import parse_ledger
+from board.store import cancelled_run, parse_ledger
 from harness import opstream
 from scripts.brief_drop import drop
 from harness.config import Mount, Patch, resolve_plan
@@ -203,7 +212,14 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     processing = inbox.parent / "processing"
     done = inbox.parent / "done"
     failed = inbox.parent / "failed"
-    for d in (log_dir, skills_root, inbox, processing, done, failed):
+    # cancelled/ is the fourth ending, a sibling for the same rename reason: an
+    # operator stop must be distinguishable from a crash forever after.
+    # cancel/ is its live-state inbox -- board.store.cancel_brief drops a marker
+    # there and this runtime is the only thing that acts on one.
+    cancelled = inbox.parent / "cancelled"
+    cancel = inbox.parent / "cancel"
+    for d in (log_dir, skills_root, inbox, processing, done, failed,
+              cancelled, cancel):
         d.mkdir(parents=True, exist_ok=True)
 
     # write-once mode: fixed at first boot, immutable across restart.
@@ -369,7 +385,7 @@ def task_brief(task: str, binding: dict) -> dict:
     return wbrief
 
 
-def _run_task(brief: dict, rt: Runtime) -> dict:
+def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
     """Build a fresh kernel on the shared log and run one governed plan loop.
 
     The task STRING resolves to its binding through the installed manifests; an
@@ -377,6 +393,10 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     brief cannot conjure a task no plugin provides. catalogue/oracles are
     skill-authored ``type`` objects imported by ref from the binding, never
     carried in the JSON brief.
+
+    ``cancelled`` is the operator's stop probe, threaded into the workload's node
+    loop: a zero-arg predicate the loop calls at each NODE BOUNDARY. The workload
+    knows nothing about markers or directories -- the seam is one callable.
     """
     task = brief["task"]
     binding = rt.task_bindings.get(task)
@@ -393,7 +413,8 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render,
                              frames=rt.frames))
     return workload.run(task_brief(task, binding), kernel, seed=seed,
-                        max_replans=max_replans, max_actuations=max_actuations)
+                        max_replans=max_replans, max_actuations=max_actuations,
+                        cancelled=cancelled)
 
 
 def _ledger_text(status_md: Path = STATUS_MD) -> str:
@@ -499,6 +520,64 @@ def _campaign_cmd(name: str, script: Path, out: Path) -> list[str]:
     return cmd
 
 
+def _cancel_marker(rt: Runtime, brief_id: str) -> Path:
+    """The operator's cooperative stop flag for one brief, written by
+    board.store.cancel_brief. Live state -- a plain file, never a chain row; the
+    SEAL is the ``runtime.task_cancelled`` row this runtime writes when it acts."""
+    return rt.inbox.parent / "cancel" / brief_id
+
+
+def _cancel_requested(rt: Runtime, brief_id: str) -> bool:
+    return _cancel_marker(rt, brief_id).exists()
+
+
+#: Cancel-probe cadence while a campaign/rsi subprocess runs. A chain runs for
+#: hours, so a 2s stat is free and bounds how long an operator waits.
+_CANCEL_POLL_S = 2.0
+#: Grace between SIGTERM and SIGKILL on a cancelled subprocess group.
+_CANCEL_GRACE_S = 10.0
+
+
+def _run_watched(cmd: list[str], env: dict, rt: Runtime, brief_id: str,
+                 out: Path, what: str) -> tuple[int, str]:
+    """``subprocess.run`` for a campaign/rsi chain, plus operator cancellation.
+
+    ``start_new_session=True`` puts the child in its OWN process group, which is
+    the whole trick: a campaign is a worker POOL, and signalling only the parent
+    leaves the workers as orphans still burning GPU (learned the hard way), so
+    the stop is ``os.killpg`` over the group -- and because the group is NEW, the
+    runtime's own process is never in the blast radius.
+
+    On cancel the half-written store is marked ``CANCELLED`` before raising: a
+    truncated dev sweep must never be readable as a result (two-state law). The
+    raise lands in ``_process``'s crash-safety wrap, which sees the marker and
+    seals ``runtime.task_cancelled`` rather than ``runtime.task_error``.
+    """
+    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
+    while True:
+        try:
+            # communicate() drains both pipes while it waits, so a chatty
+            # campaign can never deadlock on a full stderr buffer; retrying
+            # after a timeout loses no output (documented contract).
+            _, err = proc.communicate(timeout=_CANCEL_POLL_S)
+            return proc.returncode, err
+        except subprocess.TimeoutExpired:
+            if not _cancel_requested(rt, brief_id):
+                continue
+            os.killpg(proc.pid, signal.SIGTERM)  # pgid == pid (start_new_session)
+            try:
+                proc.communicate(timeout=_CANCEL_GRACE_S)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+            out.mkdir(parents=True, exist_ok=True)
+            drop(out, "CANCELLED", json.dumps(
+                {"brief": brief_id, "what": what, "ts": time.time()}))
+            raise RuntimeError(f"{what} cancelled by the operator")
+
+
 def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     """Schedule one preregistered RSI campaign as an in-system task: guard the
     seed ledger, spawn the fixed campaign script as a SUBPROCESS, fold its
@@ -521,13 +600,11 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     _assert_unburned(brief, name)
 
     out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
-    proc = subprocess.run(
-        _campaign_cmd(name, script, out),
-        cwd=str(REPO_ROOT), env={**os.environ, "MUJOCO_GL": "egl"},
-        capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"campaign {name!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+    code, err = _run_watched(_campaign_cmd(name, script, out),
+                             {**os.environ, "MUJOCO_GL": "egl"},
+                             rt, brief_id, out, f"campaign {name!r}")
+    if code != 0:
+        raise RuntimeError(f"campaign {name!r} exited {code}: {err.strip()[-500:]}")
 
     copied = _copy_skills(out / "skills", rt.skills_root)
     rt.log.append("runtime.campaign_scheduled",
@@ -591,11 +668,10 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
         # rsi_campaign._maybe_arm_frames) mirrors its episodes to the session's
         # frame.jpg. Live state, not evidence -- same file the task path dumps.
         env["PH_RSI_FRAMES"] = str(rt.inbox.parent / "frame.jpg")
-    proc = subprocess.run(cmd, cwd=str(REPO_ROOT),
-                          env=env, capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
+    code, err = _run_watched(cmd, env, rt, brief_id, out, f"rsi chain for {task!r}")
+    if code != 0:
         raise RuntimeError(
-            f"rsi chain for {task!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+            f"rsi chain for {task!r} exited {code}: {err.strip()[-500:]}")
 
     report = json.loads((out / "rsi_report.json").read_text())
     copied = _copy_skills(out / "skills", rt.skills_root)
@@ -627,8 +703,28 @@ _BRIEF_KEYS = {
 }
 
 
+def _seal_cancelled(rt: Runtime, brief_id: str, brief: dict, claimed: Path,
+                    stage: str) -> None:
+    """File a cancelled brief into ``cancelled/`` under its OWN chain row.
+
+    ``runtime.task_cancelled``, never ``runtime.task_error``: an operator
+    stopping a run and a run crashing must stay separable in the evidence
+    forever, or a later audit reads the human's decision as a capability the
+    harness lacks. ``stage`` records which boundary caught it -- ``queued`` (the
+    brief never started) or ``running`` (stopped at a node/subprocess boundary).
+    """
+    rt.log.append("runtime.task_cancelled",
+                  {"brief": brief_id, "task": brief.get("task") or brief.get("campaign"),
+                   "stage": stage})
+    opstream.emit("task_cancelled", brief=brief_id, task=brief.get("task"),
+                  stage=stage)
+    (rt.inbox.parent / "cancelled").mkdir(parents=True, exist_ok=True)
+    os.replace(claimed, rt.inbox.parent / "cancelled" / brief_id)
+    _cancel_marker(rt, brief_id).unlink(missing_ok=True)
+
+
 def _process(rt: Runtime, path: Path) -> None:
-    """Claim one brief, run it, file it under done/ or failed/."""
+    """Claim one brief, run it, file it under done/, failed/ or cancelled/."""
     brief_id = path.name
     claimed = rt.processing / brief_id
     try:
@@ -643,6 +739,13 @@ def _process(rt: Runtime, path: Path) -> None:
         return
     opstream.emit("task_claimed", brief=brief_id, task=brief.get("task"),
                   campaign=brief.get("campaign"), seed=brief.get("seed"))
+    # Checkpoint 1, AFTER the atomic claim: exactly one process owns this brief
+    # now, so cancelling a queued brief has no race with claiming it -- the
+    # winner of the rename is the one that reads the marker.
+    if _cancel_requested(rt, brief_id):
+        _seal_cancelled(rt, brief_id, brief, claimed, "queued")
+        return
+    stopped = False
     try:
         kind = brief.get("kind", "task")
         unknown = set(brief) - _BRIEF_KEYS.get(kind, set())
@@ -663,7 +766,14 @@ def _process(rt: Runtime, path: Path) -> None:
                     raise ValueError(
                         "skills-root mutated mid-session (execution mode): "
                         f"boot manifest {list(rt.skills_manifest)} != {current}")
-            _run_task(brief, rt)
+            # Checkpoint 2 lives INSIDE the workload (the node boundary). It
+            # reports back through the result, not through the marker: a cancel
+            # that arrives after the last node did not stop anything, and filing
+            # a mission that finished under cancelled/ would be a lie in the
+            # other direction.
+            stopped = cancelled_run(
+                _run_task(brief, rt,
+                          cancelled=lambda: _cancel_requested(rt, brief_id)))
         elif kind in ("campaign", "rsi"):
             # v4.1 hard rule: an evolution brief is accepted ONLY in evolution
             # mode. Rejection, not neutralization -- same pattern as the
@@ -676,6 +786,14 @@ def _process(rt: Runtime, path: Path) -> None:
         else:
             raise ValueError(f"unknown brief kind {kind!r}")
     except Exception as exc:  # noqa: BLE001 -- escape hatch: crash-safety lives here
+        # Checkpoint 3: a campaign/rsi cancellation ARRIVES as a raise (the
+        # killed group exits nonzero), so a set marker here means this ending is
+        # the operator's, not a fault. It also covers a task that raised while a
+        # stop was pending -- calling that a task_error would both misattribute
+        # it and strand the marker.
+        if _cancel_requested(rt, brief_id):
+            _seal_cancelled(rt, brief_id, brief, claimed, "running")
+            return
         rt.log.append("runtime.task_error",
                       {"brief": brief_id, "task": brief.get("task"),
                        "error": repr(exc)})
@@ -683,6 +801,12 @@ def _process(rt: Runtime, path: Path) -> None:
                       error=repr(exc))
         os.replace(claimed, rt.failed / brief_id)
         return
+    if stopped:
+        _seal_cancelled(rt, brief_id, brief, claimed, "running")
+        return
+    # The work finished. A marker that arrived too late cancelled nothing, and
+    # must not outlive the brief it named.
+    _cancel_marker(rt, brief_id).unlink(missing_ok=True)
     opstream.emit("task_done", brief=brief_id, task=brief.get("task"))
     try:
         os.replace(claimed, rt.done / brief_id)

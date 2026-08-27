@@ -131,7 +131,10 @@ screenshots never enter the session-log chain.
 **The board is the only door.** One set of functions, three faces: a Python API
 (`board/store.py`), a CLI (`storecli`), and an MCP server (for AI agents). All
 three change together — miss one and a test catches it. Reads are unrestricted;
-writes have exactly one entry: `submit_brief`.
+the writes are the brief lifecycle and nothing else: `submit_brief` drops one,
+`brief_status` says where it is and what it did, `cancel_brief` stops it. Both
+writes land in a live intake directory through one shared atomic drop; neither
+touches the hash chain, whose single writer is the runtime.
 
 **A brief is a pure selector plus budgets** — no implementation inside:
 
@@ -146,9 +149,13 @@ is rejected. The execution entry point is not injectable.
 
 **A runtime is a resident process** with almost embarrassingly simple logic: watch
 one inbox directory, claim files by atomic rename (which makes double-claiming
-impossible), move finished work to done/ or failed/. No message queue, no database
-— filesystem atomicity is enough. One runtime, one venv, one session directory per
-simulator.
+impossible), move finished work to done/, failed/ or cancelled/. No message queue,
+no database — filesystem atomicity is enough. One runtime, one venv, one session
+directory per simulator. A cancel is cooperative: the board leaves a marker, the
+runtime reads it at the claim, at a node boundary, or on a probe while a campaign
+subprocess runs (killed by process group, so a worker pool leaves no orphans), and
+seals `runtime.task_cancelled` — an operator's stop and a crash must never be
+confusable in the evidence.
 
 **The hard boundary between the two modes**: mode is a per-session property,
 default EXECUTION (fail-safe: real work can never trigger evolution). At boot, the
@@ -349,7 +356,9 @@ manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），�
 
 **Board 是唯一门面**，同一套函数暴露三张脸：Python API（`board/store.py`）、
 CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏一处测试抓。
-读随便读；写只有一个口：`submit_brief`。
+读随便读；写只有 brief 的生命周期三口：`submit_brief` 投递、`brief_status` 查在哪
+和干了什么、`cancel_brief` 叫停。两个写口都只落在活态收件目录（同一份原子投递），
+谁都不碰哈希链——链的唯一写者是 runtime。
 
 **brief 是纯选择器 + 预算**，不含实现：
 
@@ -362,8 +371,11 @@ CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏
 用什么代码由服务端按 manifest 决定，brief 里多塞任何键都被拒——执行入口不可注入。
 
 **Runtime 是常驻进程**，逻辑极简：盯一个 inbox 文件夹，有文件就认领（原子 rename，
-天然防抢单），干完移到 done/ 或 failed/。没有消息队列、没有数据库，文件系统的原子
-性够用。每个仿真器一个 runtime、一个 venv、一个 session 目录。
+天然防抢单），干完移到 done/、failed/ 或 cancelled/。没有消息队列、没有数据库，文件
+系统的原子性够用。每个仿真器一个 runtime、一个 venv、一个 session 目录。取消是协作
+式的：board 只留一个标记，runtime 在认领处、节点边界、或 campaign 子进程运行时的探
+测点读到它（按进程组杀，worker 池不留孤儿），然后封 `runtime.task_cancelled`——操作
+员叫停与系统崩溃，在证据层面永远分得开。
 
 **两态的硬边界**：mode 是每 session 属性，默认 EXECUTION（fail-safe：真任务永不触发
 演化）。boot 时把 mode + 技能清单 + 挂载哈希封成链的第 0 行；执行态收到 campaign/rsi
