@@ -1,8 +1,11 @@
 """Read-only parse layer over RSI campaign stores + STATUS/progress markdown.
 
-Pure functions, no server, and ONE write: ``submit_brief`` (the shared
-brief_drop atomic drop into a session inbox -- live intake, never sealed
-evidence; both the MCP and CLI submit faces are passthroughs into it). The store
+Pure functions, no server, and two writes -- both into LIVE intake, never into
+sealed evidence, both through the shared brief_drop atomic drop: ``submit_brief``
+(a brief into a session inbox) and ``cancel_brief`` (a stop marker into the
+session's ``cancel/``). Neither touches the hash chain: the resident runtime is
+its one writer, and a cancel only becomes a ``runtime.task_cancelled`` row when
+the runtime acts on the marker. The store
 shape is the one `plugins.rsi.campaign.CampaignStore` writes: an
 ``index.jsonl`` of ``{seq, kind, sha, time}`` rows plus content-addressed
 ``artifacts/<sha>.json`` payloads. The *kind* lives in the index, never in the
@@ -425,6 +428,222 @@ def submit_brief(runs_dir: str | Path, raw: str, session: str = "session-main",
     return {"submitted": name, "inbox": str(inbox)}
 
 
+# --- brief lifecycle: status + cancel ----------------------------------------
+#
+# A brief lives in exactly one of five sibling directories under the session,
+# and WHICH ONE holds it is its state -- the runtime's own intake protocol
+# (one os.rename per transition) read back, not a second bookkeeping copy.
+# ``cancelled/`` is the fifth: an operator stop must seal as its own ending, or
+# a later audit reads a human pressing stop as a capability the harness lacks.
+
+_BRIEF_DIRS = (("inbox", "queued"), ("processing", "running"),
+               ("done", "done"), ("failed", "failed"),
+               ("cancelled", "cancelled"))
+
+#: States a brief never leaves. Nothing waits on one, and nothing cancels one.
+_BRIEF_TERMINAL = ("done", "failed", "cancelled", "unknown")
+
+#: Long-poll bounds for brief_status -- read_runtime_frame's pattern at TASK
+#: cadence: a state change here is a node boundary (seconds to hours), not a
+#: 30ms frame dump, so the tick is coarse and the cap sits inside a normal RPC
+#: budget. A caller that waits out the cap gets the CURRENT state back, never a
+#: timeout error: "still running" is an answer, and the whole point of this face
+#: is that a long task never surfaces to its caller as a failure.
+_BRIEF_WAIT_CAP_MS = 30000
+_BRIEF_WAIT_TICK_S = 0.5
+
+#: How many of a brief's own events ride back in a status reply: the TAIL, so
+#: the answer is "where is it now", not a transcript. runtime_events serves the
+#: whole feed when the transcript is what you want.
+_BRIEF_EVENTS = 20
+
+#: Chain rows that NAME their brief, newest-first-wins. ``task.plan_complete``
+#: is deliberately absent -- it carries no brief id, so a task's outcome is
+#: attributed through the feed's claim boundary instead (see _brief_events).
+_BRIEF_CHAIN_KINDS = ("runtime.task_error", "runtime.task_cancelled",
+                      "runtime.campaign_scheduled", "runtime.rsi_scheduled")
+
+#: The events that CLOSE a brief's segment in the operational feed.
+_BRIEF_END_KINDS = ("task_done", "task_failed", "task_cancelled")
+
+
+def _brief_locate(session_dir: Path, brief_id: str) -> tuple[str, Path | None]:
+    """``(state, path)`` for one brief -- which intake dir holds it -- or
+    ``("unknown", None)``. Name-addressed, so it goes through the shared
+    safe_child guard: a ``../`` brief id can never stat outside the session."""
+    for sub, state in _BRIEF_DIRS:
+        path = safe_child(session_dir / sub, brief_id, Path.is_file)
+        if path is not None:
+            return state, path
+    return "unknown", None
+
+
+def _brief_queue(session_dir: Path) -> list[str]:
+    """Inbox names in the order the runtime will CLAIM them -- mtime order,
+    mirroring harness_runtime._pending. Sorting differently here would report a
+    position the runtime does not honor."""
+    try:
+        entries = sorted((session_dir / "inbox").glob("*.json"),
+                         key=lambda p: p.stat().st_mtime)
+    except OSError:
+        return []
+    return [p.name for p in entries]
+
+
+def _brief_events(events: list[dict], brief_id: str) -> list[dict]:
+    """One brief's slice of the operational feed.
+
+    The runtime claims briefs SERIALLY (one resident process per session --
+    harness.opstream's single-flight note), so a ``task_claimed`` names the
+    owner of every event until its task_done/task_failed/task_cancelled: the
+    claim boundary IS the attribution, and no per-event brief id is needed on
+    the hot path. The feed truncates per boot, so a brief finished before the
+    last boot has an empty segment -- honest, and its directory still answers
+    the state."""
+    seg: list[dict] = []
+    mine = False
+    for e in events:
+        if e.get("kind") == "task_claimed":
+            mine = e.get("brief") == brief_id
+        if mine:
+            seg.append(e)
+            if e.get("kind") in _BRIEF_END_KINDS:
+                mine = False
+    return seg
+
+
+def _ahead_running_s(session_dir: Path, events: list[dict]) -> float:
+    """How long the brief the runtime is running RIGHT NOW has been running.
+
+    Queue position 2 behind a chain three hours in and queue position 2 behind
+    one that just started are different facts; this is the difference. The clock
+    is the runtime's own ``task_claimed`` event -- ``processing/<id>.json`` keeps
+    its DROP mtime (os.rename does not touch it), so the file is no clock at all.
+    0.0 when the runtime is idle (or the feed is unarmed)."""
+    for e in reversed(events):
+        if e.get("kind") != "task_claimed":
+            continue
+        # the newest claim IS the current one; if it is no longer in
+        # processing/, the runtime finished it and is idle.
+        if _brief_locate(session_dir, str(e.get("brief") or ""))[0] != "running":
+            return 0.0
+        return round(max(time.time() - float(e.get("ts") or 0.0), 0.0), 1)
+    return 0.0
+
+
+def _brief_outcome(session_dir: Path, brief_id: str,
+                   seg: list[dict]) -> dict | None:
+    """What the brief DID, or ``None`` while it has done nothing yet.
+
+    Chain first, and only rows that NAME the brief (exact, and they survive the
+    per-boot feed truncation): a rejected key, an operator cancel, a scheduled
+    campaign/rsi. A finished TASK seals ``task.plan_complete``, which carries no
+    brief id, so its outcome is the ``plan_complete`` EVENT from this brief's own
+    segment. Either way the fields are copied VERBATIM -- nothing here re-decides
+    success -- and the event path is live state: ``session()`` is the sealed read.
+    """
+    row = next((r for r in reversed(chain_rows(session_dir))
+                if r["kind"] in _BRIEF_CHAIN_KINDS
+                and r["data"].get("brief") == brief_id), None)
+    if row is not None:
+        return {"chain_kind": row["kind"], "chain_seq": row["seq"], **row["data"]}
+    ev = next((e for e in reversed(seg) if e.get("kind") == "plan_complete"), None)
+    return None if ev is None else {k: v for k, v in ev.items() if k != "seq"}
+
+
+def _brief_selector(path: Path | None) -> str | None:
+    """The brief's selector (its task, or its campaign name) read off the brief
+    file wherever it currently sits. None when unreadable -- a status reply must
+    never fail because a brief is mid-replace."""
+    if path is None:
+        return None
+    try:
+        brief = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return brief.get("task") or brief.get("campaign") if isinstance(brief, dict) else None
+
+
+def brief_status(session_dir: str | Path, brief_id: str,
+                 wait_ms: int = 0) -> dict:
+    """Where one brief is and what it did -- the ONE call that answers "is my
+    long task still running, and did it finish?".
+
+    ``{state, brief_id, session, task, events, [queue_position, ahead_running_s |
+    started_ts, running_s], [outcome]}`` where ``state`` is
+    queued|running|done|failed|cancelled|unknown, derived from which intake
+    directory holds the brief. ``events`` is the tail of the brief's own slice of
+    the operational feed; ``outcome`` appears once there is one.
+
+    ``wait_ms`` long-polls exactly like read_runtime_frame: block up to that long
+    (capped board-side) for the state to CHANGE, then answer with the current
+    state. Waiting out the cap is not an error -- the reply says ``running`` and
+    the caller may wait again. A brief already in a terminal state never blocks.
+
+    Live state, never sealed evidence: no chain verify, and it never raises.
+    """
+    session_dir = Path(session_dir)
+    state, path = _brief_locate(session_dir, brief_id)
+    if wait_ms > 0 and state not in _BRIEF_TERMINAL:
+        deadline = time.monotonic() + min(int(wait_ms), _BRIEF_WAIT_CAP_MS) / 1000.0
+        while time.monotonic() < deadline:
+            time.sleep(_BRIEF_WAIT_TICK_S)
+            now, now_path = _brief_locate(session_dir, brief_id)
+            if now != state:
+                state, path = now, now_path
+                break
+    events = read_runtime_events(session_dir)["events"]
+    seg = _brief_events(events, brief_id)
+    out = {"state": state, "brief_id": brief_id, "session": session_dir.name,
+           "task": _brief_selector(path), "events": seg[-_BRIEF_EVENTS:]}
+    if state == "queued":
+        queue = _brief_queue(session_dir)
+        if brief_id in queue:
+            out["queue_position"] = queue.index(brief_id) + 1
+        out["ahead_running_s"] = _ahead_running_s(session_dir, events)
+    elif state == "running":
+        started = next((e["ts"] for e in seg if e.get("kind") == "task_claimed"), None)
+        if started is not None:
+            out["started_ts"] = started
+            out["running_s"] = round(max(time.time() - started, 0.0), 1)
+    outcome = _brief_outcome(session_dir, brief_id, seg)
+    if outcome is not None:
+        out["outcome"] = outcome
+    return out
+
+
+def cancel_brief(session_dir: str | Path, brief_id: str) -> dict:
+    """Ask the resident runtime to stop one brief -- ``{brief_id, session, state,
+    requested}``, plus ``error`` when there is nothing to cancel.
+
+    This writes ONE live-state marker (``<session>/cancel/<brief_id>``, the
+    shared atomic drop) and NOTHING else. The runtime owns every mutation that
+    follows: it checks the marker at the claim and at each NODE BOUNDARY, kills a
+    campaign/rsi subprocess GROUP, files the brief into ``cancelled/`` and seals
+    the ``runtime.task_cancelled`` row. One writer for the hash chain, and the
+    board stays what it is -- a reader that drops a flag.
+
+    A brief already ``done``/``failed``/``cancelled`` is refused with "already
+    <state>; nothing to cancel" and no marker is written; an unknown id likewise.
+    Cooperative by construction: cancelling never tears an episode mid-rollout,
+    so a marker is a request that lands at the next boundary, not an instant kill.
+    """
+    session_dir = Path(session_dir)
+    state, _ = _brief_locate(session_dir, brief_id)
+    out = {"brief_id": brief_id, "session": session_dir.name, "state": state,
+           "requested": False}
+    if state == "unknown":
+        return {**out, "error": "unknown brief"}
+    if state in _BRIEF_TERMINAL:
+        return {**out, "error": f"already {state}; nothing to cancel"}
+    # brief_id is proven safe by the locate above (safe_child), so this join
+    # cannot escape the session.
+    cancel_dir = session_dir / "cancel"
+    cancel_dir.mkdir(parents=True, exist_ok=True)
+    drop(cancel_dir, brief_id, json.dumps({"ts": time.time()}))
+    return {**out, "requested": True}
+
+
 def _chain_rows(log_dir: Path) -> tuple[list[dict], int]:
     """Whole rows in seq order + a mid-write skip count -- same partial-tolerant
     line loop as _index_rows: the runtime appends rows.jsonl line by line, so a
@@ -667,6 +886,19 @@ def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
     return {"events": events, "last_seq": last_seq}
 
 
+def cancelled_run(row: dict) -> bool:
+    """True for a task result the operator actually STOPPED: the workload's
+    node-boundary cancel folds in as a ``cancelled`` FAULT, so the run says so
+    itself -- no second bookkeeping file, and an auditor reading the chain alone
+    reaches the same conclusion this function does.
+
+    Shared with harness_runtime, which asks it of the live ``workload.run``
+    return (same ``faults`` shape) before filing a brief as cancelled. One
+    predicate: if the runtime and this tally ever disagreed about what a
+    cancellation is, the evidence would contradict the count."""
+    return any(f.get("kind") == "cancelled" for f in row.get("faults") or [])
+
+
 def session_progress(session_dir: str | Path) -> dict:
     """Mission-progress aggregate over one session's ``task.plan_complete`` rows.
 
@@ -685,24 +917,33 @@ def session_progress(session_dir: str | Path) -> dict:
     idle state rather than inventing one. ``task_errors`` counts
     ``runtime.task_error`` rows (rejected briefs), a fault class distinct from a
     node failure inside a sealed plan.
+
+    A run the OPERATOR stopped is tallied APART, in ``cancelled``, and kept out
+    of tasks/succeeded/failed: a human pressing stop is not evidence about what
+    the harness can do, and folding it into the failure tally is exactly how a
+    later audit misreads an interruption as a capability gap. Its stages still
+    count -- those rollouts really ran -- and ``latest`` still shows it, because
+    the newest thing that happened is the newest thing that happened.
     """
     session_dir = Path(session_dir)
     by_kind, _skipped = _session_rows(session_dir / "session-log")
-    runs = by_kind.get("task.plan_complete", [])
+    sealed = by_kind.get("task.plan_complete", [])
+    runs = [r for r in sealed if not cancelled_run(r)]
     succeeded = sum(1 for r in runs if r.get("success"))
     stages = stages_passed = 0
-    for r in runs:
+    for r in sealed:
         for node in (r.get("nodes") or {}).values():
             for stage in node.get("stages") or []:
                 stages += 1
                 if stage.get("success"):
                     stages_passed += 1
-    latest = runs[-1] if runs else None
+    latest = sealed[-1] if sealed else None
     return {
         "name": session_dir.name,
         "tasks": len(runs),
         "succeeded": succeeded,
         "failed": len(runs) - succeeded,
+        "cancelled": len(sealed) - len(runs),
         "replans": sum(int(r.get("replans") or 0) for r in runs),
         "faults": sum(len(r.get("faults") or []) for r in runs),
         "task_errors": len(by_kind.get("runtime.task_error", [])),

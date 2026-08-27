@@ -5,7 +5,12 @@ The dsh cockpit (round-95 adoption) is an MCP client; this is the harness-side
 MCP *server* it connects to for live reads. Every tool is a one-call passthrough
 into board.store -- the SAME pure parse layer scripts/rsi_board.py serves over
 HTTP -- so the two surfaces return byte-identical dicts and rsi_board can be
-retired (rung 4) without losing a view. Zero writes: runs/ is sealed evidence.
+retired (rung 4) without losing a view.
+
+The only writes are the brief lifecycle -- submit_brief/run_task drop a brief,
+cancel_brief drops a stop marker -- and both land in LIVE intake dirs through the
+one shared atomic drop. Nothing here writes the hash chain: runs/ is sealed
+evidence and the resident runtime is its single writer.
 
 Name-addressed reads (store/heldout/session) go through board.store.safe_child,
 the one audited traversal guard, so a ``../`` name can never escape runs_dir.
@@ -18,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -64,6 +68,15 @@ def _route_inbox(session: str) -> Path | None:
     gate, so a first submit can precede the runtime's first boot; any OTHER
     session is validated against runs/ through the shared guard)."""
     return bs.brief_inbox(_Cfg.runs, session, _Cfg.session, _Cfg.inbox)
+
+
+def _session_dir(session: str) -> Path | None:
+    """The session directory a per-call ``session`` addresses, or ``None``. The
+    intake dirs are inbox's siblings (harness_runtime.boot), so the routed inbox
+    IS the resolver -- one routing rule for the write faces and the lifecycle
+    faces alike, including the configure(inbox=) override."""
+    inbox = _route_inbox(session)
+    return inbox.parent if inbox is not None else None
 
 
 def _read(path: Path) -> str:
@@ -287,85 +300,101 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
                            _Cfg.session, _Cfg.inbox)
 
 
-def _outcome(status: str, brief_id: str, session_dir: Path, baseline: int,
-             elapsed: float) -> dict:
-    """Copy THIS brief's sealed chain row into a compact result. The runtime is
-    the SOLE authority on success -- fields are copied verbatim, nothing here
-    interprets them. failed/ carries a runtime.task_error whose ``brief`` matches
-    (unambiguous); done/ carries a task.plan_complete, which carries no brief_id.
-    ponytail: attribute the done row as the last plan_complete after our baseline
-    seq -- exact for serial briefs (the interactive MCP case). Add a brief_id to
-    plan_complete and match it if concurrent submitters ever misattribute."""
-    new = [r for r in bs.chain_rows(session_dir) if r.get("seq", -1) > baseline]
-    if status == "failed":
-        row = next((r for r in reversed(new)
-                    if r["kind"] == "runtime.task_error"
-                    and r["data"].get("brief") == brief_id), None)
-        out = {"status": "failed", "brief_id": brief_id, "elapsed_s": elapsed}
-        if row is not None:
-            out["error"] = row["data"].get("error")
-            out["chain_seq"] = row["seq"]
-        return out
-    row = next((r for r in reversed(new) if r["kind"] == "task.plan_complete"), None)
-    out = {"status": "done", "brief_id": brief_id, "elapsed_s": elapsed}
-    if row is not None:
-        d = row["data"]
-        out["success"] = d.get("success")
-        out["nodes"] = d.get("nodes")
-        out["chain_seq"] = row["seq"]
-        if d.get("faults"):
-            out["failure"] = d["faults"]
-    return out
+@mcp.tool()
+def brief_status(brief_id: str, session: str = _DEFAULT_SESSION,
+                 wait_ms: int = 0) -> dict:
+    """Where one brief is and what it did -- ONE call, no archaeology.
+
+    Answers ``{state, brief_id, session, task, events, ...}`` where ``state`` is
+    ``queued`` | ``running`` | ``done`` | ``failed`` | ``cancelled`` |
+    ``unknown``, read off which of the runtime's intake directories holds the
+    brief. ``events`` is the tail of THIS brief's slice of the operational feed
+    (the same rows runtime_events serves, attributed by claim boundary), and
+    ``outcome`` appears once there is one -- the sealed chain row when it names
+    the brief (a rejected key, a cancel, a scheduled campaign/rsi), else the
+    brief's own ``plan_complete`` event. A ``queued`` brief also carries
+    ``queue_position`` (1 = next to be claimed) and ``ahead_running_s`` (how long
+    the brief currently running has been running -- position 2 behind a chain
+    three hours in is not position 2 behind one that just started); a ``running``
+    one carries ``started_ts`` and ``running_s``.
+
+    ``wait_ms`` long-polls: block up to that long (capped board-side) for the
+    state to CHANGE, then answer with the current state. **Waiting out the cap is
+    not an error** -- the reply just still says ``running``, and you may wait
+    again. This is the tool to poll a long mission with; do NOT reconstruct its
+    fate from runtime_events + session + session_progress.
+
+    Live state, never sealed evidence: ``session()`` is the chain-verified read.
+    """
+    session_dir = _session_dir(session)
+    return (bs.brief_status(session_dir, brief_id, wait_ms) if session_dir
+            else {"error": f"unknown session {session!r}"})
+
+
+@mcp.tool()
+def cancel_brief(brief_id: str, session: str = _DEFAULT_SESSION) -> dict:
+    """Stop one brief -- queued or already running -- and seal it as CANCELLED.
+
+    Returns ``{brief_id, session, state, requested}``, plus ``error`` when there
+    is nothing to cancel: a brief already ``done``/``failed``/``cancelled`` is
+    refused ("already <state>; nothing to cancel") and NOTHING happens, and so is
+    an unknown id.
+
+    Cooperative, not a kill: this drops one marker and the resident runtime acts
+    on it at a safe boundary -- a queued brief never starts; a running mission
+    stops at its next NODE boundary (never mid-rollout, so a persistent episode
+    is not torn) and seals an honest partial; a campaign/rsi subprocess is killed
+    by process GROUP, so its worker pool leaves no orphans and its half-written
+    store is marked incomplete. Expect ``state`` to still read ``running`` for a
+    moment; poll brief_status to see it land in ``cancelled``. A cancel that
+    arrives after the last node ran stops nothing, so that brief finishes
+    ``done`` -- filing completed work as cancelled would be the same lie the
+    other way round.
+
+    A cancel is its OWN ending -- ``runtime.task_cancelled``, never
+    ``runtime.task_error``, and excluded from session_progress's failure tally --
+    because an operator stopping a run and a run failing must never be confusable
+    when someone audits this later.
+    """
+    session_dir = _session_dir(session)
+    return (bs.cancel_brief(session_dir, brief_id) if session_dir
+            else {"error": f"unknown session {session!r}"})
 
 
 @mcp.tool()
 def run_task(task: str, seed: int, max_replans: int | None = None,
-             max_actuations: int | None = None, timeout_s: float = 120,
+             max_actuations: int | None = None,
              session: str = _DEFAULT_SESSION) -> dict:
-    """Submit a task brief and BLOCK until the resident runtime finishes it.
+    """Submit a task brief and return its HANDLE immediately -- this does NOT wait.
 
-    Kills the submit -> bash-poll -> read-session ceremony: one call drops the
-    brief (the SAME atomic path submit_brief uses -- no second implementation),
-    watches the runtime's own inbox/processing -> done/|failed/ protocol
-    (read-only, ~0.5s poll), then returns the sealed chain row for THIS brief.
+    It used to block until the runtime finished, which made every long mission
+    (a 31-node kitchen chain runs for many minutes) come back ``timeout`` while
+    the runtime was in fact running it to a clean seal -- and the caller then
+    spent a dozen tool calls reconstructing the truth. So: drop the brief through
+    the SAME atomic path submit_brief uses (no second submit implementation) and
+    hand back where it landed --
+    ``{state, brief_id, session, task, queue_position, ahead_running_s, ...}``,
+    a brief_status reply as of right now.
 
-    The runtime stays the SOLE authority: this does NO _BRIEF_KEYS validation
-    (an injected key still hard-fails in the runtime, surfacing here as
-    status:failed) and copies task.plan_complete / runtime.task_error fields
-    verbatim -- it never decides success itself. Returns
-    ``{status: done|failed|timeout, brief_id, ...}``: done carries
-    success/nodes (+failure faults when the goal was missed), failed carries
-    error, timeout carries guidance (the brief keeps running; poll the session
-    later with session()).
+    **Then poll brief_status(brief_id, wait_ms=...) for the outcome.** It is the
+    one call that answers "did it finish, and what happened"; cancel_brief stops
+    it. Nothing here validates the brief or judges success -- the resident
+    runtime stays the sole authority (an injected key hard-fails there and
+    surfaces as ``state: failed`` with the sealed error).
 
     ``session`` routes to a second runtime (default session-main); an unknown one
-    returns ``{"status": "error"}`` before any submit.
+    returns ``{"error": ...}`` before any submit.
     """
     inbox = _route_inbox(session)
     if inbox is None:
-        return {"status": "error", "error": f"unknown session {session!r}"}
+        return {"error": f"unknown session {session!r}"}
     brief = {"kind": "task", "task": task, "seed": seed}
     if max_replans is not None:
         brief["max_replans"] = max_replans
     if max_actuations is not None:
         brief["max_actuations"] = max_actuations
-    session_dir = inbox.parent
-    baseline = max((r.get("seq", -1) for r in bs.chain_rows(session_dir)), default=-1)
     brief_id = submit_brief(brief, session=session)["submitted"]
-
-    done_dir, failed_dir = session_dir / "done", session_dir / "failed"
-    start = time.monotonic()
-    while time.monotonic() - start < timeout_s:
-        if (done_dir / brief_id).exists():
-            return _outcome("done", brief_id, session_dir, baseline,
-                            round(time.monotonic() - start, 3))
-        if (failed_dir / brief_id).exists():
-            return _outcome("failed", brief_id, session_dir, baseline,
-                            round(time.monotonic() - start, 3))
-        time.sleep(0.5)
-    return {"status": "timeout", "brief_id": brief_id,
-            "elapsed_s": round(time.monotonic() - start, 3),
-            "guidance": f"brief still running; poll session({session_dir.name!r}) later"}
+    return bs.brief_status(inbox.parent, brief_id)
 
 
 def main(argv=None) -> int:

@@ -14,7 +14,6 @@ on-disk shapes, not a hand-mocked one.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from test_read_session import _session
@@ -80,17 +79,15 @@ def test_traversal_name_rejected_by_shared_guard(tmp_path):
     assert bs.safe_child(tmp_path / "runs", "../STATUS.md", lambda p: True) is None
 
 
-# --- run_task: submit + wait + read, one call ------------------------------
+# --- run_task: drop and hand back a HANDLE, never block --------------------
 #
-# The fake runtime is a monkeypatched time.sleep: on each poll tick it does the
-# real runtime's move+append (inbox -> done|failed, seal one chain row) for the
-# one pending brief. So run_task's real submit/poll/read loop runs synchronously
-# with no threads and no MuJoCo -- the runtime is faked, the tool under test is not.
+# The old tool blocked until done/|failed/ appeared and reported status:timeout
+# otherwise -- which is what a long mission always hits while the runtime is
+# happily finishing it. It now returns immediately; brief_status is the read.
 
 
 def _run_task_session(tmp_path: Path) -> Path:
-    """A fake session: one pre-existing chain row (so baseline is nonzero and the
-    tool must skip it) + an empty inbox. Returns the session dir."""
+    """A fake session: one pre-existing chain row + an empty inbox."""
     session = tmp_path / "session-main"
     (session / "inbox").mkdir(parents=True)
     SessionLog(session / "session-log").append("runtime.boot", {"mode": "execution"})
@@ -98,72 +95,43 @@ def _run_task_session(tmp_path: Path) -> Path:
     return session
 
 
-def _fake_runtime(session: Path, dest: str, kind: str, data: dict):
-    """Seal one chain row then os.replace the one pending brief inbox -> dest,
-    exactly the move+append scripts/harness_runtime.py:_process does."""
-    briefs = list((session / "inbox").glob("*.json"))
-    if not briefs:
-        return
-    SessionLog.load(session / "session-log").append(kind, data)
-    (session / dest).mkdir(exist_ok=True)
-    os.replace(briefs[0], session / dest / briefs[0].name)
-
-
-def test_run_task_done_reads_plan_complete(tmp_path, monkeypatch):
-    session = _run_task_session(tmp_path)
-    nodes = {"stack-0": {"success": True, "stages": []}}
-    monkeypatch.setattr(ms.time, "sleep", lambda _: _fake_runtime(
-        session, "done", "task.plan_complete",
-        {"success": True, "goal": "stacked", "faults": [], "nodes": nodes}))
-
-    res = ms.run_task("stack", 90000)
-
-    assert res["status"] == "done"
-    assert res["success"] is True          # copied verbatim, not re-decided
-    assert res["nodes"] == nodes
-    assert res["chain_seq"] == 1           # after the seq-0 boot row
-    assert "failure" not in res            # no faults -> no failure key
-    assert res["brief_id"].startswith("brief-") and "elapsed_s" in res
-
-
-def test_run_task_done_carries_faults_as_failure(tmp_path, monkeypatch):
-    session = _run_task_session(tmp_path)
-    faults = [{"kind": "budget", "msg": "out of actuations"}]
-    monkeypatch.setattr(ms.time, "sleep", lambda _: _fake_runtime(
-        session, "done", "task.plan_complete",
-        {"success": False, "faults": faults, "nodes": {}}))
-
-    res = ms.run_task("clear_table", 90003)
-
-    assert res["status"] == "done" and res["success"] is False
-    assert res["failure"] == faults        # goal missed -> faults surface verbatim
-
-
-def test_run_task_failed_reads_task_error(tmp_path, monkeypatch):
+def test_run_task_returns_a_handle_without_waiting(tmp_path):
     session = _run_task_session(tmp_path)
 
-    def fake_sleep(_):
-        briefs = list((session / "inbox").glob("*.json"))
-        if briefs:
-            _fake_runtime(session, "failed", "runtime.task_error",
-                          {"brief": briefs[0].name, "task": "stack",
-                           "error": "ValueError('unknown brief keys')"})
-    monkeypatch.setattr(ms.time, "sleep", fake_sleep)
+    res = ms.run_task("stack", 90000, max_replans=2)
 
+    assert res["state"] == "queued" and res["task"] == "stack"
+    assert res["queue_position"] == 1 and res["ahead_running_s"] == 0.0
+    assert res["brief_id"].startswith("brief-")
+    # the brief really landed, whole, with the budgets folded in
+    dropped = json.loads((session / "inbox" / res["brief_id"]).read_text())
+    assert dropped == {"kind": "task", "task": "stack", "seed": 90000,
+                       "max_replans": 2}
+
+
+def test_run_task_handle_is_a_brief_status_reply(tmp_path):
+    session = _run_task_session(tmp_path)
     res = ms.run_task("stack", 90001)
-
-    assert res["status"] == "failed"
-    assert "unknown brief keys" in res["error"]
-    assert res["chain_seq"] == 1
-    assert "success" not in res and "nodes" not in res
+    # one implementation, not two: the handle IS what brief_status answers
+    assert _same(res, bs.brief_status(session, res["brief_id"]))
 
 
-def test_run_task_timeout_leaves_brief_pending(tmp_path, monkeypatch):
+def test_run_task_rejects_unknown_session_before_submitting(tmp_path):
     session = _run_task_session(tmp_path)
-    monkeypatch.setattr(ms.time, "sleep", lambda _: None)  # runtime never claims it
+    res = ms.run_task("stack", 90002, session="../session-main")
+    assert "error" in res
+    assert not list((session / "inbox").glob("*.json"))
 
-    res = ms.run_task("stack", 90002, timeout_s=0.05)
 
-    assert res["status"] == "timeout"
-    assert "guidance" in res and res["brief_id"].startswith("brief-")
-    assert (session / "inbox" / res["brief_id"]).exists()  # still queued, keeps running
+def test_lifecycle_tools_passthrough_and_reject_unknown_session(tmp_path):
+    session = _run_task_session(tmp_path)
+    brief_id = ms.run_task("stack", 90003)["brief_id"]
+    assert _same(ms.brief_status(brief_id), bs.brief_status(session, brief_id))
+    assert ms.brief_status(brief_id, session="../oops") == {
+        "error": "unknown session '../oops'"}
+    assert ms.cancel_brief(brief_id, session="../oops") == {
+        "error": "unknown session '../oops'"}
+    # cancel is the one lifecycle write: a marker, nothing else touched
+    assert ms.cancel_brief(brief_id)["requested"] is True
+    assert (session / "cancel" / brief_id).exists()
+    assert (session / "inbox" / brief_id).exists()

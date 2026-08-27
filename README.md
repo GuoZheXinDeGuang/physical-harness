@@ -36,8 +36,7 @@ measurable ablation curve rather than a worry.
 Charter: [GOAL.md](GOAL.md) · internals: [ARCHITECTURE.md](ARCHITECTURE.md) · agent handbook:
 [CLAUDE.md](CLAUDE.md). These three files anchor the project's direction and
 rules — do not modify them lightly; GOAL.md in particular is fixed and changes
-only by the operator's decision. Where things live and who decides what:
-[docs/project-documentation.md](docs/project-documentation.md).
+only by the operator's decision.
 Bringing your own VLM planner, VLA policy, or recovery primitives:
 [docs/plug-in-your-model.md](docs/plug-in-your-model.md).
 
@@ -145,6 +144,6 @@ plugin/card model, and how to write a card all live in [ARCHITECTURE.md](ARCHITE
 
 Always use `python -m pytest` (not `bin/pytest`, which drops cwd from `sys.path` and yields
 spurious collection errors). The **base fast lane** is `pytest -m "not robosuite and not
-robocasa"`, run isolated with the sim cards absent: **683 passed, 32 skipped, 28 deselected**.
+robocasa"`, run isolated with the sim cards absent: **691 passed, 32 skipped, 28 deselected**.
 The snapshot format and the isolation recipe are in [docs/base-gate.md](docs/base-gate.md); refresh
 that file and this line in the same commit whenever the count moves.

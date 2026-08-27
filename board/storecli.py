@@ -8,10 +8,20 @@ renders the byte-identical dict the LLM gets -- no second statistics layer, no
 reinterpretation. The fork host bridge (packages/host/dsh-ph-board) execFiles
 this and JSON.parses stdout verbatim.
 
-This face is read-only but for two write fns. ``model_server <action>`` is the
+Three fns cover the brief LIFECYCLE, the same three board.store functions the
+MCP face exposes: ``submit_brief`` drops one, ``brief_status <brief-id>
+[--wait-ms N]`` says where it is and what it did (queued/running/done/failed/
+cancelled, plus its own event tail and its outcome), and ``cancel_brief
+<brief-id>`` stops it -- cooperatively, sealed as ``runtime.task_cancelled``,
+never as an error. A long mission is polled with brief_status, never
+reconstructed from raw files.
+
+This face is read-only but for three write fns. ``model_server <action>`` is the
 console's local-model switch (``status``/``start``/``stop``, default ``status``)
 -- the launcher it may run is a constant in board.store, never an argument, and
-the action word is whitelisted there. The other is ``submit_brief`` (the cockpit's
+the action word is whitelisted there. ``cancel_brief`` drops one live marker and
+nothing else (the runtime does every mutation that follows). The third is
+``submit_brief`` (the cockpit's
 submit button; ``--brief '<json>' --session <name>``), a passthrough into
 board.store.submit_brief -- the SAME shared brief_drop atomic drop the MCP
 face's submit_brief tool uses, zero validation (the resident runtime's
@@ -61,11 +71,21 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
     every valid call is a bare board.store passthrough.
     """
     if fn == "submit_brief":
-        # the ONE write fn: raw passthrough into the shared atomic drop, zero
+        # a write fn: raw passthrough into the shared atomic drop, zero
         # validation (see module docstring -- runtime is the sole authority).
         if brief is None:
             raise ValueError("submit_brief needs --brief")
         return bs.submit_brief(runs, brief, session or "session-main")
+    if fn in ("brief_status", "cancel_brief"):
+        # The brief id rides the `name` slot (the model_server pattern); the
+        # SESSION is the addressed thing, so it goes through the shared guard.
+        path = bs.safe_child(runs, session or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        if not name:
+            raise ValueError(f"{fn} needs a brief id as the name argument")
+        return (bs.brief_status(path, name, wait_ms) if fn == "brief_status"
+                else bs.cancel_brief(path, name))
     if fn == "list_stores":
         return bs.list_stores(runs)
     if fn == "cards":
@@ -174,17 +194,17 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
-    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, or the model_server action (status|start|stop, default status)")
+    parser.add_argument("fn", help="serve|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, or the model_server action (status|start|stop, default status)")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
-    parser.add_argument("--session", default="session-main", help="submit_brief: the runtime session whose inbox the brief routes into (default: session-main)")
+    parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, and whose brief brief_status/cancel_brief names (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
     parser.add_argument("--progress", type=Path, default=None, help="progress.md for the rounds feed (default: <runs>/../progress.md)")
     parser.add_argument("--after", type=int, default=0, help="runtime_events cursor: return only events with seq > AFTER")
     parser.add_argument("--after-ts", type=float, default=0.0, help="runtime_frame cursor: the ts last displayed; unchanged file -> short {unchanged} reply")
-    parser.add_argument("--wait-ms", type=int, default=0, help="runtime_frame long poll: block up to WAIT_MS for the frame to change past --after-ts before answering (capped board-side)")
+    parser.add_argument("--wait-ms", type=int, default=0, help="long poll: runtime_frame blocks up to WAIT_MS for the frame to change past --after-ts, brief_status for the brief's STATE to change; either way the answer is the current state, never a timeout error (capped board-side)")
     parser.add_argument("--seq", type=int, default=0, help="runtime_keyframe: the runtime_events seq whose pinned still to fetch")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()

@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 683 passed
+pass       : 691 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,37 +49,30 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~14.4s (+4s of real SIGSTOP/SIGKILL waits in the watchdog tests)
+wall time  : ~13.5s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +9 pass over the model_server snapshot (674→683, skips unchanged) is the
-two guards that stop work from being LOST, each moved inside the thing it
-guards. +4 `test_executor_watchdog.py`: the per-episode wall cap now also runs
-in the PARENT (`harness.executor` watched path, one child per item, SIGKILL on
-overshoot). The in-worker SIGALRM cap the paragraph below celebrates was
-measured useless against the failure it was written for — a Python handler runs
-between bytecodes and eight workers spun inside MuJoCo's C code for 3h on
-2026-08-28, taking 140 finished episodes with them; a mechanism that cannot
-fire manufactures false confidence, so SIGALRM is demoted to the soft cap and
-`EPISODE_HARD_WALL_S = 2 * EPISODE_WALL_S` is the one that bites. The stand-in
-for "stuck in C" is a worker that SIGSTOPs itself with its own alarm armed:
-proof the in-worker cap cannot save it, then proof the batch still finishes.
-A written-off item returns the same ungoverned `wall_timeout` row, a child that
-vanishes without one returns `worker_died` (also ungoverned), and a worker's
-exception still reaches the parent instead of quietly becoming a data row.
-+1 `test_rsi_mechanism.py` runs that failure through `calibrate` itself: the
-block folds with the wedged seed as one honest row, and the summary takes its
-node kinds from a surviving episode rather than from whichever seed sorts first
-(a written-off lowest seed carries an empty graph and used to blank the whole
-attribution table). +4 `test_runtime_lock.py`: `harness_runtime` takes an exclusive flock on
-`runs/<session>/runtime.lock` at boot and a second instance refuses to start
-naming the holder's pid — `--drain` included, before any file is touched. flock
-and not a sentinel file, so `kill -9` releases it and the leftover file is
-inert; a re-boot by the same process is not a self-refusal. scripts/cockpit's
-`ps` scan is unchanged and still adopts, so the lock only speaks to something
-that bypassed cockpit. Sim-free, no seeds burned.
+The +17 pass over the model-server snapshot (674→691, skips unchanged) is the
+brief LIFECYCLE (`tests/test_brief_lifecycle.py`, plus the rewritten run_task
+block in `test_mcp_server.py` and the merged routing case, both net-zero). Two
+holes closed. **Status**: `run_task` no longer blocks — a 31-node mission always
+outran its timeout and came back `timeout` while the runtime was sealing it fine,
+so it now hands back a handle and `brief_status` answers where the brief is
+(the intake directory IS the state), what is ahead of it (`queue_position` in the
+runtime's own mtime claim order, `ahead_running_s` off the claim event because
+`os.rename` keeps a brief's drop mtime), and what it did (a chain row that names
+the brief, else the brief's own `plan_complete` event, attributed by the feed's
+claim boundary). `wait_ms` long-polls the read_runtime_frame way: waiting out
+the cap answers with the current state, never an error. **Cancel**: a marker in
+`cancel/`, read at the claim, at the node boundary before dispatch (so no
+episode tears), and on a 2s probe that kills a campaign's process GROUP — a
+lone parent kill orphans the worker pool. It ends in `cancelled/` under
+`runtime.task_cancelled`, its own ending, and `session_progress` tallies it apart
+from `failed`: an operator's stop must never read later as a capability gap.
+The subprocess-group test spawns a real child of a real child; everything else is
+sim-free, no seeds burned.
 
 The +8 pass over the host-vitals snapshot (666→674, skips unchanged) is
 `model_server` — the console's local-model switch
@@ -248,8 +241,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `705 passed, 29 skipped` (re-measured
-2026-08-28 with the model-server tests; 674 base + 28 robosuite-marked
+Full-suite parity (card present): `722 passed, 29 skipped` (re-measured
+2026-08-28 with the brief-lifecycle tests; 691 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
