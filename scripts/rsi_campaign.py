@@ -134,17 +134,40 @@ def _binding(task: str) -> dict:
     return binding
 
 
-#: Per-episode wall cap for pool probes. A healthy kitchen_thaw episode is
-#: ~60-110s; a pathological scene can spin the driver forever (cal 0-149 hung 8
-#: workers >1h each, 2026-08-28), and a hung worker starves the whole chain.
-#: SIGALRM works because each pool worker is a PROCESS running fn on its main
-#: thread. A capped episode is an honest row: first_death="wall_timeout",
-#: which attribute() counts as ungoverned (charged to nobody, never a target).
+#: SOFT per-episode wall cap, enforced INSIDE the worker by SIGALRM. A healthy
+#: kitchen_thaw episode is ~60-110s. SIGALRM still earns its keep against a
+#: Python-level spin -- but only that: a Python signal handler runs between
+#: bytecodes, so a worker parked inside MuJoCo's C code never reaches it. That
+#: is exactly what happened on 2026-08-28 (8 workers at 100% CPU for 3h, alarm
+#: never fired, 140 finished episodes lost), which is why the cap below exists.
 EPISODE_WALL_S = 600
+
+#: HARD per-episode cap, enforced by the PARENT (harness.executor watched path,
+#: SIGKILL). 2x the soft cap: a worker past twice its own alarm has proved the
+#: alarm cannot reach it. Either cap yields the same honest row --
+#: first_death="wall_timeout", which attribute() counts as ungoverned (charged
+#: to nobody, never a target).
+EPISODE_HARD_WALL_S = 2 * EPISODE_WALL_S
 
 
 class _EpisodeWallTimeout(Exception):
     pass
+
+
+def _lost_row(job: tuple, reason: str, seconds: float = EPISODE_HARD_WALL_S) -> dict:
+    """The row an episode nobody could finish returns. ``reason`` is its
+    ``first_death``: ``wall_timeout`` (capped) or ``worker_died`` (the child
+    vanished without a result -- a segfault or the OOM killer). Neither is a
+    node id, so ``attribute()`` charges it to nobody and can never target it.
+
+    Doubles as the executor's ``on_lost(item, reason)`` -- the default
+    ``seconds`` is the hard cap the parent enforces."""
+    return {
+        "seed": job[1], "success": False, "first_death": reason,
+        "graph": [], "node_ok": {}, "node_stages": {},
+        "replans": 0, "actuations": 0, "budget_exhaust": False,
+        "seconds": float(seconds), "wall_timeout": reason == "wall_timeout",
+    }
 
 
 def _probe_one(job: tuple[str, int, int, int]) -> dict:
@@ -170,12 +193,7 @@ def _probe_one(job: tuple[str, int, int, int]) -> dict:
     try:
         return _probe_one_uncapped(task, seed, max_replans, max_actuations)
     except _EpisodeWallTimeout:
-        return {
-            "seed": seed, "success": False, "first_death": "wall_timeout",
-            "graph": [], "node_ok": {}, "node_stages": {},
-            "replans": 0, "actuations": 0, "budget_exhaust": False,
-            "seconds": float(EPISODE_WALL_S), "wall_timeout": True,
-        }
+        return _lost_row(job, "wall_timeout", EPISODE_WALL_S)
     finally:
         signal.alarm(0)
 
@@ -298,8 +316,12 @@ def calibrate(task: str, block, *, workers: int = 10, out_dir: Path | None = Non
             if tick is not None:
                 tick(rows[-1])
     else:
+        # timeout= arms the parent-side watchdog: the serial branch above has no
+        # parent to watch it and keeps the SIGALRM soft cap alone.
         rows = LocalPoolExecutor().map(_probe_one, jobs, workers=workers,
-                                       on_result=tick)
+                                       on_result=tick,
+                                       timeout=EPISODE_HARD_WALL_S,
+                                       on_lost=_lost_row)
     rows.sort(key=lambda r: r["seed"])
     return summarize(task, rows, block)
 
@@ -307,7 +329,10 @@ def calibrate(task: str, block, *, workers: int = 10, out_dir: Path | None = Non
 def summarize(task: str, rows: list[dict], block) -> dict:
     """Chain base rate + node x mechanism first-death + wall clock. Never gates."""
     n = len(rows)
-    graph = rows[0]["graph"] if rows else []
+    # First row WITH a graph, not row 0: a written-off episode carries an empty
+    # graph, and the lowest seed dying that way would blank the kind table and
+    # silently make every death ungoverned.
+    graph = next((r["graph"] for r in rows if r["graph"]), [])
     kinds = {g["id"]: g["kind"] for g in graph}
     by_node = Counter(r["first_death"] for r in rows)
     by_mech = Counter(MECHANISM.get(kinds.get(r["first_death"], ""), "none")

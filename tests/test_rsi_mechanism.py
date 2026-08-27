@@ -230,10 +230,42 @@ def test_wall_timeout_deaths_are_ungoverned_never_the_target():
     from scripts.rsi_campaign import attribute
 
     cal = {"graph": [{"id": "a", "kind": "segment", "after": []}],
-           "first_death_by_node": {"a": 3, "wall_timeout": 5}}
+           "first_death_by_node": {"a": 3, "wall_timeout": 5, "worker_died": 2}}
     att = attribute(cal)
     assert att["target"] == "a"
-    assert att["ungoverned"] == {"wall_timeout": 5}
+    assert att["ungoverned"] == {"wall_timeout": 5, "worker_died": 2}
+
+
+def test_calibrate_survives_a_worker_no_signal_can_reach(monkeypatch):
+    """The 2026-08-28 loss, reproduced small: a probe wedged where its own
+    SIGALRM cannot run. The PARENT's hard cap ends it and the block still folds
+    -- and the summary's node kinds come from a surviving episode, not from
+    whichever seed happened to sort first."""
+    import os
+    import signal as _signal
+    import time as _time
+
+    import scripts.rsi_campaign as rc
+
+    graph = [{"id": "a", "kind": "manipulate", "after": [], "skill": "s", "args": {}}]
+
+    def wedged(task, seed, *_a):
+        if seed == 100:                      # the lowest seed is the wedged one
+            os.kill(os.getpid(), _signal.SIGSTOP)
+        return {"seed": seed, "success": False, "first_death": "a", "graph": graph,
+                "node_ok": {"a": False}, "node_stages": {}, "replans": 0,
+                "actuations": 1, "budget_exhaust": False, "seconds": 0.1}
+
+    monkeypatch.setattr(rc, "EPISODE_HARD_WALL_S", 2)
+    monkeypatch.setattr(rc, "_probe_one_uncapped", wedged)
+    t0 = _time.perf_counter()
+    cal = rc.calibrate("kitchen_thaw", (100, 103), workers=4)
+    assert _time.perf_counter() - t0 < 30
+
+    assert cal["n"] == 4
+    assert cal["first_death_by_node"] == {"a": 3, "wall_timeout": 1}
+    assert cal["graph"] == graph, "an empty timeout graph must not blank the table"
+    assert rc.attribute(cal)["target"] == "a"
 
 
 def test_frames_arm_is_single_writer_and_opt_in(monkeypatch, tmp_path):
