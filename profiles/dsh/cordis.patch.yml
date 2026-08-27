@@ -86,8 +86,8 @@
             # settles at max_total_num_tokens=26089. A request past the POOL fails
             # even though it is under the advertised window, so the harness is told
             # the number it can actually serve, with margin.
-            contextWindow: 24576
-            maxTokens: 4096
+            contextWindow: 98304
+            maxTokens: 8192
             input: [text, image]
             # reasoningEfforts is deliberately UNDECLARED: a hand-declared model has
             # no reasoning capability, so nothing is sent and the model's own
