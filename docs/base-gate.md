@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 650 passed
+pass       : 662 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,20 @@ wall time  : ~11.6s (measured while 10 RSI calibration workers held the GPU)
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +12 pass over the submit-face snapshot (650→662, skips unchanged) is
+keyframes — stills pinned to opstream events (`tests/test_keyframes.py`): the
+`on_emit` hook slot (fires only on an event that LANDED in the feed; a raising
+listener is swallowed and never blocks the next one), `arm`'s clearing of
+`keyframes/` on the feed's truncate-per-boot horizon, the capture layer
+(`KEYFRAME_KINDS` as data, following `--frames`, retracting its env handle at
+`close()`, and stopping at the per-boot ceiling instead of erroring), the
+three-face byte equivalence of `runtime_keyframes`/`runtime_keyframe` plus the
+`storecli serve` seq forwarding, and the INVARIANT: deleting the whole
+`keyframes/` directory leaves the sealed session-log byte-identical, the chain
+verifying, and only the live faces degraded. Sim-free (a fake env + a fake
+sim), no seeds burned. 3 of the 12 are Pillow-gated (`importorskip`) and run in
+the harness .venv; a fresh clone without Pillow skips them (see below).
 
 The +4 pass over the RSI-life-sign snapshot (646→650) is the submit CLI face
 plus the runtime heartbeat: +2 `test_storecli.py` (`submit_brief`, storecli's
@@ -179,8 +193,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `681 passed, 29 skipped` (re-measured
-2026-08-28 with the submit-face/heartbeat tests; 650 base + 28 robosuite-marked
+Full-suite parity (card present): `693 passed, 29 skipped` (re-measured
+2026-08-28 with the keyframes tests; 662 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
@@ -206,8 +220,9 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
 
 - +2 `test_plugin_doctor.py` verify-claim tests skip (sealed stores absent)
 - +2 more skips where tests read sealed rescore/campaign artifacts
-- +1 `test_runtime_frame.py` JPEG-write test skips when Pillow is absent (it
-  rides the sim extras, not the base deps; dump() itself degrades to no-frames)
+- +1 `test_runtime_frame.py` JPEG-write test and +3 `test_keyframes.py` capture
+  tests skip when Pillow is absent (it rides the sim extras, not the base deps;
+  dump() itself degrades to no-frames, and so does the keyframe listener)
 - the two 30-秒上手 commands in README work as written: the `dev` extra carries
   everything collection needs (including `mcp` for the both-faces tests)
 

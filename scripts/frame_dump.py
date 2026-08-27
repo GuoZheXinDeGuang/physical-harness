@@ -19,15 +19,48 @@ the existing state), so frames cannot perturb episode determinism.
 Frame cadence is a STEP interval, not a wall clock: time-based throttling would
 make the dump sequence depend on host load. Every step (~30fps on a paced
 rollout); size/quality tunables sit below with the measured costs.
+
+KEYFRAMES ride the same overlay: an ``harness.opstream.on_emit`` listener keeps
+one extra still per interesting event at
+``runs/<session>/keyframes/<seq:06d>-<kind>.jpg``. Registration is inverted
+(harness imports nothing; this module registers itself at import), the still
+reuses the offscreen context the live dump already built -- no second GL
+context, no extra VRAM -- and the whole directory is cleared by ``opstream.arm``
+on the feed's truncate-per-boot lifecycle. Anchored to a feed seq and never to
+a chain row, so a keyframe is live state like frame.jpg: deleting the directory
+loses zero evidence.
 """
 
 from __future__ import annotations
 
 import os
 
+from harness import opstream
+
 #: Armed destination (str path) or None. Module-level singleton like
 #: harness.opstream: one resident runtime per process, armed at boot only.
 _PATH: str | None = None
+
+#: The env of the most recent reset/step, or None between episodes (cleared on
+#: close: rendering a torn-down sim is not a swallowable failure). The keyframe
+#: listener has no env argument -- it fires from the event stream, so the
+#: wrapper leaves the live world here for it, the watch_stack module-global
+#: channel again.
+_LAST_ENV = None
+
+#: Event kinds worth a still, as DATA: the listener is one set membership test,
+#: so widening the set is a constant edit, never a new branch. A kind emitted
+#: when no world is open captures nothing (task_done fires after close; node_*
+#: only has a live env on the persistent-episode path) -- an absent still is a
+#: missing thumbnail, and the index face only lists what exists.
+KEYFRAME_KINDS = frozenset({"plan_built", "node_start", "stage_transition",
+                            "node_verified", "node_failed", "task_done"})
+
+#: Per-boot capture ceiling (~2000 x ~30KB = ~60MB worst case). A runaway
+#: replan loop stops capturing instead of filling the disk; silently, because
+#: raising here would break the task the stills only watch.
+MAX_KEYFRAMES = 2000
+_CAPTURED = 0
 
 #: The base embodiment.env ref whose SEMANTICS the frames overlay delegates to.
 #: harness_runtime._mount_plan sets it per task (the sim override or the viewer
@@ -71,20 +104,27 @@ CAMERAS = ("robot0_agentview_left", "agentview", "frontview")
 def arm(path) -> None:
     """Direct subsequent dumps at ``path`` (str or Path), or disarm with None.
     Runtime-boot only; unarmed, the wrapper is a pure pass-through."""
-    global _PATH
+    global _PATH, _LAST_ENV, _CAPTURED
     _PATH = str(path) if path else None
+    _LAST_ENV = None
+    _CAPTURED = 0
 
 
-def dump(env) -> None:
-    """Render one offscreen frame of ``env`` and atomically publish it.
+def dump(env, path: str | None = None) -> None:
+    """Render one offscreen frame of ``env`` and atomically publish it to
+    ``path`` (default: the armed live-viewport file).
 
     NEVER raises (the opstream.emit contract): a lost frame is a stale viewport,
     a raised one would kill the task. Creates the sim's offscreen render context
     lazily -- the production envs are built windowless AND cameraless, so none
     exists yet. The image is flipped vertically (mjr_readPixels is bottom-up).
+
+    The armed check gates BOTH destinations, so keyframes follow ``--frames``:
+    frames off, nothing renders anywhere.
     """
     if _PATH is None:
         return
+    dest = path or _PATH
     try:
         sim = env.sim
         if sim._render_context_offscreen is None:
@@ -95,18 +135,41 @@ def dump(env) -> None:
         px = sim.render(width=WIDTH, height=HEIGHT, camera_name=camera)
         from PIL import Image
 
-        tmp = _PATH + ".tmp"
+        tmp = dest + ".tmp"
         Image.fromarray(px[::-1]).save(tmp, "JPEG", quality=QUALITY)
-        os.replace(tmp, _PATH)
+        os.replace(tmp, dest)
     except Exception:
         pass
+
+
+def keyframe(seq: int, kind: str) -> None:
+    """opstream on_emit listener: pin one still to event ``seq``.
+
+    Reuses the live dump's render path (same offscreen context, same camera
+    pick, same atomic publish), so a keyframe costs one render + one encode and
+    zero extra GPU memory. Silent on every skip -- unarmed, uninteresting kind,
+    no open world, or the per-boot ceiling reached.
+    """
+    global _CAPTURED
+    d = opstream.keyframe_dir()
+    if (_PATH is None or _LAST_ENV is None or d is None
+            or kind not in KEYFRAME_KINDS or _CAPTURED >= MAX_KEYFRAMES):
+        return
+    _CAPTURED += 1
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return
+    dump(_LAST_ENV, os.path.join(d, f"{seq:06d}-{kind}.jpg"))
 
 
 class _FrameEnv:
     """Delegating wrapper: same env, plus a frame dump every EVERY steps.
 
     Only renders -- reset/step return the base env's values verbatim and the
-    dump consumes no rng, so wrapping changes no episode semantics.
+    dump consumes no rng, so wrapping changes no episode semantics. It also
+    publishes the live world to ``_LAST_ENV`` for the keyframe listener, and
+    retracts it on close so no listener ever renders a torn-down sim.
     """
 
     def __init__(self, env):
@@ -114,19 +177,32 @@ class _FrameEnv:
         self._steps = 0
 
     def reset(self):
+        global _LAST_ENV
         obs = self._env.reset()
         self._steps = 0
+        _LAST_ENV = self._env
         dump(self._env)
         return obs
 
     def step(self, action):
+        global _LAST_ENV
         out = self._env.step(action)
         self._steps += 1
+        _LAST_ENV = self._env
         if self._steps % EVERY == 0:
             dump(self._env)
         return out
 
-    def __getattr__(self, name):  # sim, close, _check_success, get_ep_meta, ...
+    def close(self):
+        # Explicit (not __getattr__): a closed sim is the one render input that
+        # is not merely broken but unsafe to touch, so the listener's handle
+        # goes at the same instant the world does.
+        global _LAST_ENV
+        if _LAST_ENV is self._env:
+            _LAST_ENV = None
+        return self._env.close()
+
+    def __getattr__(self, name):  # sim, _check_success, get_ep_meta, ...
         return getattr(self._env, name)
 
 
@@ -164,3 +240,8 @@ class FrameEmbodiment:
 
 def frames_provider():
     return FrameEmbodiment()
+
+
+# Inverted registration, once per process (module import is cached): harness/
+# imports no scripts, so the capture layer wires ITSELF onto the event stream.
+opstream.on_emit(keyframe)

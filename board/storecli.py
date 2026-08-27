@@ -50,7 +50,7 @@ def _read(path: Path) -> str:
 def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path,
              after: int = 0, relation: str | None = None, after_ts: float = 0.0,
              wait_ms: int = 0, brief: str | None = None,
-             session: str | None = None):
+             session: str | None = None, seq: int = 0):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -109,6 +109,16 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         if path is None:
             raise ValueError("unknown session")
         return bs.read_runtime_frame(path, after_ts, wait_ms)
+    if fn == "runtime_keyframes":
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        return bs.read_runtime_keyframes(path)
+    if fn == "runtime_keyframe":
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        return bs.read_runtime_keyframe(path, seq)
     if fn == "runtime_events":
         path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
@@ -142,7 +152,8 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
             result = dispatch(req.get("fn", ""), req.get("name"), runs, status, progress,
                               int(req.get("after", 0)), req.get("relation"),
                               float(req.get("after_ts", 0.0)), int(req.get("wait_ms", 0)),
-                              req.get("brief"), req.get("session"))
+                              req.get("brief"), req.get("session"),
+                              int(req.get("seq", 0)))
         except KeyError:
             result = {"error": f"unknown fn: {req.get('fn', '')}"}
         except Exception as exc:  # bad JSON / rejected name / anything: reply, keep serving
@@ -153,7 +164,7 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
     parser.add_argument("--session", default="session-main", help="submit_brief: the runtime session whose inbox the brief routes into (default: session-main)")
@@ -164,6 +175,7 @@ def main(argv=None) -> int:
     parser.add_argument("--after", type=int, default=0, help="runtime_events cursor: return only events with seq > AFTER")
     parser.add_argument("--after-ts", type=float, default=0.0, help="runtime_frame cursor: the ts last displayed; unchanged file -> short {unchanged} reply")
     parser.add_argument("--wait-ms", type=int, default=0, help="runtime_frame long poll: block up to WAIT_MS for the frame to change past --after-ts before answering (capped board-side)")
+    parser.add_argument("--seq", type=int, default=0, help="runtime_keyframe: the runtime_events seq whose pinned still to fetch")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
     status = args.status.resolve() if args.status else runs.parent / "STATUS.md"
@@ -172,7 +184,7 @@ def main(argv=None) -> int:
         return serve(sys.stdin, sys.stdout, runs, status, progress)
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
-                          args.after_ts, args.wait_ms, args.brief, args.session)
+                          args.after_ts, args.wait_ms, args.brief, args.session, args.seq)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2

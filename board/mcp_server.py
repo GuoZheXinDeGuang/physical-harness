@@ -154,6 +154,26 @@ def runtime_frame(name: str = _DEFAULT_SESSION, after_ts: float = 0.0,
 
 
 @mcp.tool()
+def runtime_keyframes(name: str = _DEFAULT_SESSION) -> dict:
+    """The INDEX of one session's live keyframe stills (runs/<session>/keyframes/,
+    one JPEG pinned to an interesting runtime_events seq, cleared every boot):
+    {frames: [{seq, kind, ts}], count}. Index only, no image bytes -- poll this,
+    then fetch one still with runtime_keyframe. Live state, never chain evidence;
+    an absent directory reads as an empty index. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_keyframes(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def runtime_keyframe(name: str = _DEFAULT_SESSION, seq: int = 0) -> dict:
+    """One keyframe still by its runtime_events seq: {jpeg_b64, seq, kind}, or
+    {"error": "no keyframe"} when that seq holds none. Live state, never chain
+    evidence. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_keyframe(path, seq) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
     """One runtime session's OPERATIONAL event feed (runtime_events.jsonl):
     events with seq > after_seq plus last_seq. last_seq < after_seq means the

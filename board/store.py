@@ -570,6 +570,63 @@ def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0,
                 "ts": ts, "age_s": round(max(time.time() - ts, 0.0), 3)}
 
 
+def read_runtime_keyframes(session_dir: str | Path) -> dict:
+    """The INDEX of one session's live keyframe stills
+    (``<session>/keyframes/<seq:06d>-<kind>.jpg``, written by
+    scripts/frame_dump's opstream listener and cleared by every boot).
+
+    Returns ``{"frames": [{"seq", "kind", "ts"}, ...], "count": n}`` ordered by
+    seq. Index ONLY -- no image bytes -- so a panel can poll it at event cadence
+    for pennies and fetch a still on demand through read_runtime_keyframe. The
+    seq is the runtime_events cursor, so a keyframe pins to the event a panel
+    already draws.
+
+    Same live-state family as read_runtime_frame: a plain directory read, never
+    a chain row, no verify. An absent directory reads as an empty index --
+    deleting the whole thing is legal and loses zero evidence.
+    """
+    frames: list[dict] = []
+    try:
+        entries = list((Path(session_dir) / "keyframes").iterdir())
+    except OSError:
+        return {"frames": [], "count": 0}
+    for path in entries:
+        seq, _, kind = path.stem.partition("-")
+        if path.suffix != ".jpg" or not seq.isdigit() or not kind:
+            continue  # a .tmp mid-publish, or anything else that wandered in
+        try:
+            ts = round(path.stat().st_mtime, 3)
+        except OSError:
+            continue
+        frames.append({"seq": int(seq), "kind": kind, "ts": ts})
+    frames.sort(key=lambda f: f["seq"])
+    return {"frames": frames, "count": len(frames)}
+
+
+def read_runtime_keyframe(session_dir: str | Path, seq: int) -> dict:
+    """One keyframe still by its event seq: ``{"jpeg_b64", "seq", "kind"}``, or
+    ``{"error": "no keyframe"}`` when that seq holds none (never captured, or
+    the boot that captured it has been cleared -- the same non-event to a
+    reader).
+
+    The b64 is encoded HERE, like read_runtime_frame, so all three faces ship
+    the identical dict and the TS side only decodes. ``kind`` comes off the
+    filename, so the index and the image can never disagree.
+    """
+    try:
+        hits = sorted((Path(session_dir) / "keyframes").glob(f"{int(seq):06d}-*.jpg"))
+    except (OSError, ValueError):
+        return {"error": "no keyframe"}
+    for path in hits:
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        return {"jpeg_b64": base64.b64encode(raw).decode("ascii"),
+                "seq": int(seq), "kind": path.stem.partition("-")[2]}
+    return {"error": "no keyframe"}
+
+
 def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
     """The resident runtime's OPERATIONAL event feed for one session
     (``<session>/runtime_events.jsonl``, written by harness.opstream: truncated
