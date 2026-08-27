@@ -7,13 +7,18 @@
 #
 # WHAT IT STARTS (operator is UI-only -- no second terminal):
 #   1. the resident harness_runtime on runs/session-main (adopt-or-spawn, below)
-#   2. the web console (the ph-station fork build)
+#   2. the EVOLUTION runtime on runs/session-robocasa-rsi (--mode evolution
+#      --frames, robocasa venv, headless egl) -- ON by default: it is the inbox
+#      rsi/campaign briefs land in, and leaving it un-managed is how briefs got
+#      dropped into a dead inbox. Skipped with a warning if the venv is absent.
+#   3. the web console (the ph-station fork build)
 #
-# RUNTIME adopt-vs-spawn: harness_runtime.py has no concurrent-session guard of
-#   its own (only a write-once MODE file; its inbox claim is an atomic rename so a
-#   double-run can't corrupt, but two runtimes on one session dir is still wrong).
-#   So cockpit enforces it: it scans `ps` for a live harness_runtime on
-#   runs/session-main. If one exists it is ADOPTED (its PID printed, NOT restarted,
+# RUNTIME adopt-vs-spawn: harness_runtime.py now guards its own session dir (an
+#   exclusive flock on runs/<session>/runtime.lock; a second instance refuses to
+#   start and names the holding pid, and the lock dies with the process). Cockpit's
+#   `ps` scan is the FRIENDLY half of the same rule -- it adopts instead of racing,
+#   so the lock only ever speaks when something bypassed cockpit. If one exists on
+#   runs/session-main it is ADOPTED (its PID printed, NOT restarted,
 #   NOT recorded for --stop -- cockpit did not start it, so cockpit won't kill it).
 #   If none exists cockpit SPAWNS one (nohup, logged to runs/session-main/
 #   runtime.log) and records its PID so --stop can kill it. --render is passed IFF
@@ -43,6 +48,7 @@ NO_RENDER=0
 WITH_ROBOCASA=0                          # opt-in second runtime (design §1); OFF by default
 SESSION_DIR="runs/session-main"          # cockpit's canonical resident session
 ROBOCASA_SESSION_DIR="runs/session-robocasa"
+EVOLUTION_SESSION_DIR="runs/session-robocasa-rsi"  # evolution runtime; ON by default
 
 usage() {
   cat <<EOF
@@ -59,8 +65,8 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
   --no-render    spawn the runtime headless even with a display attached
                  (default: --render IFF \$DISPLAY is set; the runtime refuses
                  --render without a display)
-  --no-runtime   do not adopt or spawn the resident runtime; serve only the web
-                 console (the pre-single-entry behavior)
+  --no-runtime   do not adopt or spawn ANY runtime (execution or evolution);
+                 serve only the web console (the pre-single-entry behavior)
   --with-robocasa  ALSO bring up a second runtime on $ROBOCASA_SESSION_DIR using
                  the robocasa venv interpreter (headless MUJOCO_GL=egl, cwd=repo).
                  OFF by default -- the default start touches only $SESSION_DIR and
@@ -71,13 +77,18 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
                  running. Reaps every session (main + robocasa) it recorded.
   -h, --help     show this help
 
-Starting (no --stop) brings up two things and leaves them running:
+Starting (no --stop) brings up three things and leaves them running:
   1. the resident harness_runtime on $SESSION_DIR --
        ADOPTED if one is already serving it (PID printed, not restarted, not
        killed by --stop), otherwise SPAWNED (nohup, logged) and recorded for
        --stop. Never two runtimes on one session dir. --with-robocasa adds a
        SECOND, independently adopt-or-spawned runtime on $ROBOCASA_SESSION_DIR.
-  2. the web console (the ph-station fork build).
+  2. the EVOLUTION runtime on $EVOLUTION_SESSION_DIR (--mode evolution --frames,
+       robocasa venv, headless MUJOCO_GL=egl) -- same adopt-or-spawn discipline,
+       ON by default (this inbox takes rsi/campaign briefs; an un-managed dead
+       runtime here is how briefs got dropped into a dead inbox). Skipped with
+       a warning when the robocasa venv is absent.
+  3. the web console (the ph-station fork build).
 
 serves the ph-station fork build (native brand). use this instead of running
 'npx @deepseek-ai/dsh web' or a second terminal for the runtime.
@@ -116,11 +127,14 @@ _cmd_of() { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null; }
 # `ps` snapshot and matches in-shell (no grep child to self-match); the snapshot
 # only contains processes alive when ps ran, and neither `ps` nor this shell's
 # own cmdline mentions harness_runtime.py, so there is no false positive.
+# The trailing space appended to $rest makes "--session-dir $sess" match on a
+# word BOUNDARY: without it, session-robocasa would adopt the session-robocasa-rsi
+# runtime (prefix collision) and never bring its own up.
 find_runtime() {
   local sess="$1" pid rest
   ps -eo pid=,args= | while read -r pid rest; do
-    case "$rest" in
-      *harness_runtime.py*"$sess"*) echo "$pid"; break;;
+    case "$rest " in
+      *harness_runtime.py*"--session-dir $sess "*) echo "$pid"; break;;
     esac
   done
 }
@@ -144,9 +158,11 @@ kill_recorded() {
 # session: adopt a live one by cmdline match (never restart, never record for
 # --stop), else spawn detached and record. allow_render=1 permits the live
 # MuJoCo window (session-main); a headless-only sim (robocasa) passes 0 and
-# always gets MUJOCO_GL=egl.
+# always gets MUJOCO_GL=egl. Any further args ($4...) ride the runtime cmdline
+# verbatim (e.g. --mode evolution --frames for the evolution session).
 runtime_up() {
   local session="$1" interp="$2" allow_render="$3"
+  shift 3
   mkdir -p "$REPO/$session"
   local existing
   existing="$(find_runtime "$session")"
@@ -164,10 +180,14 @@ runtime_up() {
   fi
   local log="$REPO/$session/runtime.log"
   # cd in a subshell so the runtime cmdline stays the canonical relative form
-  # (matches find_runtime on the next boot); nohup + parent-exit detaches it.
-  RT_PID="$(cd "$REPO" && { nohup env "${spawn_env[@]}" "$interp" \
-      scripts/harness_runtime.py --session-dir "$session" "${render_flag[@]}" \
-      >>"$log" 2>&1 & echo $!; })"
+  # (matches find_runtime on the next boot). setsid, not just nohup: nohup only
+  # blocks SIGHUP, so a runtime stayed in the launching terminal's process group
+  # and a group-wide teardown (`kill -- -PGID`, an agent/CI session ending) took
+  # it down mid-campaign -- 140/153 calibration episodes lost that way on
+  # 2026-08-28. Its own session makes it survive whatever started it.
+  RT_PID="$(cd "$REPO" && { setsid env "${spawn_env[@]}" "$interp" \
+      scripts/harness_runtime.py --session-dir "$session" "${render_flag[@]}" "$@" \
+      >>"$log" 2>&1 < /dev/null & echo $!; })"
   RT_ADOPTED=0
   echo "cockpit: spawned resident runtime on $session (pid $RT_PID, render=$([ ${#render_flag[@]} -gt 0 ] && echo on || echo off), log $log)" >&2
 }
@@ -247,7 +267,11 @@ export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 RT_PID=""
 RT_ADOPTED=""
 if [ "$NO_RUNTIME" -eq 0 ]; then
-  runtime_up "$SESSION_DIR" ".venv/bin/python" 1
+  # --frames explicitly, not by the headless-GL auto-enable: a display-attached
+  # spawn (render=on) leaves MUJOCO_GL unset, which used to silently switch the
+  # 取景窗 OFF for a REMOTE operator -- the local window they cannot see was
+  # suppressing the browser viewport they use. The two compose in _mount_plan.
+  runtime_up "$SESSION_DIR" ".venv/bin/python" 1 --frames
 fi
 
 # --- web: adopt-or-spawn (same discipline as the runtime). A server already
@@ -290,6 +314,25 @@ if [ "$NO_RUNTIME" -eq 0 ] && [ "$WITH_ROBOCASA" -eq 1 ]; then
     echo "runtime_pid=$RT_PID"
     echo "runtime_adopted=$RT_ADOPTED"
   } > "$REPO/$ROBOCASA_SESSION_DIR/cockpit.pids"
+fi
+
+# --- evolution runtime: session-robocasa-rsi (annexed; ON by default) --------
+# The inbox rsi/campaign briefs land in. Before this block cockpit managed only
+# the execution runtime, so a dead evolution runtime went unnoticed and briefs
+# rotted in its inbox. Same adopt-or-spawn + exact-PID pidfile discipline (its
+# own runs/<session>/cockpit.pids, reaped by the generic --stop loop); headless
+# (MUJOCO_GL=egl via allow_render=0) with --frames so the 取景窗 has a viewport.
+# A missing robocasa venv warns and skips -- never blocks the console.
+if [ "$NO_RUNTIME" -eq 0 ]; then
+  if [ -x "$ROBOCASA_PYTHON" ]; then
+    runtime_up "$EVOLUTION_SESSION_DIR" "$ROBOCASA_PYTHON" 0 --mode evolution --frames
+    {
+      echo "runtime_pid=$RT_PID"
+      echo "runtime_adopted=$RT_ADOPTED"
+    } > "$REPO/$EVOLUTION_SESSION_DIR/cockpit.pids"
+  else
+    echo "cockpit: WARNING robocasa venv missing at $ROBOCASA_PYTHON; evolution runtime ($EVOLUTION_SESSION_DIR) NOT started" >&2
+  fi
 fi
 
 # adopted web: runtimes are up and recorded; nothing left to serve.

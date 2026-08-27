@@ -345,10 +345,12 @@ commit, not a runtime flag.
 
 **Single entry — runtime adopt-or-spawn (round 98, ✅ landed).** The operator is
 UI-only, so `scripts/cockpit` now starts *everything*: before serving the console
-it brings up the resident `harness_runtime` on `runs/session-main`. Adopt-or-spawn,
-because `harness_runtime.py` has no concurrent-session guard of its own (write-once
-`MODE`; atomic inbox-claim rename — a double-run can't corrupt but is still wrong):
-cockpit scans `ps` for a live runtime on that session dir, **adopts** it if found
+it brings up the resident `harness_runtime` on `runs/session-main`. Adopt-or-spawn
+is the *friendly* half of the one-runtime-per-session rule; the enforcing half now
+lives in `harness_runtime.py` itself (an exclusive `flock` on
+`runs/<session>/runtime.lock` taken at boot — a second instance refuses to start and
+names the holding pid, and `kill -9` releases the claim). Cockpit adopts so the lock
+never has to speak: it scans `ps` for a live runtime on that session dir, **adopts** it if found
 (prints its PID, does not restart, does not record it for `--stop`), else **spawns**
 one (`nohup`, log → `runs/session-main/runtime.log`) and records its PID. `--render`
 is passed IFF `$DISPLAY` is set (the runtime hard-refuses `--render` headless);

@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import sys
 import tempfile
 import time
@@ -133,6 +134,42 @@ def _binding(task: str) -> dict:
     return binding
 
 
+#: SOFT per-episode wall cap, enforced INSIDE the worker by SIGALRM. A healthy
+#: kitchen_thaw episode is ~60-110s. SIGALRM still earns its keep against a
+#: Python-level spin -- but only that: a Python signal handler runs between
+#: bytecodes, so a worker parked inside MuJoCo's C code never reaches it. That
+#: is exactly what happened on 2026-08-28 (8 workers at 100% CPU for 3h, alarm
+#: never fired, 140 finished episodes lost), which is why the cap below exists.
+EPISODE_WALL_S = 600
+
+#: HARD per-episode cap, enforced by the PARENT (harness.executor watched path,
+#: SIGKILL). 2x the soft cap: a worker past twice its own alarm has proved the
+#: alarm cannot reach it. Either cap yields the same honest row --
+#: first_death="wall_timeout", which attribute() counts as ungoverned (charged
+#: to nobody, never a target).
+EPISODE_HARD_WALL_S = 2 * EPISODE_WALL_S
+
+
+class _EpisodeWallTimeout(Exception):
+    pass
+
+
+def _lost_row(job: tuple, reason: str, seconds: float = EPISODE_HARD_WALL_S) -> dict:
+    """The row an episode nobody could finish returns. ``reason`` is its
+    ``first_death``: ``wall_timeout`` (capped) or ``worker_died`` (the child
+    vanished without a result -- a segfault or the OOM killer). Neither is a
+    node id, so ``attribute()`` charges it to nobody and can never target it.
+
+    Doubles as the executor's ``on_lost(item, reason)`` -- the default
+    ``seconds`` is the hard cap the parent enforces."""
+    return {
+        "seed": job[1], "success": False, "first_death": reason,
+        "graph": [], "node_ok": {}, "node_stages": {},
+        "replans": 0, "actuations": 0, "budget_exhaust": False,
+        "seconds": float(seconds), "wall_timeout": reason == "wall_timeout",
+    }
+
+
 def _probe_one(job: tuple[str, int, int, int]) -> dict:
     """ONE ungoverned episode of ``task`` at ``seed``, plus its node graph.
 
@@ -146,6 +183,63 @@ def _probe_one(job: tuple[str, int, int, int]) -> dict:
     table the hand-written probes used to hard-code.
     """
     task, seed, max_replans, max_actuations = job
+    import signal
+
+    def _alarm(signum, frame):  # noqa: ARG001 -- signal handler shape
+        raise _EpisodeWallTimeout
+
+    signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(EPISODE_WALL_S)
+    try:
+        return _probe_one_uncapped(task, seed, max_replans, max_actuations)
+    except _EpisodeWallTimeout:
+        return _lost_row(job, "wall_timeout", EPISODE_WALL_S)
+    finally:
+        signal.alarm(0)
+
+
+#: True once THIS pool worker won the frame.lock and armed the overlay.
+_FRAMES = False
+
+
+def _maybe_arm_frames() -> bool:
+    """Arm the 取景窗 overlay in exactly ONE pool worker, if the spawning
+    runtime asked for it (``PH_RSI_FRAMES`` = the session's frame.jpg path).
+
+    One writer, chosen by an O_EXCL lockfile keyed by pid: ten workers
+    overwriting one frame.jpg would flicker between ten kitchens. A stale lock
+    (dead pid, e.g. a previous chain's worker) is stolen. Live state, not
+    evidence -- the overlay delegates verbatim and a lost frame never moves an
+    episode (scripts/frame_dump.py's own contract).
+    """
+    global _FRAMES
+    if _FRAMES:
+        return True
+    dest = os.environ.get("PH_RSI_FRAMES")
+    if not dest:
+        return False
+    lock = Path(dest).with_suffix(".lock")
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+    except FileExistsError:
+        try:
+            os.kill(int(lock.read_text().strip() or "0"), 0)
+            return False          # a live worker already streams
+        except (ValueError, ProcessLookupError):
+            try:
+                lock.write_text(str(os.getpid()))   # steal the stale lock
+            except OSError:
+                return False
+    from scripts import frame_dump
+    frame_dump.arm(dest)
+    _FRAMES = True
+    return True
+
+
+def _probe_one_uncapped(task: str, seed: int, max_replans: int,
+                        max_actuations: int) -> dict:
     from harness.definitions import CAPABILITIES
     from harness.events import SessionLog
     from harness.kernel import Kernel
@@ -156,7 +250,8 @@ def _probe_one(job: tuple[str, int, int, int]) -> dict:
     binding = _binding(task)
     with tempfile.TemporaryDirectory() as empty_skills:
         kernel = Kernel(CAPABILITIES, log=SessionLog())
-        kernel.mount(hr._mount_plan(binding, Path(empty_skills)))
+        kernel.mount(hr._mount_plan(binding, Path(empty_skills),
+                                    frames=_maybe_arm_frames()))
         brief = hr.task_brief(task, binding)
         # The planner call the loop's first attempt makes, verbatim -- so the
         # graph recorded here is the graph that ran.
@@ -221,8 +316,12 @@ def calibrate(task: str, block, *, workers: int = 10, out_dir: Path | None = Non
             if tick is not None:
                 tick(rows[-1])
     else:
+        # timeout= arms the parent-side watchdog: the serial branch above has no
+        # parent to watch it and keeps the SIGALRM soft cap alone.
         rows = LocalPoolExecutor().map(_probe_one, jobs, workers=workers,
-                                       on_result=tick)
+                                       on_result=tick,
+                                       timeout=EPISODE_HARD_WALL_S,
+                                       on_lost=_lost_row)
     rows.sort(key=lambda r: r["seed"])
     return summarize(task, rows, block)
 
@@ -230,7 +329,10 @@ def calibrate(task: str, block, *, workers: int = 10, out_dir: Path | None = Non
 def summarize(task: str, rows: list[dict], block) -> dict:
     """Chain base rate + node x mechanism first-death + wall clock. Never gates."""
     n = len(rows)
-    graph = rows[0]["graph"] if rows else []
+    # First row WITH a graph, not row 0: a written-off episode carries an empty
+    # graph, and the lowest seed dying that way would blank the kind table and
+    # silently make every death ungoverned.
+    graph = next((r["graph"] for r in rows if r["graph"]), [])
     kinds = {g["id"]: g["kind"] for g in graph}
     by_node = Counter(r["first_death"] for r in rows)
     by_mech = Counter(MECHANISM.get(kinds.get(r["first_death"], ""), "none")
@@ -344,8 +446,8 @@ def embodiment_card(binding: dict) -> str:
 
     A binding that names its own ``env`` rides a second simulator; one that omits
     it rides the base fold's default. Either way the card name is the middle
-    component of the provider ref -- the same string ``plugins/rsi/repertoire.py``
-    registers repair shapes against.
+    component of the provider ref -- the same plugin dir name whose manifest
+    declares ``[recoveries.*]`` repair shapes.
     """
     from plugins.rsi.governed import DEFAULT_ENV_REF
 
@@ -401,7 +503,7 @@ def recovery_support(task: str, node: dict) -> dict:
 
     out["driver"] = type(driver).__name__
     out["card"] = card = embodiment_card(binding)
-    out["repertoire"] = strategies = repertoire.for_card(card)
+    out["repertoire"] = strategies = repertoire.strategies_for(card)
     # Every blocker, not just the first: "this embodiment has no primitives" and
     # "this node is not reachable by the campaign path" are independent facts and
     # an operator told only one of them would fix the wrong thing.
@@ -409,8 +511,8 @@ def recovery_support(task: str, node: dict) -> dict:
     if not strategies:
         blockers.append(
             f"该本体（卡 {card}）无注册恢复原语，RSI 无从下手: "
-            "plugins/rsi/repertoire.py 里没有一条 Strategy 注册到这张卡。"
-            f"robosuite 侧的 servo_descend/servo_probe 是模板（{repertoire.for_card('embodiment_robosuite')}），"
+            "该卡的 manifest.toml 没有声明任何 [recoveries.*]。"
+            f"robosuite 侧的 servo_descend/servo_probe 是模板（{repertoire.strategies_for('embodiment_robosuite')}），"
             "但它们说的是 tabletop 的 above/descend/close/lift 词汇，换本体即无意义。"
             "为新本体注册恢复原语是先决条件，不是本次可以现编的东西。")
     missing = [m for m in RECOVERY_PROTOCOL if not hasattr(driver, m)]

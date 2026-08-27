@@ -38,6 +38,14 @@ board submit_brief(session=…) ── 路由：写哪个 session 的 inbox（�
   adopt-or-spawn 逐 session 应用；`--stop` 精确 pidfile 不变。
 * **board 面加一个 `session` 参数**（默认 `session-main`）：storecli / board fn /
   mcp tool 三脸同改（双脸铁律）。UI 会话选择器已存在，天然显示第二 runtime。
+* **路由错了照样投得进去**：任务名在 manifest 联合表里是一张表，所以 kitchen_thaw
+  投给 session-main 会被接受，几秒后在**另一个进程**的日志里 mount 失败。MCP 的
+  `submit_brief`/`run_task` 因此在返回值里附一个**只读** `warning`：绑定里的 `env`
+  ref 指向哪张 embodiment 卡（无 `env` = 跟着 session 自己的 base，不出声），那张卡
+  的 `third_party` 拿去问目标 session 活着的解释器（runtime_status.json 的 pid →
+  `/proc/<pid>/cmdline` 的 argv[0]）能否 import。它**不拦**——submit_brief 的零校验
+  是防权限洗白的设计，runtime 仍是唯一权威；任何读不出来的情形（绑定无 `env`、
+  runtime 已死、pid 被回收）一律**不给** warning 键，错的警告和错的文档一样坏。
 * **测试 marker 镜像 robosuite 模式**：`robocasa` marker + conftest 同款 find_spec
   自动跳过。base lane（`-m "not robosuite"`）会多出 robocasa 跳过项——base-gate
   快照 + README 计数**同 commit 刷**（纪律照旧）。robocasa venv 里只跑
@@ -98,3 +106,70 @@ verify + 回合内 replan 在 UI 图谱实时可见），不是成功率——�
 
 <!-- ponytail: 一个 session 参数 + 一张卡 + 一个 marker，没有插件间 RPC、没有
      跨 venv 序列化层；等第三个 sim 真出现共性再抽象。 -->
+
+## 5. LIBERO（第三 venv，脚手架已就位 2026-08-27）
+
+VLA 论文的比较货币（vlm-graph-paper-plan §3）。骨架：`sims/libero-venv` +
+`plugins/embodiment_libero/`（enabled=false，仅 embodiment.env 座）+ `libero`
+marker（conftest find_spec 自动跳过，照 robocasa 模式）。
+
+### 装法（已验证的偏离项，不是照抄 upstream requirements.txt）
+
+```bash
+cd $REPO/sims
+git clone --depth 1 https://github.com/Lifelong-Robot-Learning/LIBERO   # @8f1084e，含 405M 资产/bddl/init_files，无需另下大文件
+uv venv -p 3.10 libero-venv        # 3.12 不行：numpy==1.22.4 无 3.11+ 轮子
+VIRTUAL_ENV=$PWD/libero-venv uv pip install \
+  "numpy==1.22.4" "robosuite==1.4.0" "mujoco==2.3.2" "bddl==1.0.1" \
+  "hydra-core==1.2.0" easydict future "matplotlib==3.5.3" \
+  "cloudpickle==2.1.0" "gym==0.25.2" opencv-python \
+  "torch==2.4.1+cpu" --extra-index-url https://download.pytorch.org/whl/cpu \
+  termcolor pynput "pytest-timeout>=2"
+VIRTUAL_ENV=$PWD/libero-venv uv pip install -e ./LIBERO   # 只登记 dist-info，见坑 1
+echo "$PWD/LIBERO" > libero-venv/lib/python3.10/site-packages/libero_repo.pth
+```
+
+跳过未装（纯训练用，env 创建/评测不需要）：wandb、transformers、robomimic、
+einops、thop。torch 必须有（`libero.libero.benchmark` 用 torch.load 读
+init states），cpu 轮子即可。
+
+### 坑（全部实测踩过）
+
+1. **upstream editable 安装映射为空。** setup.py 用 find_packages()，但仓库顶层
+   `libero/` 没有 `__init__.py`，PEP-660 finder 的 MAPPING 是空的，
+   `import libero` 直接 ModuleNotFoundError。解法：一行 `.pth` 指向 checkout，
+   `libero` 走隐式 namespace package。推论：任何 cwd 里有 `libero/` 目录都会
+   遮蔽它——robocasa namespace 坑的同族。
+2. **`~/.libero/config.yaml` 是机器级全局单例。** 首次 import 写入绝对路径并永久
+   复用——本机上它指向旧的 `Learning_based_model/LIBERO`（openpi 客户端），冒烟
+   一度跑在错误资产上；且无 config 时首次 import 会 `input()` 交互提问，无头环境
+   直接挂死。解法：预写 `sims/libero-venv/.libero/config.yaml`（五个键指向本
+   checkout），运行时 `LIBERO_CONFIG_PATH` 指过去——卡片 make_env 里
+   `setdefault(sys.prefix + "/.libero")`，全局文件永不碰（openpi 的还要用）。
+3. **mujoco 不钉会解析到 3.x。** robosuite 1.4.0 元数据只写 `mujoco>=2.3`，uv
+   解析出 3.12.0（API 早不兼容）。钉 `mujoco==2.3.2`。
+4. robosuite 1.4.0 的轮子少声明依赖：termcolor、pynput 要手补；LIBERO 侧
+   matplotlib/cloudpickle/gym 同理（envs 包顶层 import 它们）。
+5. venv 里跑本仓库 pytest 需要 pytest-timeout（pyproject addopts 带
+   `--timeout=300`）。
+
+### 冒烟（EGL 无头，已通过）
+
+```bash
+cd $REPO   # 或任一 worktree
+MUJOCO_GL=egl PYTHONPATH=. sims/libero-venv/bin/python -c "
+from harness.spec import EpisodeSpec
+import plugins.embodiment_libero as card
+import numpy as np
+p = card.provider(); spec = EpisodeSpec(task='libero_pick_bowl', seed=420001)
+env = p.make_env(spec); obs = env.reset()
+for _ in range(10): obs, r, done, info = env.step(np.random.uniform(-1, 1, 7))
+print('ok', obs['agentview_image'].shape)"
+sims/libero-venv/bin/python -m pytest tests/test_libero_marker.py -m libero   # 1 passed
+```
+
+obs 是 dict：逐物体 `{name}_pos/_quat/_to_robot0_eef_*`、robot0 proprio、
+`agentview_image`/`robot0_eye_in_hand_image`（128×128×3）、`object-state`；
+动作 7 维（OSC 6 + gripper 1）。谓词面：bddl goal（如
+`(On akita_black_bowl_1 plate_1)`）是 terminal oracle 候选——按仓库纪律，
+先审计其区分度再当 gate 用（完整卡的活，不在骨架内）。

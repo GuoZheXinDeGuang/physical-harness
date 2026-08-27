@@ -32,38 +32,137 @@ Two ways:
   `import sys; sys.modules["robosuite"] = sys.modules["mujoco"] = None`, on
   `PYTHONPATH`, then `pytest -m "not robosuite"`.
 
-## current snapshot (2026-08-27, isolated, robosuite blocked)
+## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 618 passed
-skips      : 29 skipped
+pass       : 704 passed
+skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
-             [1] test_plugin_doctor.py:264    robocasa unimportable (robocasa venv only)
+             [1] test_plugin_doctor.py:307    robocasa unimportable (robocasa venv only)
              [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
              [12] test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
              [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
              [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
+             [1] test_libero_marker.py:15     libero unimportable (libero venv only)
+             [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~4.8s
+wall time  : ~10.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +13 over the kitchen-thaw-horizon snapshot (605→618 pass, skips unchanged at
-29) is node-level RSI on RoboCasa (`tests/test_node_level_rsi.py`): the two
-structural gaps closed for the kitchen grasp node -- (A) the robocasa card now
-registers recovery `Strategy` shapes (`regrasp_kitchen`/`redock_retry`) and its
-driver EXECUTES them in PandaOmron's 12-dim action space, and (B) the
-isolated-segment campaign rollout scores a `segment` target in a fresh world per
-seed (prefix ungoverned to the precondition, target governed). 13 sim-free tests:
-primitive registration + 12-dim base_mode discipline (4), the node-level
-recovery-primitive gate c5 + c1 (3), the isolation plumbing (`_segment_isolation`
-/ `build_prereg` threading segment_isolate) (2), and the isolated rollout's
-drive-prefix-ungoverned / score-only-the-target / dispatch logic on fakes (4).
-Adds to both lanes.
+The +26 over the three-track merge point (678 -> 704) is the brief-lifecycle
+hardening, measured on the merged tree: the parent-side episode watchdog and the
+runtime's own session lock (`hard-watchdog`), the async `run_task` + `brief_status`
+long-poll + `cancel_brief` three-checkpoint stop (`brief-lifecycle`), and the
+submit-time compatibility advisory (`submit-advisory`). Below, the per-branch
+increments those three measured before the merge.
+
+The +4 pass over the model-server snapshot (674→678, skips unchanged) is the
+submit advisory (`tests/test_submit_advisory.py`): the session×task warning
+`submit_brief`/`run_task` attach when a mission's binding names an embodiment the
+target runtime's interpreter cannot import. What the tests pin is that it is
+ADVICE — the incompatible brief is still delivered, the compatible one carries no
+`warning` key at all (absent, not empty), and every unreadable input (no live
+runtime, a pid whose cmdline is not a harness runtime) answers with silence
+rather than a guess. The interpreter half is read from a really-spawned process
+under this venv, so "robocasa is not importable here" is a fact of the venv
+running the test, not a mock. Sim-free, no seeds burned.
+
+The +8 pass over the host-vitals snapshot (666→674, skips unchanged) is
+`model_server` — the console's local-model switch
+(`tests/test_model_server.py`): the three status states the operator's badge
+reads (stopped / `running and not healthy` = the 1-2 minute load / serving,
+with `vram_mib` joined on our pid out of the same rows `host_vitals` reports),
+and the guards, which are most of the file. The action word is the whole
+caller-supplied surface — the launcher is a module constant, and every action
+outside `status|start|stop` answers with an error beside a truthful status
+while trip-wired `Popen`/`os.kill` prove nothing ran. Identity is
+`/proc/<pid>/exe`, not argv, so the launcher's own here-doc in an editor's
+command line is not adopted (and never killed); `start` adopts a live server
+instead of spawning a second and otherwise spawns the constant argv with
+`start_new_session`; `stop` SIGTERMs only a pid that still proves its identity
+at kill time and refuses a recycled or garbage one. Three-face byte
+equivalence includes the CLI's omitted argument reading rather than writing.
+/proc, the health probe and nvidia-smi monkeypatched, sim-free, no seeds burned.
+
+The +4 pass over the keyframes snapshot (662→666, skips unchanged) is
+`host_vitals` — the operator's live view of the machine's headroom
+(`tests/test_host_vitals.py`): the two-nvidia-smi join on GPU uuid
+(`--query-compute-apps` has no index column) with the per-card process list
+folded biggest-first, the MemTotal−MemAvailable RAM read, the statvfs disk read,
+the three-face byte equivalence with `ts` pinned, and the DEGRADATION contract —
+a missing binary, a timeout, a nonzero exit, an unparsable /proc/meminfo, and a
+nonexistent disk path each read as an empty list or zeros, never an exception,
+because this is live state on the same never-sealed footing as
+`runtime_status`. Host reads monkeypatched, sim-free, no seeds burned.
+
+The +12 pass over the submit-face snapshot (650→662, skips unchanged) is
+keyframes — stills pinned to opstream events (`tests/test_keyframes.py`): the
+`on_emit` hook slot (fires only on an event that LANDED in the feed; a raising
+listener is swallowed and never blocks the next one), `arm`'s clearing of
+`keyframes/` on the feed's truncate-per-boot horizon, the capture layer
+(`KEYFRAME_KINDS` as data, following `--frames`, retracting its env handle at
+`close()`, and stopping at the per-boot ceiling instead of erroring), the
+three-face byte equivalence of `runtime_keyframes`/`runtime_keyframe` plus the
+`storecli serve` seq forwarding, and the INVARIANT: deleting the whole
+`keyframes/` directory leaves the sealed session-log byte-identical, the chain
+verifying, and only the live faces degraded. Sim-free (a fake env + a fake
+sim), no seeds burned. 3 of the 12 are Pillow-gated (`importorskip`) and run in
+the harness .venv; a fresh clone without Pillow skips them (see below).
+
+The +4 pass over the RSI-life-sign snapshot (646→650) is the submit CLI face
+plus the runtime heartbeat: +2 `test_storecli.py` (`submit_brief`, storecli's
+ONE write fn — a passthrough into the shared `board.store.submit_brief` the
+MCP tool also delegates to: raw-bytes brief_drop with ZERO validation, and an
+unknown session drops nothing) and +2 `test_runtime_drain.py`
+(`runtime_status.json` carries `heartbeat_ts` from boot on; the poll loop's
+`_heartbeat` re-stamps only that field, atomically, and the board face passes
+it through so the UI can age it; a missing status file is a no-op). Sim-free,
+no seeds burned.
+
+The +1 pass over the wall-cap snapshot (645→646) is the RSI 取景窗 life
+sign: when the spawning runtime has `--frames`, `_run_rsi` passes
+`PH_RSI_FRAMES` and exactly ONE calibration pool worker (O_EXCL lockfile
+winner, stale locks stolen) mounts the frame overlay and mirrors its episodes
+to the session's frame.jpg. Live state, not evidence.
+
+The +2 pass over the planner_vlm snapshot (643→645) is the calibration
+per-episode wall cap (`scripts/rsi_campaign.py:EPISODE_WALL_S`, SIGALRM in the
+pool worker): 8 workers hung >1h each on pathological cal 0-149 scenes
+(2026-08-28) and starved the chain at 138/153. A capped episode returns an
+honest `first_death="wall_timeout"` row that `attribute()` counts as
+ungoverned — charged to nobody, never a target.
+
+The +10 pass over the five-track merge snapshot (633→643, skips unchanged) is
+the planner_vlm card (docs/vlm-graph-paper-plan.md §1 landed): +9
+`test_planner_vlm.py` (canned-endpoint generation through validate_plan, the
+one-re-ask-then-rejectable parse path, the per-(task, seed) frozen-graph cache,
+the replan prompt echoing done nodes, doctor exemption/SKIP, and the committed
+stack_vlm binding + fold) and +1 `test_task_seam.py` (a dispatch-time grounding
+refusal — the first thing the live VLM fabricated — folds back as a node fault
+instead of crashing the loop). All canned-HTTP/fake-rollout, sim-free, no seeds
+burned; the base plan sha is untouched (the card declares task_bindings only,
+and model_endpoint stays enabled=false — planner_vlm reaches it by ref string).
+
+The +28 pass / +3 skip over the campaign-progress-scan snapshot (605→633,
+29→32) is the merge of the five vlm-graph build tracks, each verified
+additively and re-measured isolated after the merge: +3 recoveries-fold
+(vlm-recov), +6 model_endpoint seam + skill contracts (vlm-seam), +9
+untrusted-planner hardening (vlm-valid), +10 policy_vla_remote transport
+(vlm-policy, its 2 protocol-layer tests skip without the `[policy_remote]`
+extra), +1 skip LIBERO marker self-proof (vlm-libero). Below, the older
+increments this supersedes.
+
+The +1 skip of the LIBERO scaffold (docs/sim-adaptation.md §5): `tests/test_libero_
+marker.py`'s marker self-proof, libero venv only (`sims/libero-venv`, py3.10 --
+LIBERO's 2022-era pins cannot share either existing interpreter), plus the
+inactive `plugins/embodiment_libero/` card (enabled=false, so the base fold and
+its sha are untouched -- the robocasa precedent). In the libero venv
+`-m libero` on that file is 1 passed.
 
 The +1 over the kitchen-thaw-horizon snapshot (604→605 pass, skips unchanged at
 29) is `test_campaign_progress.py`'s nested-layout case: `campaign_progress()`
@@ -140,9 +239,11 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `607 passed, 21 skipped` (the +13 node-level RSI
-base-lane tests above add to this lane too; the 18 robocasa-marked
-items also skip in the harness .venv — robocasa is not installed there either; they
+Full-suite parity (card present): `709 passed, 29 skipped` (re-measured
+2026-08-28 with the submit-advisory tests; 678 base + 28 robosuite-marked
++ the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
+items also skip in the harness .venv — robocasa is not installed there either, and
+the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
 the 5 xfails are the measured driver honest-failure surfaces —
 nav-microwave unloaded (fridge blocks the seed-7 aisle) / close-door /
@@ -165,8 +266,9 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
 
 - +2 `test_plugin_doctor.py` verify-claim tests skip (sealed stores absent)
 - +2 more skips where tests read sealed rescore/campaign artifacts
-- +1 `test_runtime_frame.py` JPEG-write test skips when Pillow is absent (it
-  rides the sim extras, not the base deps; dump() itself degrades to no-frames)
+- +1 `test_runtime_frame.py` JPEG-write test and +3 `test_keyframes.py` capture
+  tests skip when Pillow is absent (it rides the sim extras, not the base deps;
+  dump() itself degrades to no-frames, and so does the keyframe listener)
 - the two 30-秒上手 commands in README work as written: the `dev` extra carries
   everything collection needs (including `mcp` for the both-faces tests)
 

@@ -35,6 +35,7 @@ Dependency groups from [`pyproject.toml`](pyproject.toml):
 | base (always) | `numpy>=1.26` | kernel |
 | `[dev]` | `pytest>=8`, `pytest-timeout>=2`, `ruff==0.16.4`, `mcp==2.0.0` | tests + lint; `mcp` because the both-faces tests import `board/mcp_server` |
 | `[cockpit]` | `mcp==2.0.0` | console MCP seam (`board/mcp_server.py`) only. Pinned: dsh is an RC, so the wire stays fixed |
+| `[policy_remote]` | `websockets>=12`, `msgpack>=1.0` | the `plugins/policy_vla_remote` websocket transport (StarVLA/openpi policy servers); its protocol tests skip when absent |
 
 Run the base lane isolated (a fresh process where `robosuite` is genuinely
 unimportable) — never as a subset of a full green run. Snapshot format and the
@@ -129,7 +130,19 @@ cd $PHYSICAL_HARNESS_REPO      # NOT inside sims/robocasa — see the shadow tra
 MUJOCO_GL=egl $ROBOCASA_VENV/bin/python -m pytest -m robocasa
 ```
 
-## 4. UI companion — ph-station
+## 4. LIBERO sim card (THIRD venv, scaffold)
+
+LIBERO's 2022-era pins (`robosuite==1.4.0`, `mujoco==2.3.2`, `numpy==1.22.4` —
+no py3.11+ wheels) can share neither interpreter, so it is `sims/libero-venv`
+(**py3.10**) beside a `sims/LIBERO` clone (master @ `8f1084e`; assets/bddl/init
+states are bundled in-repo, ~405 MB, no separate download). Full install
+recipe, the pin deviations, and the three traps (empty PEP-660 editable →
+`.pth` workaround; the machine-global `~/.libero/config.yaml` singleton →
+`LIBERO_CONFIG_PATH`; the unpinned-mujoco 3.x resolution) live in
+[docs/sim-adaptation.md](docs/sim-adaptation.md) §5. Test lane: `-m libero`,
+only inside that venv.
+
+## 5. UI companion — ph-station
 
 The operator console is a separate repo,
 [ph-station](https://github.com/Z-Robotics-Lab/ph-station) (a dsh web fork). It

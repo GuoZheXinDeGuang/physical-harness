@@ -1,0 +1,24 @@
+# The planner_vlm card: a VLM-backed TaskPlanner behind the SAME plan(brief)
+# seam the deterministic planners fill (docs/vlm-graph-paper-plan.md §1).
+#
+# No [mounts]: task.planner is mounted per-task by the runtime's binding
+# override, so this card declaring only task_bindings leaves the folded base
+# plan sha (sealed in runs/round25-rerun) byte-untouched -- the skill_toy
+# precedent. The model transport is resolved by ref string inside the provider
+# (plugins.model_endpoint:provider, the §1b seam); the model_endpoint card
+# stays enabled=false because nothing kernel-mounts model.endpoint yet.
+#
+# stack_vlm is the A/B channel: the SAME policy ref as the task card's
+# [task_bindings.stack], only the planner swapped -- so the deterministic-vs-VLM
+# matrix is two briefs, {"task":"stack"} vs {"task":"stack_vlm"}, with no
+# existing binding moved. catalogue/oracles are card-owned and restricted to
+# the skills this binding's policy can actually drive (see CATALOGUE's
+# docstring: the live model exercised the mismatch the shared two-skill
+# catalogue left open).
+needs_sim = false
+
+[task_bindings.stack_vlm]
+policy = "plugins.policies:stack_scripted_provider"
+planner = "plugins.planner_vlm:provider"
+catalogue = "plugins.planner_vlm:CATALOGUE"
+oracles = "plugins.planner_vlm:ORACLES"

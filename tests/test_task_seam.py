@@ -585,6 +585,106 @@ def test_validate_admits_the_optional_kind_and_refuses_an_unknown_one():
     assert not ok and "telepathy" in msg and "known kinds" in msg
 
 
+# =====================================================================
+# untrusted-planner hardening (vlm-graph-paper-plan §1): verify coverage
+# + replan stability, each refused with a message that folds back.
+# =====================================================================
+
+
+def _ct_plan() -> dict:
+    return StackPlanner().plan({**CT_BRIEF, "scene": {}})
+
+
+def test_an_uncovered_manipulate_node_is_refused():
+    plan = _ct_plan()
+    plan["verify"] = [v for v in plan["verify"] if v["after"] != "pick-milk"]
+    ok, msg = validate_plan(plan, CATALOGUE, ORACLES)
+    assert not ok and "pick-milk" in msg and "verify" in msg
+
+
+def test_a_verify_kind_successor_counts_as_coverage():
+    plan = {
+        "goal": "grasp gated by a verify NODE, no verify-list edge of its own",
+        "nodes": [
+            {"id": "survey", "kind": "perceive", "skill": "survey", "args": {},
+             "after": []},
+            {"id": "grasp-0", "skill": "grasp", "args": {"object": "cube"},
+             "after": ["survey"]},
+            {"id": "check-grasp", "kind": "verify", "skill": "check", "args": {},
+             "after": ["grasp-0"]},
+        ],
+        "verify": [{"after": "check-grasp", "predicate": "lifted"}],
+    }
+    ok, msg = validate_plan(plan, HET_CATALOGUE, HET_ORACLES)
+    assert ok, msg
+    # remove the successor: the same manipulate node is now uncovered
+    plan["nodes"] = plan["nodes"][:2]
+    plan["verify"] = [{"after": "grasp-0", "predicate": "lifted"}]
+    ok, _ = validate_plan(plan, HET_CATALOGUE, HET_ORACLES)
+    assert ok  # a verify-list edge covers it again
+    plan["verify"] = [{"after": "survey", "predicate": "lifted"}]
+    ok, msg = validate_plan(plan, HET_CATALOGUE, HET_ORACLES)
+    assert not ok and "grasp-0" in msg
+
+
+def test_a_replan_preserving_done_nodes_passes():
+    done = [{"id": "pick-can", "skill": "pick", "args": {"object": "can"}}]
+    ok, msg = validate_plan(_ct_plan(), CATALOGUE, ORACLES, done=done)
+    assert ok and msg == ""
+
+
+def test_a_replan_dropping_a_done_node_is_refused():
+    plan = _ct_plan()
+    plan["nodes"] = [{"id": "pick-milk", "skill": "pick",
+                      "args": {"object": "milk"}, "after": []}]
+    plan["verify"] = [{"after": "pick-milk", "predicate": "pick_success"}]
+    done = [{"id": "pick-can", "skill": "pick", "args": {"object": "can"}}]
+    ok, msg = validate_plan(plan, CATALOGUE, ORACLES, done=done)
+    assert not ok and "pick-can" in msg and "dropped" in msg
+
+
+def test_a_replan_rewriting_a_done_node_is_refused():
+    plan = _ct_plan()
+    plan["nodes"][0]["args"] = {"object": "milk"}
+    done = [{"id": "pick-can", "skill": "pick", "args": {"object": "can"}}]
+    ok, msg = validate_plan(plan, CATALOGUE, ORACLES, done=done)
+    assert not ok and "pick-can" in msg and "rewrote" in msg
+
+
+class _AmnesiacPlanner(_CountingPlanner):
+    """Drops the finished pick-can on its first replan (a model forgetting done
+    work); repairs itself once the invalid_plan fault names the dropped node."""
+
+    def plan(self, brief):
+        self.briefs.append(dict(brief))
+        good = StackPlanner().plan(brief)
+        fault = brief.get("fault")
+        if fault is not None and fault["kind"] == "node_failure":
+            bad = json.loads(json.dumps(good))
+            bad["nodes"] = [{**n, "after": []} for n in bad["nodes"]
+                            if n["id"] != "pick-can"]
+            bad["verify"] = [v for v in bad["verify"] if v["after"] != "pick-can"]
+            return bad
+        return good
+
+
+def test_replan_instability_burns_a_replan_and_folds_back(monkeypatch):
+    planner = _AmnesiacPlanner()
+    kernel = _task_kernel(planner)
+    fake = _RolloutFake([True, False, True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run(dict(CT_BRIEF), kernel, seed=1, max_actuations=6)
+
+    assert out["success"] is True and out["replans"] == 2
+    assert out["faults"][1]["kind"] == "invalid_plan"
+    assert "pick-can" in out["faults"][1]["msg"], "the refusal names the dropped node"
+    # the validator's own words reached the planner on the next brief
+    assert "pick-can" in planner.briefs[2]["fault"]["msg"]
+    # finished work never re-dispatched, the unstable graph never actuated
+    assert [s.task for s in fake.specs] == ["pickcan", "pickmilk", "pickmilk"]
+
+
 def test_a_manipulate_only_plan_needs_no_predicates_table():
     # stack/clear_table carry no `kind` and no `predicates`: the machinery is
     # inert for them -- byte-identical to before node kinds existed.
@@ -592,3 +692,35 @@ def test_a_manipulate_only_plan_needs_no_predicates_table():
     assert all("kind" not in n for n in plan["nodes"])
     ok, _ = validate_plan(plan, CATALOGUE, ORACLES)
     assert ok
+
+
+def test_an_ungrounded_arg_folds_back_instead_of_crashing(monkeypatch):
+    """A dispatch-time grounding refusal (a pick object with no task binding --
+    the first thing a real VLM planner fabricated) is the PLANNER's fault: it
+    must burn a replan and fold the refusal (naming the known bindings) back
+    into the next brief, never crash the loop."""
+    class _Ungrounded(_CountingPlanner):
+        def plan(self, brief):
+            self.briefs.append(dict(brief))
+            if brief.get("fault") is None:
+                return json.loads(json.dumps({
+                    "goal": "pick something",
+                    "nodes": [{"id": "pick-0", "skill": "pick",
+                               "args": {"object": "vlm"}, "after": []}],
+                    "verify": [{"after": "pick-0", "predicate": "pick_success"}],
+                }, sort_keys=True))
+            return StackPlanner().plan({**brief, "task": "stack"})
+
+    planner = _Ungrounded()
+    kernel = _task_kernel(planner)
+    fake = _RolloutFake([True])
+    monkeypatch.setattr(workload, "_governed_rollout", fake)
+
+    out = workload.run(dict(WBRIEF), kernel, seed=1)
+
+    assert out["success"] is True and out["replans"] == 1
+    fault = planner.briefs[1]["fault"]
+    assert fault["kind"] == "node_failure" and fault["node"] == "pick-0"
+    assert "refused at dispatch" in fault["msg"] and "can" in fault["msg"], \
+        "the refusal must name the known bindings so a replan can ground itself"
+    assert len(fake.specs) == 1, "the ungrounded node never actuated"

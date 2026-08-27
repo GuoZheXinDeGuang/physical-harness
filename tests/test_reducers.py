@@ -193,8 +193,13 @@ def test_every_strategy_resolves_to_offset_steps():
     # The actor resolves heights from PHASE_HEIGHT merged with STACK_PHASE_HEIGHT
     # (recovery._HEIGHT); a place-shaped strategy legitimately names the latter.
     from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT
+<<<<<<< HEAD
     from plugins.rsi.repertoire import REPERTOIRE, ROBOSUITE
     for s in REPERTOIRE:
+=======
+    from plugins.rsi.repertoire import names, strategy
+    for s in (strategy(n) for n in names()):
+>>>>>>> vlm-graph
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:
             # Only the robosuite card's strategies flow through the tabletop

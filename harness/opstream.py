@@ -26,11 +26,19 @@ Contract (all three lines of it):
 
 Hot-path cost when armed: one json.dumps + open-append-close per event, and
 events fire at node/stage/replan cadence (tens per task), never per sim step.
+
+Keyframes hang off THIS layer, not the chain: ``on_emit`` lets a downstream
+capture layer (scripts/frame_dump) pin a still to an event, and ``arm`` clears
+the ``keyframes/`` sibling directory on the same truncate-per-boot lifecycle.
+Because the anchor is a feed seq and never a chain row, "frames never enter the
+session-log chain" holds by construction -- deleting the whole directory loses
+zero evidence, exactly like deleting this file.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 
 #: Armed destination (str path) or None. Module-level singleton on purpose --
@@ -41,9 +49,35 @@ import time
 _path: str | None = None
 _seq = 0
 
+#: After-emit listeners, ``fn(seq, kind)``. Registration is INVERTED so the
+#: kernel keeps importing nothing (test_kernel's AST rule): the capture layer
+#: lives in scripts/frame_dump and registers itself here at import. Listeners
+#: outlive arm() -- a re-boot re-truncates the feed, not the wiring.
+_hooks: list = []
+
+
+def on_emit(fn) -> None:
+    """Register ``fn(seq, kind)``, called once per event that actually landed
+    in the feed (never for a dropped or unarmed emit), in registration order.
+
+    A listener inherits emit's discipline: its exception is swallowed and the
+    remaining listeners still run -- a capture layer can never fail a task.
+    """
+    _hooks.append(fn)
+
+
+def keyframe_dir() -> str | None:
+    """The armed session's ``keyframes/`` directory (the feed's sibling), or
+    None unarmed. Cleared by arm(); written by an on_emit listener, read by
+    board.store.read_runtime_keyframes."""
+    if _path is None:
+        return None
+    return os.path.join(os.path.dirname(_path), "keyframes")
+
 
 def arm(path) -> None:
-    """Truncate ``path`` and direct subsequent emits there. Runtime-boot only.
+    """Truncate ``path``, clear ``keyframes/``, and direct subsequent emits
+    there. Runtime-boot only.
 
     Any failure (unwritable dir, read-only fs) leaves the stream unarmed and
     the runtime unharmed -- the panel just shows no live feed.
@@ -56,6 +90,18 @@ def arm(path) -> None:
         _seq = 0
     except Exception:
         _path = None
+        return
+    # Same horizon as the feed: this boot's stills are the ones a panel can
+    # pair with this boot's seqs, so the previous boot's go. Best-effort --
+    # a leftover still is a stale thumbnail, never a broken boot.
+    d = keyframe_dir()
+    if d is None:  # unreachable (_path was just set); never listdir(None), which is cwd
+        return
+    try:
+        for name in os.listdir(d):
+            os.remove(os.path.join(d, name))
+    except OSError:
+        pass
 
 
 def emit(kind: str, **detail) -> None:
@@ -70,4 +116,9 @@ def emit(kind: str, **detail) -> None:
         with open(_path, "a") as f:
             f.write(line + "\n")
     except Exception:
-        pass
+        return
+    for fn in _hooks:
+        try:
+            fn(_seq, kind)
+        except Exception:
+            pass

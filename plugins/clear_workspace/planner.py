@@ -34,7 +34,7 @@ Sibling of ``plugins/inventory_build/planner.py`` (M6), one file, two halves:
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 import numpy as np
@@ -112,13 +112,20 @@ SEGMENT_SPECS: dict[str, dict[str, Any]] = {
 }
 
 
-def _emit_plan(objects: list[str]) -> Mapping:
+def _emit_plan(objects: list[str], done: Collection[str] = ()) -> Mapping:
     """The mission graph over the still-live ``objects`` (skips already dropped).
 
     survey -> plan-order -> [clear-X (segment) -> verify-X (verify)] for each ->
     sweep -> report. Always ≥ the four framing nodes; with all four objects it is
     the full 12-node graph. Round-tripped through sorted JSON so the emitted
-    mapping is exactly its canonical byte form (体检 determinism + replay)."""
+    mapping is exactly its canonical byte form (体检 determinism + replay).
+
+    ``done`` is the completed-node id set the loop's fault reported: a SKIPPED
+    object whose ``clear-X`` already succeeded (segment lifted, live verify then
+    failed) keeps that node in the graph verbatim -- validate_plan's replan-
+    stability rule refuses a graph that drops finished work, and the loop skips
+    a done node anyway, so retention costs nothing. Its verify-X (the failing
+    placement check) is what gets dropped."""
     nodes: list[dict] = [
         {"id": "survey", "skill": "survey", "kind": "perceive",
          "args": {}, "after": []},
@@ -128,8 +135,17 @@ def _emit_plan(objects: list[str]) -> Mapping:
     prev = "plan-order"
     clears: list[str] = []
     verify_list: list[dict] = []
-    for obj in objects:
+    for obj in _OBJECTS:
         clear_id, verify_id = f"clear-{obj}", f"verify-{obj}"
+        if obj not in objects:
+            if clear_id not in done:
+                continue  # skipped before its segment ever succeeded: fully dropped
+            nodes.append({"id": clear_id, "skill": "clear", "kind": "segment",
+                          "args": {"object": obj}, "after": [prev]})
+            verify_list.append({"after": clear_id, "predicate": "lifted"})
+            clears.append(clear_id)
+            prev = clear_id
+            continue
         nodes.append({"id": clear_id, "skill": "clear", "kind": "segment",
                       "args": {"object": obj}, "after": [prev]})
         nodes.append({"id": verify_id, "skill": "verify_placed", "kind": "verify",
@@ -162,13 +178,17 @@ class ClearWorkspacePlanner:
     def __init__(self) -> None:
         self._skip: set[str] = set()          # objects dropped from the mission
         self._seg_faults: dict[str, int] = {}  # object -> segment (grasp) fault count
+        self._done: set[str] = set()           # completed node ids the loop reported
 
     def _absorb_fault(self, fault: Mapping | None) -> None:
         """Route the loop's latest fault into the skip set: a verify-X failure
         drops object X (placement unrecoverable by re-lifting); a clear-X failure
-        counts one segment retry and drops X only once the retry budget is spent."""
+        counts one segment retry and drops X only once the retry budget is spent.
+        ``nodes_done`` accumulates so a skipped object's finished clear-X stays in
+        every later graph (validate_plan's replan-stability rule)."""
         if not fault or fault.get("kind") != "node_failure":
             return
+        self._done.update(fault.get("nodes_done", ()))
         node = fault.get("node") or ""
         for obj in _OBJECTS:
             if node == f"verify-{obj}":
@@ -187,7 +207,7 @@ class ClearWorkspacePlanner:
                 f"ClearWorkspacePlanner only plans 'clear_workspace', got {task!r}")
         self._absorb_fault(brief.get("fault"))
         objects = [o for o in _OBJECTS if o not in self._skip]
-        return _emit_plan(objects)
+        return _emit_plan(objects, self._done)
 
     @property
     def identity(self) -> str:

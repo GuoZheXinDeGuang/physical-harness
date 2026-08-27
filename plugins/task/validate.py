@@ -24,12 +24,19 @@ NODE_KINDS = frozenset({"manipulate", "segment", "perceive", "decide", "verify"}
 
 
 def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
-                  oracles: Collection[str]) -> tuple[bool, str]:
+                  oracles: Collection[str],
+                  done: Collection[Mapping] = ()) -> tuple[bool, str]:
     """``(ok, message)`` — fail-first, message names the offender.
 
     ``catalogue`` maps skill name -> {arg name: required python type}; it is
     authored by the skill side, never by the planner, which only selects and
     parameterizes. ``oracles`` are the verify predicates a plan may name.
+
+    ``done`` is the workload's own ledger of completed nodes (``{id, skill,
+    args}`` each), non-empty only on a replan: the new graph must carry every
+    one of them verbatim, because attribution, per-node billing, and
+    completed-node skipping all key on node ids across replans — a planner
+    that renames or rewrites finished work re-bills it silently.
     """
     if not isinstance(plan, Mapping):
         return False, f"plan must be a JSON object, got {type(plan).__name__}"
@@ -86,4 +93,30 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
         if pred not in oracles:
             return False, (f"verify[{i}] names unknown predicate {pred!r}; "
                            f"declared oracles: {sorted(oracles)}")
+    # Verify coverage: every manipulate/segment node must be gated by a machine
+    # check — a verify-list edge after it, or a verify-KIND successor node.
+    # Without this a planner can emit six action nodes and one verify edge and
+    # the five misses fail silently (audit oracles before trusting them).
+    covered = {v["after"] for v in verify}
+    for node in nodes:
+        if node.get("kind", "manipulate") == "verify":
+            covered.update(node["after"])
+    for node in nodes:
+        kind = node.get("kind", "manipulate")
+        if kind in ("manipulate", "segment") and node["id"] not in covered:
+            return False, (f"node {node['id']!r} (kind {kind!r}) is not covered "
+                           "by any verify: add a verify entry after it or a "
+                           "verify-kind successor node")
+    # Replan stability: every completed node must reappear byte-identical.
+    by_id = {n["id"]: n for n in nodes}
+    for d in done:
+        node = by_id.get(d["id"])
+        if node is None:
+            return False, (f"replan dropped completed node {d['id']!r}; a replan "
+                           "must preserve every done node's {id, skill, args} verbatim")
+        if node["skill"] != d["skill"] or dict(node["args"]) != dict(d["args"]):
+            return False, (f"replan rewrote completed node {d['id']!r}: got "
+                           f"skill {node['skill']!r} args {dict(node['args'])}, "
+                           f"completed as skill {d['skill']!r} args {dict(d['args'])}; "
+                           "done nodes must be preserved verbatim")
     return True, ""

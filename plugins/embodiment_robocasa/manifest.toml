@@ -24,3 +24,13 @@ ref = "plugins.embodiment_robocasa:provider"
 
 [mounts."percept.model"]
 ref = "plugins.embodiment_robocasa.percept:provider"
+
+# Repair shapes this card owns, folded by harness.manifest.discover() and
+# isinstance-checked against harness.contracts.RecoveryStrategy at load. They
+# speak the kitchen phase vocabulary and are executed by this card's
+# RobocasaRecoveryActor, never the tabletop one.
+[recoveries.regrasp_kitchen]
+ref = "plugins.embodiment_robocasa.recoveries:REGRASP_KITCHEN"
+
+[recoveries.redock_retry]
+ref = "plugins.embodiment_robocasa.recoveries:REDOCK_RETRY"

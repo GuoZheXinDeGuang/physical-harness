@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 
+from board import store as bs
 from harness.events import SessionLog
 from plugins.task import workload
 from scripts import harness_runtime as runtime
@@ -98,6 +99,29 @@ def test_boot_requeues_processing_and_continues_chain(tmp_path, monkeypatch):
     assert (rt2.done / "stuck.json").exists(), "the requeued brief ran to completion"
     assert len(rt2.log.rows()) > rows_after_first, "the chain grew, it did not restart"
     assert SessionLog.load(session / "session-log").verify()
+
+
+def test_boot_and_heartbeat_stamp_liveness(tmp_path):
+    """runtime_status.json carries heartbeat_ts from boot on, and the poll
+    loop's _heartbeat re-stamps ONLY that field (atomic rewrite; every other
+    boot-written field rides through verbatim). boot_ts alone cannot tell a
+    live runtime from a dead one -- the board face passes heartbeat_ts through
+    so the UI can show its age."""
+    session = tmp_path / "session-main"
+    runtime.main(session, drain=True)  # boot writes the status file
+    status = bs.read_runtime_status(session)
+    assert status["heartbeat_ts"] == status["boot_ts"] > 0
+    stale = dict(status, heartbeat_ts=1.0)
+    (session / "runtime_status.json").write_text(json.dumps(stale))
+    runtime._heartbeat(session)
+    after = bs.read_runtime_status(session)  # board read: verbatim passthrough
+    assert after["heartbeat_ts"] > 1.0
+    assert after["boot_ts"] == status["boot_ts"] and after["pid"] == status["pid"]
+
+
+def test_heartbeat_without_status_file_is_a_noop(tmp_path):
+    runtime._heartbeat(tmp_path)  # no file -> no crash, none conjured
+    assert not (tmp_path / "runtime_status.json").exists()
 
 
 def test_brief_with_injected_provider_ref_is_rejected(tmp_path, monkeypatch):

@@ -68,6 +68,7 @@ _DETERMINISM = {
     "percept.model": "required",       # a percept stand-in must be pure in (seed, draw)
     "task.planner": "required",        # a plan is a symbol graph, same brief -> same graph
     "reasoner.proposer": "untrusted",  # an LLM reasoner: validate the shape, never diff it
+    "model.endpoint": "untrusted",     # a chat transport: probe + shape, never diff
 }
 
 
@@ -120,6 +121,13 @@ def _smoke_env(prov, ctx: _Ctx):
 
 
 def _smoke_policy(prov, ctx: _Ctx):
+    # A remote-transport policy (policy_vla_remote) exposes `available()` --
+    # a TCP probe of its server. Nothing listening is a skip, not a red: Tier A
+    # validated the shape, and the live inference needs the model-side process.
+    probe = getattr(prov, "available", None)
+    if probe is not None and not probe():
+        raise DoctorSkip("policy server unreachable -- probed and skipped "
+                         "(remote transport: shape validated Tier A)")
     action = tuple(prov.make_driver(ctx.spec).act(ctx.obs))
     assert len(action) > 0, "driver.act returned an empty action"
     return "ok"
@@ -131,6 +139,12 @@ def _smoke_percept(prov, ctx: _Ctx):
 
 
 def _smoke_planner(prov, ctx: _Ctx):
+    # _smoke_reasoner's precedent: a model-backed planner exposes `available()`;
+    # when its endpoint is down, skip loudly rather than red (shape passed Tier A).
+    probe = getattr(prov, "available", None)
+    if probe is not None and not probe():
+        raise DoctorSkip("planner endpoint unreachable -- probed and skipped "
+                         "(shape validated Tier A, live plan not run)")
     plan = prov.plan(ctx.brief)
     assert plan.get("goal") is not None and plan.get("nodes"), "plan lacks goal/nodes"
     return json.dumps(plan, sort_keys=True, default=str)
@@ -146,6 +160,19 @@ def _smoke_reasoner(prov, ctx: _Ctx):
                          "(untrusted: shape validated Tier A, live proposal not run)")
     out = prov.propose(ctx.brief)
     assert isinstance(out, Mapping), "propose must return a Mapping"
+    return "ok"  # untrusted: shape only, never diffed
+
+
+def _smoke_model_endpoint(prov, ctx: _Ctx):
+    # Same stance as _smoke_reasoner: probe first, SKIP when no endpoint is up
+    # (GPU held, no API key) -- the shape passed Tier A and an LLM reply is
+    # never diffed anyway.
+    if not prov.available():
+        raise DoctorSkip("model endpoint unreachable -- probed and skipped "
+                         "(untrusted: shape validated Tier A, live chat not run)")
+    out = prov.chat([{"role": "user", "content": "Reply with the single word: ok"}],
+                    max_tokens=8, temperature=0.0)
+    assert isinstance(out, str) and out, "chat must return a non-empty str"
     return "ok"  # untrusted: shape only, never diffed
 
 
@@ -170,6 +197,7 @@ _SMOKES = {
     "percept.model": _smoke_percept,
     "task.planner": _smoke_planner,
     "reasoner.proposer": _smoke_reasoner,
+    "model.endpoint": _smoke_model_endpoint,
     "graph.skill": _smoke_skill,
     "graph.scene": _smoke_scene,
 }
@@ -292,6 +320,12 @@ def check(plugin_dir: str | Path) -> Report:
         if smoke is None:  # e.g. exec.rollouts / ground_truth: no episode smoke
             continue
         policy = _DETERMINISM.get(cap)
+        # Non-determinism exemption (the _smoke_reasoner precedent, generalised):
+        # a determinism-required provider that EXPLICITLY declares
+        # ``deterministic = False`` (an LLM planner) is validated for shape only,
+        # never double-run-diffed -- the untrusted policy, opted into loudly.
+        if policy == "required" and getattr(prov, "deterministic", True) is False:
+            policy = "exempt"
         try:
             out = smoke(prov, ctx)
             if policy == "required":
@@ -301,7 +335,10 @@ def check(plugin_dir: str | Path) -> Report:
                             f"non-deterministic (policy: required): {out!r} != {again!r}")
                     continue
             rep.add("B", cap, "PASS",
-                    "deterministic" if policy == "required" else (policy or "shape"))
+                    "deterministic" if policy == "required"
+                    else "shape validated, not diffed (provider declares "
+                         "deterministic=False)" if policy == "exempt"
+                    else (policy or "shape"))
         except DoctorSkip as skip:
             rep.add("B", cap, "SKIP", str(skip))
         except Exception as exc:  # noqa: BLE001 -- a smoke that raises is a red

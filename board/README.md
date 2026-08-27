@@ -15,14 +15,21 @@ server below; the exported deliverable is a self-contained HTML report.
   rounds feed. Headless, for cron. `--status` / `--progress` override the
   STATUS.md / progress.md paths (default: the files next to `runs/`).
 - **MCP server** — `board/mcp_server.py` is the stdio MCP server the ph-station
-  cockpit connects to: ten read-only tools (`list_stores`, `store`, `heldout`,
+  cockpit connects to: read-only tools (`list_stores`, `store`, `heldout`,
   `sessions`, `session`, `session_progress`, `runtime_status`, `runtime_events`,
+  `runtime_frame`, `runtime_keyframes`, `runtime_keyframe`, `host_vitals`,
   `ledger`, `rounds`), each one call into `board.store` returning the same dicts,
   plus `submit_brief`, which drops a brief into the
   resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —
   the tool never becomes the authority). Three brief kinds: `task`, `campaign`,
   and `rsi` — the generic self-improvement chain, minimal form
-  `{"kind":"rsi","task":"<task>"}` (`docs/rsi-mechanism.md`).
+  `{"kind":"rsi","task":"<task>"}` (`docs/rsi-mechanism.md`). The second write is
+  `model_server(action)` — `status` / `start` / `stop` for the local llama.cpp
+  server on 127.0.0.1:30001, so the browser-only operator can hand its VRAM back
+  to the simulator without a terminal. It switches the SERVICE PROCESS only;
+  which model a request routes to stays the console's route picker. The launcher
+  it may run is a constant in `board/store.py` and the action is whitelisted
+  there — a caller supplies a word, never a path or a command line.
 
 ## Layout
 

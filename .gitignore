@@ -1,4 +1,7 @@
-.venv/
+.venv
+# per-sim interpreters + third-party sim checkouts (docs/sim-adaptation.md);
+# venvs and cloned sim repos never enter git
+sims/
 __pycache__/
 *.pyc
 runs/

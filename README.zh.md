@@ -32,6 +32,7 @@ robosuite/MuJoCo（或 RoboCasa）回合：没有伪造的验证，没有外部 
 宪章见 [GOAL.md](GOAL.md) · 内部结构见 [ARCHITECTURE.md](ARCHITECTURE.md) · 智能体手册见
 [CLAUDE.md](CLAUDE.md)。这三份文件锚定项目的方向与规则，请勿轻易修改；GOAL.md 是固定的，
 只能由操作员决定变更。
+接入你自己的 VLM planner / VLA policy / 恢复原语：[docs/plug-in-your-model.md](docs/plug-in-your-model.md)（英文）。
 
 ### 架构
 
@@ -127,6 +128,6 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/parity_check.py <archived_ca
 
 始终使用 `python -m pytest`（不要用 `bin/pytest`，它会把 cwd 从 `sys.path` 中移除并产生虚假的
 收集错误）。**基座快车道**是 `pytest -m "not robosuite and not robocasa"`，在仿真卡片缺席的隔离
-环境下运行：**618 passed, 29 skipped, 28 deselected**。快照格式与隔离流程见
+环境下运行：**704 passed, 32 skipped, 28 deselected**。快照格式与隔离流程见
 [docs/base-gate.md](docs/base-gate.md)；每当计数变动时，请在同一个 commit 中刷新该文件与本行。
 

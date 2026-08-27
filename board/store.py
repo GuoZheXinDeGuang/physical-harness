@@ -1,6 +1,11 @@
 """Read-only parse layer over RSI campaign stores + STATUS/progress markdown.
 
-Pure functions, no server, no writes -- runs/ is sealed evidence. The store
+Pure functions, no server, and two writes -- both into LIVE intake, never into
+sealed evidence, both through the shared brief_drop atomic drop: ``submit_brief``
+(a brief into a session inbox) and ``cancel_brief`` (a stop marker into the
+session's ``cancel/``). Neither touches the hash chain: the resident runtime is
+its one writer, and a cancel only becomes a ``runtime.task_cancelled`` row when
+the runtime acts on the marker. The store
 shape is the one `plugins.rsi.campaign.CampaignStore` writes: an
 ``index.jsonl`` of ``{seq, kind, sha, time}`` rows plus content-addressed
 ``artifacts/<sha>.json`` payloads. The *kind* lives in the index, never in the
@@ -16,11 +21,17 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+import signal
+import subprocess
 import time
+import urllib.request
+import uuid
 from pathlib import Path
 
 from harness.events import SessionLog
+from scripts.brief_drop import drop
 
 # --- store discovery / robust reads -----------------------------------------
 
@@ -377,6 +388,262 @@ def session_inbox(runs_dir: str | Path, session: str) -> Path | None:
     return (path / "inbox") if path else None
 
 
+def brief_inbox(runs_dir: str | Path, session: str,
+                default_session: str = "session-main",
+                default_inbox: str | Path | None = None) -> Path | None:
+    """The inbox a brief routes into, or ``None`` for an unknown session.
+
+    The default session resolves WITHOUT the is_session gate (a first submit may
+    precede the runtime's first boot) to ``default_inbox`` when given (the MCP
+    server's configure(inbox=) override) else ``<runs>/<session>/inbox``; any
+    other session goes through session_inbox (real booted session, ``../``
+    rejected). The ONE routing rule for every submit face."""
+    if session == default_session:
+        return (Path(default_inbox) if default_inbox
+                else Path(runs_dir) / default_session / "inbox")
+    return session_inbox(runs_dir, session)
+
+
+def submit_brief(runs_dir: str | Path, raw: str, session: str = "session-main",
+                 default_session: str = "session-main",
+                 default_inbox: str | Path | None = None) -> dict:
+    """Atomically drop ``raw`` as a brief into ``session``'s inbox.
+
+    The ONE submit implementation both write faces (board/mcp_server.py's
+    submit_brief tool, ``storecli submit_brief``) pass through, so their outputs
+    are the same dict from the same code: ``{"submitted": <name>, "inbox":
+    <dir>}``, or ``{"error": ...}`` for an unknown session. ZERO validation of
+    ``raw`` -- not even a JSON parse: a brief rides through verbatim and the
+    resident runtime's ``_BRIEF_KEYS`` re-validation on claim is the SOLE
+    authority (a malformed or injected brief must hard-fail THERE, loudly,
+    never be silently normalized by a producer). Atomicity is the shared
+    brief_drop.drop (temp write + os.replace), so the runtime never claims a
+    half-written file."""
+    inbox = brief_inbox(runs_dir, session, default_session, default_inbox)
+    if inbox is None:
+        return {"error": f"unknown session {session!r}"}
+    inbox.mkdir(parents=True, exist_ok=True)
+    name = f"brief-{uuid.uuid4().hex}.json"
+    drop(inbox, name, raw)
+    return {"submitted": name, "inbox": str(inbox)}
+
+
+# --- brief lifecycle: status + cancel ----------------------------------------
+#
+# A brief lives in exactly one of five sibling directories under the session,
+# and WHICH ONE holds it is its state -- the runtime's own intake protocol
+# (one os.rename per transition) read back, not a second bookkeeping copy.
+# ``cancelled/`` is the fifth: an operator stop must seal as its own ending, or
+# a later audit reads a human pressing stop as a capability the harness lacks.
+
+_BRIEF_DIRS = (("inbox", "queued"), ("processing", "running"),
+               ("done", "done"), ("failed", "failed"),
+               ("cancelled", "cancelled"))
+
+#: States a brief never leaves. Nothing waits on one, and nothing cancels one.
+_BRIEF_TERMINAL = ("done", "failed", "cancelled", "unknown")
+
+#: Long-poll bounds for brief_status -- read_runtime_frame's pattern at TASK
+#: cadence: a state change here is a node boundary (seconds to hours), not a
+#: 30ms frame dump, so the tick is coarse and the cap sits inside a normal RPC
+#: budget. A caller that waits out the cap gets the CURRENT state back, never a
+#: timeout error: "still running" is an answer, and the whole point of this face
+#: is that a long task never surfaces to its caller as a failure.
+_BRIEF_WAIT_CAP_MS = 30000
+_BRIEF_WAIT_TICK_S = 0.5
+
+#: How many of a brief's own events ride back in a status reply: the TAIL, so
+#: the answer is "where is it now", not a transcript. runtime_events serves the
+#: whole feed when the transcript is what you want.
+_BRIEF_EVENTS = 20
+
+#: Chain rows that NAME their brief, newest-first-wins. ``task.plan_complete``
+#: is deliberately absent -- it carries no brief id, so a task's outcome is
+#: attributed through the feed's claim boundary instead (see _brief_events).
+_BRIEF_CHAIN_KINDS = ("runtime.task_error", "runtime.task_cancelled",
+                      "runtime.campaign_scheduled", "runtime.rsi_scheduled")
+
+#: The events that CLOSE a brief's segment in the operational feed.
+_BRIEF_END_KINDS = ("task_done", "task_failed", "task_cancelled")
+
+
+def _brief_locate(session_dir: Path, brief_id: str) -> tuple[str, Path | None]:
+    """``(state, path)`` for one brief -- which intake dir holds it -- or
+    ``("unknown", None)``. Name-addressed, so it goes through the shared
+    safe_child guard: a ``../`` brief id can never stat outside the session."""
+    for sub, state in _BRIEF_DIRS:
+        path = safe_child(session_dir / sub, brief_id, Path.is_file)
+        if path is not None:
+            return state, path
+    return "unknown", None
+
+
+def _brief_queue(session_dir: Path) -> list[str]:
+    """Inbox names in the order the runtime will CLAIM them -- mtime order,
+    mirroring harness_runtime._pending. Sorting differently here would report a
+    position the runtime does not honor."""
+    try:
+        entries = sorted((session_dir / "inbox").glob("*.json"),
+                         key=lambda p: p.stat().st_mtime)
+    except OSError:
+        return []
+    return [p.name for p in entries]
+
+
+def _brief_events(events: list[dict], brief_id: str) -> list[dict]:
+    """One brief's slice of the operational feed.
+
+    The runtime claims briefs SERIALLY (one resident process per session --
+    harness.opstream's single-flight note), so a ``task_claimed`` names the
+    owner of every event until its task_done/task_failed/task_cancelled: the
+    claim boundary IS the attribution, and no per-event brief id is needed on
+    the hot path. The feed truncates per boot, so a brief finished before the
+    last boot has an empty segment -- honest, and its directory still answers
+    the state."""
+    seg: list[dict] = []
+    mine = False
+    for e in events:
+        if e.get("kind") == "task_claimed":
+            mine = e.get("brief") == brief_id
+        if mine:
+            seg.append(e)
+            if e.get("kind") in _BRIEF_END_KINDS:
+                mine = False
+    return seg
+
+
+def _ahead_running_s(session_dir: Path, events: list[dict]) -> float:
+    """How long the brief the runtime is running RIGHT NOW has been running.
+
+    Queue position 2 behind a chain three hours in and queue position 2 behind
+    one that just started are different facts; this is the difference. The clock
+    is the runtime's own ``task_claimed`` event -- ``processing/<id>.json`` keeps
+    its DROP mtime (os.rename does not touch it), so the file is no clock at all.
+    0.0 when the runtime is idle (or the feed is unarmed)."""
+    for e in reversed(events):
+        if e.get("kind") != "task_claimed":
+            continue
+        # the newest claim IS the current one; if it is no longer in
+        # processing/, the runtime finished it and is idle.
+        if _brief_locate(session_dir, str(e.get("brief") or ""))[0] != "running":
+            return 0.0
+        return round(max(time.time() - float(e.get("ts") or 0.0), 0.0), 1)
+    return 0.0
+
+
+def _brief_outcome(session_dir: Path, brief_id: str,
+                   seg: list[dict]) -> dict | None:
+    """What the brief DID, or ``None`` while it has done nothing yet.
+
+    Chain first, and only rows that NAME the brief (exact, and they survive the
+    per-boot feed truncation): a rejected key, an operator cancel, a scheduled
+    campaign/rsi. A finished TASK seals ``task.plan_complete``, which carries no
+    brief id, so its outcome is the ``plan_complete`` EVENT from this brief's own
+    segment. Either way the fields are copied VERBATIM -- nothing here re-decides
+    success -- and the event path is live state: ``session()`` is the sealed read.
+    """
+    row = next((r for r in reversed(chain_rows(session_dir))
+                if r["kind"] in _BRIEF_CHAIN_KINDS
+                and r["data"].get("brief") == brief_id), None)
+    if row is not None:
+        return {"chain_kind": row["kind"], "chain_seq": row["seq"], **row["data"]}
+    ev = next((e for e in reversed(seg) if e.get("kind") == "plan_complete"), None)
+    return None if ev is None else {k: v for k, v in ev.items() if k != "seq"}
+
+
+def _brief_selector(path: Path | None) -> str | None:
+    """The brief's selector (its task, or its campaign name) read off the brief
+    file wherever it currently sits. None when unreadable -- a status reply must
+    never fail because a brief is mid-replace."""
+    if path is None:
+        return None
+    try:
+        brief = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return brief.get("task") or brief.get("campaign") if isinstance(brief, dict) else None
+
+
+def brief_status(session_dir: str | Path, brief_id: str,
+                 wait_ms: int = 0) -> dict:
+    """Where one brief is and what it did -- the ONE call that answers "is my
+    long task still running, and did it finish?".
+
+    ``{state, brief_id, session, task, events, [queue_position, ahead_running_s |
+    started_ts, running_s], [outcome]}`` where ``state`` is
+    queued|running|done|failed|cancelled|unknown, derived from which intake
+    directory holds the brief. ``events`` is the tail of the brief's own slice of
+    the operational feed; ``outcome`` appears once there is one.
+
+    ``wait_ms`` long-polls exactly like read_runtime_frame: block up to that long
+    (capped board-side) for the state to CHANGE, then answer with the current
+    state. Waiting out the cap is not an error -- the reply says ``running`` and
+    the caller may wait again. A brief already in a terminal state never blocks.
+
+    Live state, never sealed evidence: no chain verify, and it never raises.
+    """
+    session_dir = Path(session_dir)
+    state, path = _brief_locate(session_dir, brief_id)
+    if wait_ms > 0 and state not in _BRIEF_TERMINAL:
+        deadline = time.monotonic() + min(int(wait_ms), _BRIEF_WAIT_CAP_MS) / 1000.0
+        while time.monotonic() < deadline:
+            time.sleep(_BRIEF_WAIT_TICK_S)
+            now, now_path = _brief_locate(session_dir, brief_id)
+            if now != state:
+                state, path = now, now_path
+                break
+    events = read_runtime_events(session_dir)["events"]
+    seg = _brief_events(events, brief_id)
+    out = {"state": state, "brief_id": brief_id, "session": session_dir.name,
+           "task": _brief_selector(path), "events": seg[-_BRIEF_EVENTS:]}
+    if state == "queued":
+        queue = _brief_queue(session_dir)
+        if brief_id in queue:
+            out["queue_position"] = queue.index(brief_id) + 1
+        out["ahead_running_s"] = _ahead_running_s(session_dir, events)
+    elif state == "running":
+        started = next((e["ts"] for e in seg if e.get("kind") == "task_claimed"), None)
+        if started is not None:
+            out["started_ts"] = started
+            out["running_s"] = round(max(time.time() - started, 0.0), 1)
+    outcome = _brief_outcome(session_dir, brief_id, seg)
+    if outcome is not None:
+        out["outcome"] = outcome
+    return out
+
+
+def cancel_brief(session_dir: str | Path, brief_id: str) -> dict:
+    """Ask the resident runtime to stop one brief -- ``{brief_id, session, state,
+    requested}``, plus ``error`` when there is nothing to cancel.
+
+    This writes ONE live-state marker (``<session>/cancel/<brief_id>``, the
+    shared atomic drop) and NOTHING else. The runtime owns every mutation that
+    follows: it checks the marker at the claim and at each NODE BOUNDARY, kills a
+    campaign/rsi subprocess GROUP, files the brief into ``cancelled/`` and seals
+    the ``runtime.task_cancelled`` row. One writer for the hash chain, and the
+    board stays what it is -- a reader that drops a flag.
+
+    A brief already ``done``/``failed``/``cancelled`` is refused with "already
+    <state>; nothing to cancel" and no marker is written; an unknown id likewise.
+    Cooperative by construction: cancelling never tears an episode mid-rollout,
+    so a marker is a request that lands at the next boundary, not an instant kill.
+    """
+    session_dir = Path(session_dir)
+    state, _ = _brief_locate(session_dir, brief_id)
+    out = {"brief_id": brief_id, "session": session_dir.name, "state": state,
+           "requested": False}
+    if state == "unknown":
+        return {**out, "error": "unknown brief"}
+    if state in _BRIEF_TERMINAL:
+        return {**out, "error": f"already {state}; nothing to cancel"}
+    # brief_id is proven safe by the locate above (safe_child), so this join
+    # cannot escape the session.
+    cancel_dir = session_dir / "cancel"
+    cancel_dir.mkdir(parents=True, exist_ok=True)
+    drop(cancel_dir, brief_id, json.dumps({"ts": time.time()}))
+    return {**out, "requested": True}
+
+
 def _chain_rows(log_dir: Path) -> tuple[list[dict], int]:
     """Whole rows in seq order + a mid-write skip count -- same partial-tolerant
     line loop as _index_rows: the runtime appends rows.jsonl line by line, so a
@@ -526,6 +793,63 @@ def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0,
                 "ts": ts, "age_s": round(max(time.time() - ts, 0.0), 3)}
 
 
+def read_runtime_keyframes(session_dir: str | Path) -> dict:
+    """The INDEX of one session's live keyframe stills
+    (``<session>/keyframes/<seq:06d>-<kind>.jpg``, written by
+    scripts/frame_dump's opstream listener and cleared by every boot).
+
+    Returns ``{"frames": [{"seq", "kind", "ts"}, ...], "count": n}`` ordered by
+    seq. Index ONLY -- no image bytes -- so a panel can poll it at event cadence
+    for pennies and fetch a still on demand through read_runtime_keyframe. The
+    seq is the runtime_events cursor, so a keyframe pins to the event a panel
+    already draws.
+
+    Same live-state family as read_runtime_frame: a plain directory read, never
+    a chain row, no verify. An absent directory reads as an empty index --
+    deleting the whole thing is legal and loses zero evidence.
+    """
+    frames: list[dict] = []
+    try:
+        entries = list((Path(session_dir) / "keyframes").iterdir())
+    except OSError:
+        return {"frames": [], "count": 0}
+    for path in entries:
+        seq, _, kind = path.stem.partition("-")
+        if path.suffix != ".jpg" or not seq.isdigit() or not kind:
+            continue  # a .tmp mid-publish, or anything else that wandered in
+        try:
+            ts = round(path.stat().st_mtime, 3)
+        except OSError:
+            continue
+        frames.append({"seq": int(seq), "kind": kind, "ts": ts})
+    frames.sort(key=lambda f: f["seq"])
+    return {"frames": frames, "count": len(frames)}
+
+
+def read_runtime_keyframe(session_dir: str | Path, seq: int) -> dict:
+    """One keyframe still by its event seq: ``{"jpeg_b64", "seq", "kind"}``, or
+    ``{"error": "no keyframe"}`` when that seq holds none (never captured, or
+    the boot that captured it has been cleared -- the same non-event to a
+    reader).
+
+    The b64 is encoded HERE, like read_runtime_frame, so all three faces ship
+    the identical dict and the TS side only decodes. ``kind`` comes off the
+    filename, so the index and the image can never disagree.
+    """
+    try:
+        hits = sorted((Path(session_dir) / "keyframes").glob(f"{int(seq):06d}-*.jpg"))
+    except (OSError, ValueError):
+        return {"error": "no keyframe"}
+    for path in hits:
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        return {"jpeg_b64": base64.b64encode(raw).decode("ascii"),
+                "seq": int(seq), "kind": path.stem.partition("-")[2]}
+    return {"error": "no keyframe"}
+
+
 def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
     """The resident runtime's OPERATIONAL event feed for one session
     (``<session>/runtime_events.jsonl``, written by harness.opstream: truncated
@@ -562,6 +886,19 @@ def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
     return {"events": events, "last_seq": last_seq}
 
 
+def cancelled_run(row: dict) -> bool:
+    """True for a task result the operator actually STOPPED: the workload's
+    node-boundary cancel folds in as a ``cancelled`` FAULT, so the run says so
+    itself -- no second bookkeeping file, and an auditor reading the chain alone
+    reaches the same conclusion this function does.
+
+    Shared with harness_runtime, which asks it of the live ``workload.run``
+    return (same ``faults`` shape) before filing a brief as cancelled. One
+    predicate: if the runtime and this tally ever disagreed about what a
+    cancellation is, the evidence would contradict the count."""
+    return any(f.get("kind") == "cancelled" for f in row.get("faults") or [])
+
+
 def session_progress(session_dir: str | Path) -> dict:
     """Mission-progress aggregate over one session's ``task.plan_complete`` rows.
 
@@ -580,24 +917,33 @@ def session_progress(session_dir: str | Path) -> dict:
     idle state rather than inventing one. ``task_errors`` counts
     ``runtime.task_error`` rows (rejected briefs), a fault class distinct from a
     node failure inside a sealed plan.
+
+    A run the OPERATOR stopped is tallied APART, in ``cancelled``, and kept out
+    of tasks/succeeded/failed: a human pressing stop is not evidence about what
+    the harness can do, and folding it into the failure tally is exactly how a
+    later audit misreads an interruption as a capability gap. Its stages still
+    count -- those rollouts really ran -- and ``latest`` still shows it, because
+    the newest thing that happened is the newest thing that happened.
     """
     session_dir = Path(session_dir)
     by_kind, _skipped = _session_rows(session_dir / "session-log")
-    runs = by_kind.get("task.plan_complete", [])
+    sealed = by_kind.get("task.plan_complete", [])
+    runs = [r for r in sealed if not cancelled_run(r)]
     succeeded = sum(1 for r in runs if r.get("success"))
     stages = stages_passed = 0
-    for r in runs:
+    for r in sealed:
         for node in (r.get("nodes") or {}).values():
             for stage in node.get("stages") or []:
                 stages += 1
                 if stage.get("success"):
                     stages_passed += 1
-    latest = runs[-1] if runs else None
+    latest = sealed[-1] if sealed else None
     return {
         "name": session_dir.name,
         "tasks": len(runs),
         "succeeded": succeeded,
         "failed": len(runs) - succeeded,
+        "cancelled": len(sealed) - len(runs),
         "replans": sum(int(r.get("replans") or 0) for r in runs),
         "faults": sum(len(r.get("faults") or []) for r in runs),
         "task_errors": len(by_kind.get("runtime.task_error", [])),
@@ -625,6 +971,256 @@ def discover_sessions(runs_dir: str | Path) -> list[dict]:
             s = read_session(p)
             out.append({k: s[k] for k in ("name", "mtime", "chain_ok", "kinds", "skipped")})
     return sorted(out, key=lambda s: s["mtime"], reverse=True)
+
+
+# --- host vitals ------------------------------------------------------------
+
+#: nvidia-smi budget. A wedged driver (a hung GPU reset) must not stall the poll
+#: behind it; the panel simply shows no GPU that tick and recovers on the next.
+_NVSMI_TIMEOUT_S = 2.0
+
+
+def _nvidia_smi(query: str) -> list[list[str]]:
+    """One ``nvidia-smi --query-<...> --format=csv,noheader,nounits`` read, split
+    into stripped cells. Any failure -- no driver, no binary, nonzero exit, a
+    timeout -- reads as no rows, because a box without an NVIDIA GPU is a normal
+    deployment, not an error."""
+    try:
+        proc = subprocess.run(["nvidia-smi", f"--query-{query}", "--format=csv,noheader,nounits"],
+                              capture_output=True, text=True, timeout=_NVSMI_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if proc.returncode != 0:
+        return []
+    return [[c.strip() for c in line.split(",")] for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _gpus() -> list[dict]:
+    """Every visible NVIDIA GPU with its memory and its compute processes,
+    biggest consumer first. Two nvidia-smi reads joined on the GPU uuid --
+    ``--query-compute-apps`` has no index column, so the uuid is the only key
+    that pairs a process with the card it sits on. Unparsable rows are dropped
+    (a driver that answers ``[N/A]`` for a field is not an outage)."""
+    gpus: dict[str, dict] = {}
+    for row in _nvidia_smi("gpu=uuid,index,name,memory.used,memory.total"):
+        if len(row) < 5:
+            continue
+        try:
+            entry = {"index": int(row[1]), "name": row[2],
+                     "used_mib": int(row[3]), "total_mib": int(row[4]), "procs": []}
+        except ValueError:
+            continue
+        gpus[row[0]] = entry
+    for row in _nvidia_smi("compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"):
+        if len(row) < 4 or row[0] not in gpus:
+            continue
+        try:
+            proc = {"pid": int(row[1]), "name": row[2], "used_mib": int(row[3])}
+        except ValueError:
+            continue
+        gpus[row[0]]["procs"].append(proc)
+    out = sorted(gpus.values(), key=lambda g: g["index"])
+    for g in out:
+        # The panel names the biggest consumer; the ranking is folded here so no
+        # reader has to sort (statistics live in board/, never in the cockpit TS).
+        g["procs"].sort(key=lambda p: p["used_mib"], reverse=True)
+    return out
+
+
+def _ram() -> dict:
+    """Physical memory in GiB from /proc/meminfo: ``used`` is MemTotal minus
+    MemAvailable (what a new allocation can actually get -- reclaimable cache is
+    free, not used). A kernel without /proc reads as 0/0."""
+    fields: dict[str, int] = {}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, _, rest = line.partition(":")
+            if key in ("MemTotal", "MemAvailable"):
+                fields[key] = int(rest.split()[0])  # kB
+    except (OSError, IndexError, ValueError):
+        return {"used_gb": 0.0, "total_gb": 0.0}
+    total, avail = fields.get("MemTotal", 0), fields.get("MemAvailable", 0)
+    return {"used_gb": round(max(total - avail, 0) / 1048576, 1),
+            "total_gb": round(total / 1048576, 1)}
+
+
+def host_vitals(path: str | Path = ".") -> dict:
+    """The machine's LIVE resource headroom: every GPU's VRAM (with the compute
+    processes holding it, biggest first), physical RAM, and the free space on
+    the filesystem holding ``path`` -- ``{"gpu": [...], "ram": {...},
+    "disk": {...}, "ts": <epoch>}``.
+
+    Same live-state family as read_runtime_status: a plain sample of the box,
+    never a chain row, no verify, and it NEVER raises. A host with no NVIDIA
+    driver returns ``"gpu": []``; an unreadable /proc or filesystem returns
+    zeros. The operator reads this to see a VRAM ceiling coming before it kills
+    a resident runtime, so a failed probe must degrade to a quiet gap in the
+    panel rather than take the whole poll down with it.
+
+    ``path`` selects the filesystem to report (the board passes runs/, the tree
+    a campaign actually fills); it is echoed back so the panel can say which
+    mount the number describes.
+    """
+    try:
+        st = os.statvfs(path)
+        disk = {"path": str(path),
+                "free_gb": round(st.f_bavail * st.f_frsize / 1073741824, 1),
+                "total_gb": round(st.f_blocks * st.f_frsize / 1073741824, 1)}
+    except OSError:
+        disk = {"path": str(path), "free_gb": 0.0, "total_gb": 0.0}
+    return {"gpu": _gpus(), "ram": _ram(), "disk": disk, "ts": time.time()}
+
+
+# --- local model server -----------------------------------------------------
+
+#: The ONE launcher this face may start, hardcoded. An ``action`` word is the
+#: only thing a caller supplies -- never a path, never a command line. This face
+#: is reachable from the operator's browser through the cockpit bridge, so a
+#: caller-supplied script would be remote code execution on the harness box; it
+#: is the same rule as a brief not naming its provider (CLAUDE.md).
+_MODEL_SCRIPT = Path.home() / "models" / "launch_llamacpp.sh"
+#: The identity a pid must prove before this face reports it as the server or
+#: kills it: the launcher execs llama-server, so the running process IS the
+#: server and its /proc/<pid>/exe is the unforgeable half of the check (argv
+#: alone matches any shell that merely mentions the binary -- an editor writing
+#: the launcher would have matched). The port pins WHICH llama-server it is.
+_MODEL_BIN = "llama-server"
+_MODEL_PORT = 30001
+#: Health-probe budget. A server mid-load holds the socket without answering,
+#: and that wait must not stall the operator's 5s poll behind it.
+_MODEL_PROBE_TIMEOUT_S = 1.5
+_MODEL_ACTIONS = ("status", "start", "stop")
+
+
+def _model_identity(pid: int) -> bool:
+    """True iff ``pid`` is live AND is the whitelisted model server right now.
+
+    The one guard behind both the scan and the kill: reading it again at kill
+    time is what makes a recycled pid safe (the pidfile's number can be handed
+    to an unrelated process between start and stop). Anything unreadable -- an
+    exited pid, another user's process -- reads as "not the server", so this
+    face never acts on something it cannot identify.
+    """
+    try:
+        if os.path.basename(os.readlink(f"/proc/{pid}/exe")) != _MODEL_BIN:
+            return False
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except OSError:
+        return False
+    return f"--port {_MODEL_PORT}" in cmdline
+
+
+def _find_model_server() -> int | None:
+    """pid of the live model server, or None -- a /proc scan, never a pattern
+    kill. Discovery is by identity, not by bookkeeping, so a server started
+    outside the cockpit is reported the same as one this face spawned (the
+    adopt half of adopt-or-spawn)."""
+    try:
+        pids = [int(p.name) for p in Path("/proc").iterdir() if p.name.isdigit()]
+    except OSError:
+        return None
+    return next((pid for pid in sorted(pids) if _model_identity(pid)), None)
+
+
+def _model_health() -> tuple[bool, str | None]:
+    """``(healthy, model_id)`` from a GET on the server's ``/v1/models``.
+
+    The load-vs-serving discriminator: the process is up for 1-2 minutes before
+    it answers, so ``running and not healthy`` is exactly "still loading". Any
+    failure -- refused, timed out, non-JSON, HTTP error -- is a healthy=False
+    reading, never an exception.
+    """
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{_MODEL_PORT}/v1/models",
+                                    timeout=_MODEL_PROBE_TIMEOUT_S) as resp:
+            data = json.loads(resp.read())
+    except Exception:      # URLError/HTTPError/timeout/JSON -- all read as "not serving yet"
+        return False, None
+    entries = data.get("data") or [] if isinstance(data, dict) else []
+    first = entries[0] if entries else {}
+    return True, (first.get("id") if isinstance(first, dict) else None)
+
+
+def _model_vram(pid: int | None) -> int | None:
+    """VRAM the server holds, from the same per-pid rows host_vitals already
+    reports (one source for the number the operator compares against the meter
+    right above this row)."""
+    if pid is None:
+        return None
+    return next((p["used_mib"] for g in _gpus() for p in g["procs"] if p["pid"] == pid), None)
+
+
+def _model_state() -> dict:
+    """The status payload every model_server action answers with."""
+    pid = _find_model_server()
+    healthy, model = _model_health()
+    return {"running": pid is not None, "pid": pid, "port": _MODEL_PORT,
+            "healthy": healthy, "model": model, "vram_mib": _model_vram(pid)}
+
+
+def model_server(action: str = "status", runs_dir: str | Path = ".") -> dict:
+    """Start, stop, or read the local model server -- ``{"running", "pid",
+    "port", "healthy", "model", "vram_mib"}``, plus an ``"error"`` key when an
+    action could not be carried out.
+
+    This switches the SERVICE PROCESS only. Which model a request goes to is the
+    operator's route choice in the console's model picker; stopping the server
+    hands its ~19 GB of VRAM back to the simulator, which is the whole reason
+    the control exists.
+
+    ``action`` is whitelisted to ``status``/``start``/``stop`` and the script it
+    may launch is the module constant ``_MODEL_SCRIPT`` -- a caller supplies a
+    word, never a path or a command line.
+
+    - ``start`` adopts a server that is already up rather than spawning a second
+      one, and spawns detached (``start_new_session``, i.e. setsid) so the
+      server outlives whatever terminal or agent session started it.
+    - ``stop`` sends SIGTERM to the ONE pid it can identify as this server
+      (pidfile first, then the scan), re-checking ``/proc/<pid>/exe`` at kill
+      time; a pattern kill is never used -- one has matched the killer's own
+      shell in this repo's history.
+    - ``status`` never mutates. ``running and not healthy`` means loading.
+
+    Live state in the read_runtime_status family: no chain row, no verify, and
+    it NEVER raises -- a failure is an ``"error"`` string beside a real status.
+    """
+    if action not in _MODEL_ACTIONS:
+        return {**_model_state(), "error": f"unknown action: {action}"}
+    pidfile = Path(runs_dir) / "model-server.pid"
+    if action == "start":
+        if _find_model_server() is None:
+            try:
+                if not _MODEL_SCRIPT.exists():
+                    return {**_model_state(), "error": f"launcher not found: {_MODEL_SCRIPT}"}
+                with open(Path(runs_dir) / "model-server.log", "ab") as log:
+                    # The launcher execs the server, so this pid IS the server.
+                    proc = subprocess.Popen([str(_MODEL_SCRIPT)], stdout=log, stderr=log,
+                                            stdin=subprocess.DEVNULL, start_new_session=True)
+                pidfile.write_text(str(proc.pid))
+                # ...but only once bash reaches the exec. Wait briefly for the
+                # identity to become true rather than answering "not running"
+                # about a process we just started (loading still takes minutes
+                # after this -- that is the caller's healthy=False window).
+                for _ in range(20):
+                    if _model_identity(proc.pid):
+                        break
+                    time.sleep(0.05)
+            except OSError as exc:
+                return {**_model_state(), "error": f"spawn failed: {exc}"}
+    elif action == "stop":
+        try:
+            recorded = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            recorded = 0
+        pid = recorded if _model_identity(recorded) else _find_model_server()
+        if pid is None:
+            return {**_model_state(), "error": "not running"}
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            return {**_model_state(), "error": f"kill {pid} failed: {exc}"}
+        pidfile.unlink(missing_ok=True)
+    return _model_state()
 
 
 # --- markdown feeds ---------------------------------------------------------

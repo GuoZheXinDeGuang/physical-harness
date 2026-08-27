@@ -5,7 +5,12 @@ The dsh cockpit (round-95 adoption) is an MCP client; this is the harness-side
 MCP *server* it connects to for live reads. Every tool is a one-call passthrough
 into board.store -- the SAME pure parse layer scripts/rsi_board.py serves over
 HTTP -- so the two surfaces return byte-identical dicts and rsi_board can be
-retired (rung 4) without losing a view. Zero writes: runs/ is sealed evidence.
+retired (rung 4) without losing a view.
+
+The only writes are the brief lifecycle -- submit_brief/run_task drop a brief,
+cancel_brief drops a stop marker -- and both land in LIVE intake dirs through the
+one shared atomic drop. Nothing here writes the hash chain: runs/ is sealed
+evidence and the resident runtime is its single writer.
 
 Name-addressed reads (store/heldout/session) go through board.store.safe_child,
 the one audited traversal guard, so a ``../`` name can never escape runs_dir.
@@ -17,9 +22,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
-import time
-import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,7 +33,7 @@ from mcp.server import MCPServer
 from board import cards as bc
 from board import store as bs
 from board import vault as bv
-from scripts.brief_drop import drop
+from harness.manifest import discover
 
 
 #: The default routing session -- the resident runtime cockpit always brings up.
@@ -61,14 +65,20 @@ def configure(runs, status=None, progress=None, inbox=None,
 
 def _route_inbox(session: str) -> Path | None:
     """The inbox a per-call ``session`` routes into, or ``None`` for an unknown
-    one. The server's default session returns the configured inbox verbatim (zero
-    behavior change plus the configure(inbox=) override tests rely on, and no
-    is_session gate so a first submit can precede the runtime's first boot); any
-    OTHER session is validated against runs/ (a real booted session, ``../``
-    rejected) through the shared board.store guard and routed to <session>/inbox."""
-    if session == _Cfg.session:
-        return _Cfg.inbox
-    return bs.session_inbox(_Cfg.runs, session)
+    one -- board.store.brief_inbox fed this server's configured defaults (the
+    default session resolves to the configured inbox verbatim, no is_session
+    gate, so a first submit can precede the runtime's first boot; any OTHER
+    session is validated against runs/ through the shared guard)."""
+    return bs.brief_inbox(_Cfg.runs, session, _Cfg.session, _Cfg.inbox)
+
+
+def _session_dir(session: str) -> Path | None:
+    """The session directory a per-call ``session`` addresses, or ``None``. The
+    intake dirs are inbox's siblings (harness_runtime.boot), so the routed inbox
+    IS the resolver -- one routing rule for the write faces and the lifecycle
+    faces alike, including the configure(inbox=) override."""
+    inbox = _route_inbox(session)
+    return inbox.parent if inbox is not None else None
 
 
 def _read(path: Path) -> str:
@@ -159,6 +169,26 @@ def runtime_frame(name: str = _DEFAULT_SESSION, after_ts: float = 0.0,
 
 
 @mcp.tool()
+def runtime_keyframes(name: str = _DEFAULT_SESSION) -> dict:
+    """The INDEX of one session's live keyframe stills (runs/<session>/keyframes/,
+    one JPEG pinned to an interesting runtime_events seq, cleared every boot):
+    {frames: [{seq, kind, ts}], count}. Index only, no image bytes -- poll this,
+    then fetch one still with runtime_keyframe. Live state, never chain evidence;
+    an absent directory reads as an empty index. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_keyframes(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def runtime_keyframe(name: str = _DEFAULT_SESSION, seq: int = 0) -> dict:
+    """One keyframe still by its runtime_events seq: {jpeg_b64, seq, kind}, or
+    {"error": "no keyframe"} when that seq holds none. Live state, never chain
+    evidence. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_keyframe(path, seq) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
     """One runtime session's OPERATIONAL event feed (runtime_events.jsonl):
     events with seq > after_seq plus last_seq. last_seq < after_seq means the
@@ -167,6 +197,29 @@ def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
     evidence."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.read_runtime_events(path, after_seq) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def host_vitals() -> dict:
+    """The machine's LIVE resource headroom: {gpu: [{index, name, used_mib,
+    total_mib, procs:[{pid, name, used_mib}]}], ram: {used_gb, total_gb},
+    disk: {path, free_gb, total_gb}, ts}. The disk is the filesystem holding
+    runs/. Live state, not sealed evidence, and it never raises: a host with no
+    NVIDIA driver reports an empty gpu list."""
+    return bs.host_vitals(_Cfg.runs)
+
+
+@mcp.tool()
+def model_server(action: str = "status") -> dict:
+    """Start/stop/read the LOCAL model server (llama.cpp on 127.0.0.1:30001) ->
+    {running, pid, port, healthy, model, vram_mib}, plus {error} when an action
+    failed. action is one of status|start|stop; anything else is rejected, and
+    the launcher script is a board constant -- no path or command may be passed.
+    This switches the SERVICE PROCESS only, not which model a request routes to
+    (that is the console's route picker). Stopping it hands ~19 GB of VRAM back
+    to the simulator. Loading takes 1-2 minutes: running=true with healthy=false
+    means loading. Live state, never sealed evidence, and it never raises."""
+    return bs.model_server(action, _Cfg.runs)
 
 
 @mcp.tool()
@@ -208,6 +261,105 @@ def vault_neighbors(id: str, relation: str | None = None) -> dict:
     return bv.neighbors(bv.build_graph(_Cfg.runs), id, relation)
 
 
+# --- the session x task advisory (READ-ONLY; it never gates a submit) --------
+#
+# The mismatch it names: a robocasa mission dropped into session-main is ACCEPTED
+# (the task string is in the manifest union, which is one table across every
+# card), and refused seconds later inside a DIFFERENT process, in a log the
+# operator is not reading. This puts that sentence in the answer they are already
+# reading -- and nowhere else. It is not validation: submit_brief refuses nothing
+# and names no provider by design (see its docstring), and moving the guard here
+# would launder the runtime's authority into the MCP seam.
+#
+# SILENCE IS THE DEFAULT. Every unreadable input -- unknown task, a binding with
+# no embodiment of its own, a chassis that will not fold, a dead runtime, an
+# unprobeable interpreter -- yields NO warning key at all, because a wrong
+# warning is exactly as bad as a wrong doc.
+
+#: Interpreter probe budget. A wedged interpreter must not stall the submit
+#: behind it; a timeout reads as unprobeable, i.e. as silence.
+_PROBE_TIMEOUT_S = 10.0
+#: Asked of the TARGET interpreter, never of ours: which of argv[1:] it cannot
+#: import. find_spec is the machinery the mount itself uses, so an editable or
+#: namespace install answers correctly where a dist-info glob would guess wrong.
+_PROBE = ("import importlib.util as u, sys; "
+          "print(' '.join(p for p in sys.argv[1:] if u.find_spec(p) is None))")
+
+
+def _session_python(session_dir: Path) -> str | None:
+    """The interpreter the session's LIVE runtime runs under, or ``None``.
+
+    The venv is what decides whether a sim's packages import at all, and the two
+    resident runtimes differ in exactly that. runtime_status.json (live state,
+    never a chain row) names the pid; ``/proc/<pid>/cmdline`` argv[0] names the
+    interpreter -- ``/proc/<pid>/exe`` is the venv's python3 symlink TARGET,
+    identical for both, so argv[0] is the only half that discriminates. Guarded
+    like store._model_identity: the cmdline must still be a harness runtime, so a
+    recycled pid reads as unknown rather than as some unrelated interpreter.
+    """
+    try:
+        pid = int(json.loads((session_dir / "runtime_status.json").read_text())["pid"])
+        argv = [a.decode(errors="replace")
+                for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if a]
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+    if not argv or not any("harness_runtime" in a for a in argv[1:]):
+        return None
+    exe = Path(argv[0])
+    if not exe.is_absolute():
+        # argv[0] is relative when the runtime was launched from the repo root
+        # (".venv/bin/python"); resolve it against THAT process's cwd, never ours.
+        try:
+            exe = Path(f"/proc/{pid}/cwd").readlink() / exe
+        except OSError:
+            return None
+    return str(exe) if exe.is_file() else None
+
+
+def _compat_warning(brief: dict, session: str, session_dir: Path) -> str | None:
+    """One sentence when this brief's task cannot mount in this session, else None.
+
+    Two already-existing data sources, joined:
+
+    * the manifest fold (``harness.manifest.discover``) -- ``task_bindings[task]``
+      carries an ``env`` ref only when the mission rides a DIFFERENT simulator
+      than the folded base (``harness_runtime._mount_plan`` overrides
+      ``embodiment.env`` with it); the plugin dir that ref names is an embodiment
+      card, and ``third_party`` is the top-level packages that card needs --
+      recorded even for an ``enabled = false`` card, which every second-sim card is.
+    * the target runtime's interpreter, asked whether it can import them.
+
+    A binding with no ``env`` rides whatever base the session already mounted, so
+    there is nothing to warn about and nothing is said.
+    """
+    if not isinstance(brief, dict) or not isinstance(brief.get("task"), str):
+        return None
+    try:
+        registry = discover()
+    except (OSError, ValueError):
+        return None  # a chassis that will not fold has no advice to give
+    env = (registry.task_bindings.get(brief["task"]) or {}).get("env")
+    if not isinstance(env, str):
+        return None
+    card = env.split(":")[0].rsplit(".", 1)[-1]  # plugins.embodiment_robocasa:provider
+    needs = registry.third_party.get(card)
+    python = _session_python(session_dir) if needs else None
+    if python is None:
+        return None
+    try:
+        # cwd="/" so the sims/ shadow trap (CLAUDE.md) can never answer for it.
+        probe = subprocess.run([python, "-c", _PROBE, *needs], cwd="/",
+                               capture_output=True, text=True, timeout=_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    missing = probe.stdout.split() if probe.returncode == 0 else []
+    if not missing:
+        return None
+    return (f"task {brief['task']!r} binds {card}; {session}'s runtime runs "
+            f"{python}, which cannot import {', '.join(missing)} -- it will "
+            f"refuse this at mount. Submitted anyway; the runtime decides.")
+
+
 @mcp.tool()
 def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     """Drop a brief into a runtime session's inbox for it to claim.
@@ -231,7 +383,9 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
       seed. See docs/rsi-mechanism.md.
 
     This tool does NO brief
-    validation and names NO provider: it only performs the shared atomic drop
+    validation and names NO provider: it is a passthrough into
+    board.store.submit_brief -- the ONE submit implementation the CLI face
+    (``storecli submit_brief``) shares, doing only the shared atomic drop
     (brief_drop.drop -- temp write + os.replace) so the runtime never claims a
     half-written brief. The resident runtime re-validates ``_BRIEF_KEYS``
     server-side on claim and stays the SOLE authority, so an injected extra key
@@ -242,95 +396,120 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     It defaults to the resident session-main, so single-runtime behavior is
     unchanged. A non-default session is validated against runs/ (a real booted
     session, ``../`` rejected); an unknown one returns ``{"error": ...}``.
+
+    A successful submit may carry one extra READ-ONLY key, ``warning``, when this
+    session's runtime provably cannot mount this task's embodiment (see
+    _compat_warning). It is advice, computed AFTER the drop, and it never changes
+    whether the brief was delivered; when there is nothing certain to say the key
+    is absent entirely.
     """
-    inbox = _route_inbox(session)
-    if inbox is None:
-        return {"error": f"unknown session {session!r}"}
-    inbox.mkdir(parents=True, exist_ok=True)
-    name = f"brief-{uuid.uuid4().hex}.json"
-    drop(inbox, name, json.dumps(brief))
-    return {"submitted": name, "inbox": str(inbox)}
+    res = bs.submit_brief(_Cfg.runs, json.dumps(brief), session,
+                          _Cfg.session, _Cfg.inbox)
+    if "submitted" in res:
+        warning = _compat_warning(brief, session, Path(res["inbox"]).parent)
+        if warning:
+            res["warning"] = warning
+    return res
 
 
-def _outcome(status: str, brief_id: str, session_dir: Path, baseline: int,
-             elapsed: float) -> dict:
-    """Copy THIS brief's sealed chain row into a compact result. The runtime is
-    the SOLE authority on success -- fields are copied verbatim, nothing here
-    interprets them. failed/ carries a runtime.task_error whose ``brief`` matches
-    (unambiguous); done/ carries a task.plan_complete, which carries no brief_id.
-    ponytail: attribute the done row as the last plan_complete after our baseline
-    seq -- exact for serial briefs (the interactive MCP case). Add a brief_id to
-    plan_complete and match it if concurrent submitters ever misattribute."""
-    new = [r for r in bs.chain_rows(session_dir) if r.get("seq", -1) > baseline]
-    if status == "failed":
-        row = next((r for r in reversed(new)
-                    if r["kind"] == "runtime.task_error"
-                    and r["data"].get("brief") == brief_id), None)
-        out = {"status": "failed", "brief_id": brief_id, "elapsed_s": elapsed}
-        if row is not None:
-            out["error"] = row["data"].get("error")
-            out["chain_seq"] = row["seq"]
-        return out
-    row = next((r for r in reversed(new) if r["kind"] == "task.plan_complete"), None)
-    out = {"status": "done", "brief_id": brief_id, "elapsed_s": elapsed}
-    if row is not None:
-        d = row["data"]
-        out["success"] = d.get("success")
-        out["nodes"] = d.get("nodes")
-        out["chain_seq"] = row["seq"]
-        if d.get("faults"):
-            out["failure"] = d["faults"]
-    return out
+@mcp.tool()
+def brief_status(brief_id: str, session: str = _DEFAULT_SESSION,
+                 wait_ms: int = 0) -> dict:
+    """Where one brief is and what it did -- ONE call, no archaeology.
+
+    Answers ``{state, brief_id, session, task, events, ...}`` where ``state`` is
+    ``queued`` | ``running`` | ``done`` | ``failed`` | ``cancelled`` |
+    ``unknown``, read off which of the runtime's intake directories holds the
+    brief. ``events`` is the tail of THIS brief's slice of the operational feed
+    (the same rows runtime_events serves, attributed by claim boundary), and
+    ``outcome`` appears once there is one -- the sealed chain row when it names
+    the brief (a rejected key, a cancel, a scheduled campaign/rsi), else the
+    brief's own ``plan_complete`` event. A ``queued`` brief also carries
+    ``queue_position`` (1 = next to be claimed) and ``ahead_running_s`` (how long
+    the brief currently running has been running -- position 2 behind a chain
+    three hours in is not position 2 behind one that just started); a ``running``
+    one carries ``started_ts`` and ``running_s``.
+
+    ``wait_ms`` long-polls: block up to that long (capped board-side) for the
+    state to CHANGE, then answer with the current state. **Waiting out the cap is
+    not an error** -- the reply just still says ``running``, and you may wait
+    again. This is the tool to poll a long mission with; do NOT reconstruct its
+    fate from runtime_events + session + session_progress.
+
+    Live state, never sealed evidence: ``session()`` is the chain-verified read.
+    """
+    session_dir = _session_dir(session)
+    return (bs.brief_status(session_dir, brief_id, wait_ms) if session_dir
+            else {"error": f"unknown session {session!r}"})
+
+
+@mcp.tool()
+def cancel_brief(brief_id: str, session: str = _DEFAULT_SESSION) -> dict:
+    """Stop one brief -- queued or already running -- and seal it as CANCELLED.
+
+    Returns ``{brief_id, session, state, requested}``, plus ``error`` when there
+    is nothing to cancel: a brief already ``done``/``failed``/``cancelled`` is
+    refused ("already <state>; nothing to cancel") and NOTHING happens, and so is
+    an unknown id.
+
+    Cooperative, not a kill: this drops one marker and the resident runtime acts
+    on it at a safe boundary -- a queued brief never starts; a running mission
+    stops at its next NODE boundary (never mid-rollout, so a persistent episode
+    is not torn) and seals an honest partial; a campaign/rsi subprocess is killed
+    by process GROUP, so its worker pool leaves no orphans and its half-written
+    store is marked incomplete. Expect ``state`` to still read ``running`` for a
+    moment; poll brief_status to see it land in ``cancelled``. A cancel that
+    arrives after the last node ran stops nothing, so that brief finishes
+    ``done`` -- filing completed work as cancelled would be the same lie the
+    other way round.
+
+    A cancel is its OWN ending -- ``runtime.task_cancelled``, never
+    ``runtime.task_error``, and excluded from session_progress's failure tally --
+    because an operator stopping a run and a run failing must never be confusable
+    when someone audits this later.
+    """
+    session_dir = _session_dir(session)
+    return (bs.cancel_brief(session_dir, brief_id) if session_dir
+            else {"error": f"unknown session {session!r}"})
 
 
 @mcp.tool()
 def run_task(task: str, seed: int, max_replans: int | None = None,
-             max_actuations: int | None = None, timeout_s: float = 120,
+             max_actuations: int | None = None,
              session: str = _DEFAULT_SESSION) -> dict:
-    """Submit a task brief and BLOCK until the resident runtime finishes it.
+    """Submit a task brief and return its HANDLE immediately -- this does NOT wait.
 
-    Kills the submit -> bash-poll -> read-session ceremony: one call drops the
-    brief (the SAME atomic path submit_brief uses -- no second implementation),
-    watches the runtime's own inbox/processing -> done/|failed/ protocol
-    (read-only, ~0.5s poll), then returns the sealed chain row for THIS brief.
+    It used to block until the runtime finished, which made every long mission
+    (a 31-node kitchen chain runs for many minutes) come back ``timeout`` while
+    the runtime was in fact running it to a clean seal -- and the caller then
+    spent a dozen tool calls reconstructing the truth. So: drop the brief through
+    the SAME atomic path submit_brief uses (no second submit implementation) and
+    hand back where it landed --
+    ``{state, brief_id, session, task, queue_position, ahead_running_s, ...}``,
+    a brief_status reply as of right now.
 
-    The runtime stays the SOLE authority: this does NO _BRIEF_KEYS validation
-    (an injected key still hard-fails in the runtime, surfacing here as
-    status:failed) and copies task.plan_complete / runtime.task_error fields
-    verbatim -- it never decides success itself. Returns
-    ``{status: done|failed|timeout, brief_id, ...}``: done carries
-    success/nodes (+failure faults when the goal was missed), failed carries
-    error, timeout carries guidance (the brief keeps running; poll the session
-    later with session()).
+    **Then poll brief_status(brief_id, wait_ms=...) for the outcome.** It is the
+    one call that answers "did it finish, and what happened"; cancel_brief stops
+    it. Nothing here validates the brief or judges success -- the resident
+    runtime stays the sole authority (an injected key hard-fails there and
+    surfaces as ``state: failed`` with the sealed error).
 
     ``session`` routes to a second runtime (default session-main); an unknown one
-    returns ``{"status": "error"}`` before any submit.
+    returns ``{"error": ...}`` before any submit. The submit's advisory
+    ``warning`` (see submit_brief) rides onto the handle -- the same read-only
+    key, carried so the reason a brief cannot mount survives the hop.
     """
     inbox = _route_inbox(session)
     if inbox is None:
-        return {"status": "error", "error": f"unknown session {session!r}"}
+        return {"error": f"unknown session {session!r}"}
     brief = {"kind": "task", "task": task, "seed": seed}
     if max_replans is not None:
         brief["max_replans"] = max_replans
     if max_actuations is not None:
         brief["max_actuations"] = max_actuations
-    session_dir = inbox.parent
-    baseline = max((r.get("seq", -1) for r in bs.chain_rows(session_dir)), default=-1)
-    brief_id = submit_brief(brief, session=session)["submitted"]
-
-    done_dir, failed_dir = session_dir / "done", session_dir / "failed"
-    start = time.monotonic()
-    while time.monotonic() - start < timeout_s:
-        if (done_dir / brief_id).exists():
-            return _outcome("done", brief_id, session_dir, baseline,
-                            round(time.monotonic() - start, 3))
-        if (failed_dir / brief_id).exists():
-            return _outcome("failed", brief_id, session_dir, baseline,
-                            round(time.monotonic() - start, 3))
-        time.sleep(0.5)
-    return {"status": "timeout", "brief_id": brief_id,
-            "elapsed_s": round(time.monotonic() - start, 3),
-            "guidance": f"brief still running; poll session({session_dir.name!r}) later"}
+    submitted = submit_brief(brief, session=session)
+    out = bs.brief_status(inbox.parent, submitted["submitted"])
+    return {**out, "warning": submitted["warning"]} if "warning" in submitted else out
 
 
 def main(argv=None) -> int:

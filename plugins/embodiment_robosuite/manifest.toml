@@ -18,3 +18,30 @@ ref = "plugins.embodiment_robosuite.percept:provider"
 [bundles.sawyer]
 "embodiment.env" = "plugins.embodiment_robosuite:sawyer_provider"
 "policy.driver" = "plugins.policies:sawyer_scripted_provider"
+
+# Recovery repair shapes, written in this card's tabletop phase vocabulary
+# (harness/spec_tabletop.py's PHASE_HEIGHT/STACK_PHASE_HEIGHT). Folded by
+# harness.manifest.discover() like mounts/campaigns (duplicate names are loud);
+# plugins/rsi/repertoire.py reads the fold and isinstance-checks each attr
+# against harness.contracts.RecoveryStrategy. A card declaring no [recoveries.*]
+# has no recovery primitives -- the RSI chain reports that verbatim.
+[recoveries.regrasp]
+ref = "plugins.embodiment_robosuite.recoveries:REGRASP"
+
+[recoveries.settle]
+ref = "plugins.embodiment_robosuite.recoveries:SETTLE"
+
+[recoveries.lateral]
+ref = "plugins.embodiment_robosuite.recoveries:LATERAL"
+
+[recoveries.high_reset]
+ref = "plugins.embodiment_robosuite.recoveries:HIGH_RESET"
+
+[recoveries.servo_regrasp]
+ref = "plugins.embodiment_robosuite.recoveries:SERVO_REGRASP"
+
+[recoveries.probe_regrasp]
+ref = "plugins.embodiment_robosuite.recoveries:PROBE_REGRASP"
+
+[recoveries.replace]
+ref = "plugins.embodiment_robosuite.recoveries:REPLACE"

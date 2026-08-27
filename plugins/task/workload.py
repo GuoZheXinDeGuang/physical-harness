@@ -447,7 +447,8 @@ assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
 
 
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
-        max_replans: int = 3, max_actuations: int = 3) -> dict[str, Any]:
+        max_replans: int = 3, max_actuations: int = 3,
+        cancelled=None) -> dict[str, Any]:
     """Run one plan -> validate -> act -> verify -> replan loop through the kernel.
 
     ``brief`` carries task/catalogue/oracles (planner-facing vocabulary,
@@ -459,7 +460,15 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     already succeeded is skipped, never re-run or re-billed. Returns
     ``{success, goal, replans, actuations, nodes, faults}`` and closes with one
     ``task.plan_complete`` ledger note, win or lose.
-    """
+
+    ``cancelled`` is an optional zero-arg predicate -- the operator's stop probe,
+    read at the NODE BOUNDARY and nowhere else. Mid-rollout is not a boundary: a
+    persistent M7 episode would tear, and a half-driven segment is not evidence
+    of anything. A fired probe folds in as a terminal ``cancelled`` FAULT, so the
+    loop breaks to its single exit, the world closes exactly once, and the sealed
+    note says in its own faults that a human stopped it -- which is what keeps
+    board.store.session_progress from tallying it as a failure. ``None`` (the
+    default, and every non-runtime caller) is today's path, byte-identical."""
     planner = kernel.resolve("task.planner", consumer=CONSUMER)
     scene = kernel.resolve("graph.scene", consumer=CONSUMER)
     # Accounted even while the catalogue is hand-declared: graph.skill is where
@@ -494,6 +503,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
 
     plan: Mapping = {}
     nodes_out: dict[str, dict] = {}
+    # The workload's OWN ledger of finished work ({id, skill, args} per done
+    # node), fed to validate_plan on every replan: the untrusted planner must
+    # carry each entry verbatim or the graph is refused (replan stability).
+    done_specs: dict[str, dict] = {}
     faults: list[dict] = []
     actuations = 0
     replans = 0
@@ -516,11 +529,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                   episode=episode, segment_specs=brief.get("segment_specs"))
     while True:
         # Pre-episode there is no obs; the empty snapshot is the honest scene
-        # until M2's World bridge feeds a live one.
-        brief = {**brief, "scene": scene.snapshot({}),
+        # until M2's World bridge feeds a live one. seed rides the brief so a
+        # frozen-graph planner (planner_vlm) can key its per-(task, seed) cache;
+        # deterministic planners ignore it.
+        brief = {**brief, "scene": scene.snapshot({}), "seed": seed,
                  "budget": max_actuations - actuations}
         plan = planner.plan(brief)
-        ok, msg = validate_plan(plan, catalogue, oracles)
+        ok, msg = validate_plan(plan, catalogue, oracles,
+                                done=tuple(done_specs.values()))
         # Operational feed (harness.opstream; never chain evidence): the FULL
         # node graph, the moment it exists, so the execution-graph panel draws
         # the plan while the first node is still running.
@@ -538,6 +554,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             # succeeded is finished work, skipped without re-running or
             # re-billing -- a model-independent floor, like max_actuations.
             for node in plan["nodes"]:
+                # The one cancellation checkpoint: BEFORE dispatch, so the node
+                # that already started finishes and the shared episode is never
+                # torn mid-segment.
+                if cancelled is not None and cancelled():
+                    fault = {"kind": "cancelled", "node": node["id"],
+                             "msg": "cancelled by the operator before node "
+                                    f"{node['id']!r}"}
+                    break
                 prior = nodes_out.get(node["id"])
                 if prior is not None and prior["success"]:
                     continue
@@ -557,7 +581,23 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 opstream.emit("node_start", node=node["id"], skill=node["skill"],
                               node_kind=kind, actuation=actuations)
                 opstream.emit("actuation_start", node=node["id"], actuation=actuations)
-                result = _KIND_HANDLERS[kind](node, ctx)
+                try:
+                    result = _KIND_HANDLERS[kind](node, ctx)
+                except ValueError as exc:
+                    # A dispatch-time grounding refusal (an arg with no scene
+                    # binding, an undeclared predicate): the planner's fault,
+                    # not the loop's. With a trusted table planner this was a
+                    # wiring bug worth a crash; behind an untrusted VLM it is
+                    # exactly the boundary's job -- fold the refusal (which
+                    # names the known bindings) back into the next brief so a
+                    # replan can ground itself. Non-ValueError still crashes:
+                    # an env/driver bug is not the planner's to repair.
+                    fault = {"kind": "node_failure", "node": node["id"],
+                             "failed": [node["skill"]], "done": [], "left": [],
+                             "msg": f"node {node['id']!r} refused at dispatch: {exc}"}
+                    opstream.emit("node_failed", node=node["id"],
+                                  failed=[node["skill"]], done=[])
+                    break
                 opstream.emit("actuation_end", node=node["id"], actuation=actuations,
                               success=bool(result.get("success")),
                               steps=result.get("steps"))
@@ -580,6 +620,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                     if extra in result:
                         entry[extra] = result[extra]
                 nodes_out[node["id"]] = entry
+                if entry["success"]:
+                    done_specs[node["id"]] = {"id": node["id"],
+                                              "skill": node["skill"],
+                                              "args": dict(node["args"])}
                 # A node faults when its own oracle says False, whatever its kind:
                 # a manipulate node surfaces a failed terminal STAGE in `left`; a
                 # perceive/decide/verify node has no stages, so its own
@@ -607,7 +651,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             success = True
             break
         faults.append(fault)
-        if fault["kind"] == "budget" or replans >= max_replans:
+        # budget and cancelled are TERMINAL faults: replanning around either
+        # would be the loop arguing with a floor the operator (or the budget)
+        # already set.
+        if fault["kind"] in ("budget", "cancelled") or replans >= max_replans:
             break
         replans += 1
         opstream.emit("replan", replan=replans, fault_kind=fault["kind"],

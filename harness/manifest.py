@@ -47,6 +47,10 @@ class Registry:
     #: a real-world scene bridge) layered over ``base_profile`` by ``profiles.bundle``.
     #: The wiring lives in the card's manifest, not welded into ``profiles``.
     bundles: dict[str, tuple[Mount, ...]] = field(default_factory=dict)
+    #: Recovery repair shapes a card declares (``[recoveries.<name>] ref = "module:attr"``):
+    #: strategy name -> (declaring plugin dir, ref). ``plugins/rsi/repertoire.py``
+    #: resolves the refs; the fold here stays data-only like everything else.
+    recoveries: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 def _load(root: Path) -> list[tuple[str, dict]]:
@@ -110,10 +114,12 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     campaigns: dict[str, str] = {}
     third_party: dict[str, tuple[str, ...]] = {}
     bundles: dict[str, tuple[Mount, ...]] = {}
+    recoveries: dict[str, tuple[str, str]] = {}
     cap_owner: dict = {}
     task_owner: dict = {}
     camp_owner: dict = {}
     bundle_owner: dict = {}
+    recov_owner: dict = {}
 
     for plugin, data in _load(root):
         if data.get("actuation", "sim") == "real":
@@ -148,6 +154,10 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, mounts_ in card_bundles(data).items():
             _claim(bundles, bundle_owner, name, tuple(mounts_),
                    kind="bundle", plugin=plugin)
+        for name, spec in data.get("recoveries", {}).items():
+            ref = spec if isinstance(spec, str) else spec["ref"]
+            _claim(recoveries, recov_owner, name, (plugin, ref),
+                   kind="recovery", plugin=plugin)
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
-                    third_party, bundles)
+                    third_party, bundles, recoveries)

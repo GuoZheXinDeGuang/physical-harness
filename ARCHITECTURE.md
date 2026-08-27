@@ -64,7 +64,12 @@ identity. There is no "quietly tweaked a constant".
 perception, drivers (e.g. how "navigate to the fridge" maps onto wheels), and
 predicates (e.g. "is the object inside the microwave?"). Each embodiment card gets
 its own venv (robosuite and robocasa have mutually exclusive numpy ABIs — isolation
-is cheaper than reconciliation) and neither knows the other exists.
+is cheaper than reconciliation) and neither knows the other exists. The card also
+declares its RSI recovery repair shapes — `[recoveries.<name>] ref = "module:attr"`
+in its manifest, folded by `discover()` like mounts/campaigns and isinstance-checked
+against the `RecoveryStrategy` Protocol at load. A card declaring none has no
+recovery primitives, and the RSI chain says so verbatim instead of borrowing another
+embodiment's.
 
 **Mission card**: one task's graph definition — how nodes connect, which driver
 each node uses, which predicate verifies it. The manifest.toml is **pure data**, no
@@ -77,6 +82,26 @@ another card's code. It names a string reference in its manifest
 (`"plugins.embodiment_robocasa:provider"`) that the kernel resolves at mount time,
 where a Protocol isinstance check fails fast — a wrong shape errors at mount, never
 inside an episode. Standing boundary tests turn red on any sneaky cross-card import.
+
+### 3.1 Plug-point table — the closed list
+
+`harness/contracts.py` is the complete enumeration of plug points. One row per
+Protocol; **if a seam is not in this table, it is not a seam.**
+
+| Protocol | capability | methods | implemented by | validated at |
+|---|---|---|---|---|
+| EnvProvider | `embodiment.env` | `make_env(spec)`, `tasks()`, `object_key(spec)`, `success(obs, spec, start_z)` | embodiment_robosuite, embodiment_robocasa, harness.fakes | `Kernel.provide` isinstance at mount; doctor Tier-B env smoke |
+| GroundTruthState | `embodiment.ground_truth` (privileged) | `object_pose(obs, spec)` | embodiment cards; mounted only by campaigns needing oracle state | mount isinstance + privilege budget accounting per resolve |
+| PolicyFactory | `policy.driver` | `make_driver(spec)` | plugins/policies, embodiment cards | mount isinstance; doctor driver smoke |
+| PerceptModel | `percept.model` | `object_estimate(obs, spec, sensor_sd, draw)` | embodiment percept providers | mount isinstance; doctor **determinism-required** (double-run diff) |
+| RolloutExecutor | `exec.rollouts` | `map(fn, items, *, workers)` | harness.executor (base-owned, not a card) | mount isinstance |
+| Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner; model_qwen (inactive) | mount isinstance; doctor **untrusted** (shape only, `available()` probe → SKIP when down) |
+| TaskPlanner | `task.planner` | `plan(brief)` | planner_stack, mission planners; planner_vlm (the `stack_vlm` binding) | mount isinstance; every emitted graph gated by `plugins/task/validate.py` before dispatch; doctor determinism-required (`deterministic = False` opts into shape-only + `available()` probe) |
+| ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`, `available()` | plugins/model_endpoint (inactive until a consumer mounts it) | mount isinstance; doctor untrusted (`available()` probe → SKIP when down) |
+| Skill | — (not a mount) | `name`, `args`, `binding` (descriptive: the CATALOGUE row + the SKILL_SPECS/SEGMENT_SPECS row) | card-authored dict tables, keyed by skill name | plan nodes checked against the catalogue by `validate_plan`; a missing execution binding fails loudly at dispatch, before actuation |
+| SkillGraph / SkillLibrary | `graph.skill` | `publish(record)` (evolution-mode install), `skills()` (execution-mode mount) | plugins/graphs `InMemorySkillGraph` over skills_root | mount isinstance; doctor publish-idempotence smoke; execution mode never publishes (mode gate in the runtime) |
+| SceneGraph | `graph.scene` | `snapshot(obs)` | plugins/graphs | mount isinstance; doctor snapshot smoke |
+| RecoveryStrategy | — (not a mount: `[recoveries.<name>] ref` in the owning embodiment card's manifest) | `name`, `steps` (phase, duration, dx, dy), `rationale`, `length`, `uses_feedback` | embodiment_robosuite `recoveries.py`; a card declaring none has none (RSI reports that verbatim) | `plugins/rsi/repertoire.py` isinstance + name/key check at load, never mid-repair |
 
 ## 4. The task graph — why a graph, not a script
 
@@ -106,7 +131,10 @@ screenshots never enter the session-log chain.
 **The board is the only door.** One set of functions, three faces: a Python API
 (`board/store.py`), a CLI (`storecli`), and an MCP server (for AI agents). All
 three change together — miss one and a test catches it. Reads are unrestricted;
-writes have exactly one entry: `submit_brief`.
+the writes are the brief lifecycle and nothing else: `submit_brief` drops one,
+`brief_status` says where it is and what it did, `cancel_brief` stops it. Both
+writes land in a live intake directory through one shared atomic drop; neither
+touches the hash chain, whose single writer is the runtime.
 
 **A brief is a pure selector plus budgets** — no implementation inside:
 
@@ -121,9 +149,13 @@ is rejected. The execution entry point is not injectable.
 
 **A runtime is a resident process** with almost embarrassingly simple logic: watch
 one inbox directory, claim files by atomic rename (which makes double-claiming
-impossible), move finished work to done/ or failed/. No message queue, no database
-— filesystem atomicity is enough. One runtime, one venv, one session directory per
-simulator.
+impossible), move finished work to done/, failed/ or cancelled/. No message queue,
+no database — filesystem atomicity is enough. One runtime, one venv, one session
+directory per simulator. A cancel is cooperative: the board leaves a marker, the
+runtime reads it at the claim, at a node boundary, or on a probe while a campaign
+subprocess runs (killed by process group, so a worker pool leaves no orphans), and
+seals `runtime.task_cancelled` — an operator's stop and a crash must never be
+confusable in the evidence.
 
 **The hard boundary between the two modes**: mode is a per-session property,
 default EXECUTION (fail-safe: real work can never trigger evolution). At boot, the
@@ -267,7 +299,10 @@ physical-harness/
 **Embodiment card（本体卡）**：一个机器人 + 仿真器的全套——环境构造、感知、驱动
 （driver，如"导航到冰箱"怎么用轮子实现）、判定谓词（predicate，如"物体在微波炉
 里吗"）。每张本体卡配独立 venv（robosuite 与 robocasa 的 numpy ABI 互斥，隔离比
-调和便宜），互相不知道对方存在。
+调和便宜），互相不知道对方存在。RSI 恢复原语也由本体卡在自己的 manifest 里声明
+（`[recoveries.<name>] ref = "module:attr"`，由 `discover()` 像 mounts/campaigns
+一样折叠，加载时按 `RecoveryStrategy` Protocol 做 isinstance 校验）；没声明的卡
+就是没有恢复原语，RSI 链原样报告，不借别的本体的。
 
 **Mission card（任务卡）**：一个任务的图定义——节点怎么连、每个节点用哪个驱动、用
 哪个谓词验证。manifest.toml 是**纯数据**，没有逻辑，所以加任务不可能弄坏内核。
@@ -278,6 +313,26 @@ physical-harness/
 manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），由内核在挂载
 时解析。挂载点做 Protocol isinstance 校验——形状不对当场报错，不流进 episode。
 边界测试常驻，偷 import 隔壁卡直接红。
+
+### 3.1 插槽表——封闭清单
+
+`harness/contracts.py` 是插槽的完整枚举，一个 Protocol 一行；**不在这张表里的，
+就不是插槽。**
+
+| Protocol | capability | 方法 | 谁实现 | 何处校验 |
+|---|---|---|---|---|
+| EnvProvider | `embodiment.env` | `make_env(spec)`、`tasks()`、`object_key(spec)`、`success(obs, spec, start_z)` | embodiment_robosuite、embodiment_robocasa、harness.fakes | 挂载时 `Kernel.provide` isinstance；doctor Tier-B env smoke |
+| GroundTruthState | `embodiment.ground_truth`（特权） | `object_pose(obs, spec)` | 本体卡；只有需要 oracle 状态的 campaign 才挂 | 挂载 isinstance + 每次 resolve 记特权账 |
+| PolicyFactory | `policy.driver` | `make_driver(spec)` | plugins/policies、本体卡 | 挂载 isinstance；doctor driver smoke |
+| PerceptModel | `percept.model` | `object_estimate(obs, spec, sensor_sd, draw)` | 本体卡感知 provider | 挂载 isinstance；doctor **强制确定性**（跑两次做 diff） |
+| RolloutExecutor | `exec.rollouts` | `map(fn, items, *, workers)` | harness.executor（base 自有，不是卡） | 挂载 isinstance |
+| Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner；model_qwen（未激活） | 挂载 isinstance；doctor **untrusted**（只验形状，`available()` 探测不通则 SKIP） |
+| TaskPlanner | `task.planner` | `plan(brief)` | planner_stack、mission planner；planner_vlm（`stack_vlm` 绑定） | 挂载 isinstance；每张图 dispatch 前过 `plugins/task/validate.py`；doctor 强制确定性（`deterministic = False` 显式豁免为只验形状 + `available()` 探测） |
+| ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`、`available()` | plugins/model_endpoint（有消费者挂载前保持未激活） | 挂载 isinstance；doctor untrusted（`available()` 探测不通则 SKIP） |
+| Skill | ——（不是挂载点） | `name`、`args`、`binding`（描述性：CATALOGUE 行 + SKILL_SPECS/SEGMENT_SPECS 行） | 卡内以技能名为键的 dict 表 | 计划节点由 `validate_plan` 对 catalogue 校验；缺执行绑定在 dispatch 处、任何动作之前就大声失败 |
+| SkillGraph / SkillLibrary | `graph.skill` | `publish(record)`（演化态写入）、`skills()`（执行态挂载读取） | plugins/graphs 的 `InMemorySkillGraph`（落在 skills_root） | 挂载 isinstance；doctor publish 幂等 smoke；执行态永不 publish（两态门在 runtime） |
+| SceneGraph | `graph.scene` | `snapshot(obs)` | plugins/graphs | 挂载 isinstance；doctor snapshot smoke |
+| RecoveryStrategy | ——（不是挂载点：在所属本体卡 manifest 的 `[recoveries.<name>] ref` 声明） | `name`、`steps`（phase, duration, dx, dy）、`rationale`、`length`、`uses_feedback` | embodiment_robosuite 的 `recoveries.py`；没声明的卡就是没有（RSI 原样报告） | `plugins/rsi/repertoire.py` 加载时 isinstance + 名字/键一致性检查，从不在修复中途 |
 
 ## 4. 任务图——为什么是图不是脚本
 
@@ -301,7 +356,9 @@ manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），�
 
 **Board 是唯一门面**，同一套函数暴露三张脸：Python API（`board/store.py`）、
 CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏一处测试抓。
-读随便读；写只有一个口：`submit_brief`。
+读随便读；写只有 brief 的生命周期三口：`submit_brief` 投递、`brief_status` 查在哪
+和干了什么、`cancel_brief` 叫停。两个写口都只落在活态收件目录（同一份原子投递），
+谁都不碰哈希链——链的唯一写者是 runtime。
 
 **brief 是纯选择器 + 预算**，不含实现：
 
@@ -314,8 +371,11 @@ CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏
 用什么代码由服务端按 manifest 决定，brief 里多塞任何键都被拒——执行入口不可注入。
 
 **Runtime 是常驻进程**，逻辑极简：盯一个 inbox 文件夹，有文件就认领（原子 rename，
-天然防抢单），干完移到 done/ 或 failed/。没有消息队列、没有数据库，文件系统的原子
-性够用。每个仿真器一个 runtime、一个 venv、一个 session 目录。
+天然防抢单），干完移到 done/、failed/ 或 cancelled/。没有消息队列、没有数据库，文件
+系统的原子性够用。每个仿真器一个 runtime、一个 venv、一个 session 目录。取消是协作
+式的：board 只留一个标记，runtime 在认领处、节点边界、或 campaign 子进程运行时的探
+测点读到它（按进程组杀，worker 池不留孤儿），然后封 `runtime.task_cancelled`——操作
+员叫停与系统崩溃，在证据层面永远分得开。
 
 **两态的硬边界**：mode 是每 session 属性，默认 EXECUTION（fail-safe：真任务永不触发
 演化）。boot 时把 mode + 技能清单 + 挂载哈希封成链的第 0 行；执行态收到 campaign/rsi

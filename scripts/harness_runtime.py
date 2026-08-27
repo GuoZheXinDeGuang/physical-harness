@@ -26,8 +26,23 @@ Intake is a watched directory: an external writer drops ``inbox/<id>.json`` with
 ``os.replace`` (atomic, so the runtime never reads a half-written file); the
 runtime claims by ``os.rename`` into ``processing/`` (the loser of a race gets
 ``FileNotFoundError`` and moves on), runs it, then ``os.replace``s the file into
-``done/`` or ``failed/``. On boot any ``processing/*.json`` left by a crash is
-re-queued to ``inbox/`` (at-least-once).
+``done/``, ``failed/`` or ``cancelled/``. On boot any ``processing/*.json`` left
+by a crash is re-queued to ``inbox/`` (at-least-once).
+
+Cancellation is COOPERATIVE and one-directional: ``board.store.cancel_brief``
+drops a marker in ``cancel/<brief-id>`` and stops. This runtime is the only
+thing that acts on one -- at the claim, at each node boundary inside the
+workload, and on a 2s probe while a campaign/rsi subprocess runs (killed by
+process GROUP, so a worker pool leaves no orphans). It ends in ``cancelled/``
+under a ``runtime.task_cancelled`` row, never ``runtime.task_error``: an
+operator's stop and a system crash must stay separable in the evidence.
+
+ONE runtime per session dir, enforced here: ``boot`` takes an exclusive flock on
+``<session-dir>/runtime.lock`` and a second instance refuses to start, naming the
+pid that holds it (``_claim_session``). The guard lives in the guarded thing, not
+in whatever launched it -- scripts/cockpit's adopt-or-spawn scan keeps the normal
+path off this rail, but the operator starting a runtime by hand deserves the same
+protection.
 
 Authority-laundering defense (non-negotiable): a brief names NO provider/mount
 ref. It is a pure selector+budgets -- ``{"kind":"task","task":"stack","seed":
@@ -51,10 +66,12 @@ sibling closed-loop driver scripts/task_plan.py -- harness/ imports no plugin
 from __future__ import annotations
 
 import argparse
+import fcntl
 import importlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -65,8 +82,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from board.store import parse_ledger
+from board.store import cancelled_run, parse_ledger
 from harness import opstream
+from scripts.brief_drop import drop
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
@@ -111,6 +129,50 @@ def _load_attr(ref: str):
 #: never triggers RSI. EVOLUTION is the only mode that may accept a campaign
 #: brief and let a campaign write the shared skills root.
 MODES = ("execution", "evolution")
+
+#: The session claim. One runtime per session dir, enforced HERE rather than in
+#: whatever launched it: the guard belongs inside the thing it guards, and the
+#: operator starts runtimes by hand as often as scripts/cockpit does.
+LOCKFILE = "runtime.lock"
+
+#: Claims this process already holds, by resolved session dir. flock() is keyed
+#: to the OPEN FILE DESCRIPTION, so a second open()+flock() of the same file in
+#: one process contends with itself; re-booting a session we already hold (a
+#: --drain then serve, the reboot tests) must be a no-op, not a self-refusal.
+_CLAIMED: dict[Path, int] = {}
+
+
+def _claim_session(session_dir: Path) -> None:
+    """Take the exclusive, non-blocking flock on ``<session-dir>/runtime.lock``.
+
+    Two runtimes on one session dir cannot corrupt the inbox (the claim is an
+    atomic rename) but they double-run briefs, interleave two writers into one
+    session chain and fight over runtime_status.json/frame.jpg. So the second
+    one refuses to start and names the pid holding the claim.
+
+    flock, deliberately, not "the lock file exists": the kernel drops the
+    advisory lock when the fd closes, including on SIGKILL and on a crash, so
+    there is no zombie claim to clear by hand -- the file itself is allowed to
+    outlive its holder and means nothing on its own. The pid written inside is
+    a courtesy for the error message, never the lock.
+    """
+    key = session_dir.resolve()
+    if key in _CLAIMED:
+        return
+    fd = os.open(key / LOCKFILE, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        holder = os.read(fd, 32).decode("utf-8", "replace").strip() or "unknown"
+        os.close(fd)
+        raise SystemExit(
+            f"harness_runtime: session {session_dir} is already served by pid "
+            f"{holder} (its flock on {key / LOCKFILE} is held). Refusing to "
+            "start a second runtime on one session dir -- stop that one first, "
+            "or point --session-dir somewhere else.") from None
+    os.ftruncate(fd, 0)
+    os.write(fd, str(os.getpid()).encode())
+    _CLAIMED[key] = fd   # held for the life of the process; closing releases it
 
 
 @dataclass(frozen=True)
@@ -202,8 +264,19 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     processing = inbox.parent / "processing"
     done = inbox.parent / "done"
     failed = inbox.parent / "failed"
-    for d in (log_dir, skills_root, inbox, processing, done, failed):
+    # cancelled/ is the fourth ending, a sibling for the same rename reason: an
+    # operator stop must be distinguishable from a crash forever after.
+    # cancel/ is its live-state inbox -- board.store.cancel_brief drops a marker
+    # there and this runtime is the only thing that acts on one.
+    cancelled = inbox.parent / "cancelled"
+    cancel = inbox.parent / "cancel"
+    for d in (log_dir, skills_root, inbox, processing, done, failed,
+              cancelled, cancel):
         d.mkdir(parents=True, exist_ok=True)
+
+    # Claim the session BEFORE the first mutation below (the crash re-queue
+    # moves files), so a refused second runtime has touched nothing.
+    _claim_session(session_dir)
 
     # write-once mode: fixed at first boot, immutable across restart.
     mode_file = session_dir / "MODE"
@@ -263,10 +336,15 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     # NOT a chain row -- render is live runtime state, not sealed evidence, so it
     # cannot ride the write-once runtime.boot seal (which is blank for sessions
     # that predate it). Sits at the session root, so chain verification (session-
-    # log/rows.jsonl only) never sees it.
-    (session_dir / "runtime_status.json").write_text(json.dumps({
+    # log/rows.jsonl only) never sees it. Written atomically (the shared
+    # brief_drop temp+replace) so a poll never reads a half write;
+    # ``heartbeat_ts`` starts at boot and is re-stamped by the poll loop
+    # (_heartbeat) so a reader can tell a live runtime from a dead one.
+    now = time.time()
+    drop(session_dir, "runtime_status.json", json.dumps({
         "pid": os.getpid(), "render": render, "frames": frames, "mode": mode,
-        "boot_ts": time.time(), "display": os.environ.get("DISPLAY")}))
+        "boot_ts": now, "heartbeat_ts": now,
+        "display": os.environ.get("DISPLAY")}))
 
     # Same live-state family: arm (or disarm) the frames overlay's destination.
     # runs/<session>/frame.jpg is overwritten in place, never a chain row; a
@@ -363,7 +441,7 @@ def task_brief(task: str, binding: dict) -> dict:
     return wbrief
 
 
-def _run_task(brief: dict, rt: Runtime) -> dict:
+def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
     """Build a fresh kernel on the shared log and run one governed plan loop.
 
     The task STRING resolves to its binding through the installed manifests; an
@@ -371,6 +449,10 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     brief cannot conjure a task no plugin provides. catalogue/oracles are
     skill-authored ``type`` objects imported by ref from the binding, never
     carried in the JSON brief.
+
+    ``cancelled`` is the operator's stop probe, threaded into the workload's node
+    loop: a zero-arg predicate the loop calls at each NODE BOUNDARY. The workload
+    knows nothing about markers or directories -- the seam is one callable.
     """
     task = brief["task"]
     binding = rt.task_bindings.get(task)
@@ -387,7 +469,8 @@ def _run_task(brief: dict, rt: Runtime) -> dict:
     kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render,
                              frames=rt.frames))
     return workload.run(task_brief(task, binding), kernel, seed=seed,
-                        max_replans=max_replans, max_actuations=max_actuations)
+                        max_replans=max_replans, max_actuations=max_actuations,
+                        cancelled=cancelled)
 
 
 def _ledger_text(status_md: Path = STATUS_MD) -> str:
@@ -493,6 +576,64 @@ def _campaign_cmd(name: str, script: Path, out: Path) -> list[str]:
     return cmd
 
 
+def _cancel_marker(rt: Runtime, brief_id: str) -> Path:
+    """The operator's cooperative stop flag for one brief, written by
+    board.store.cancel_brief. Live state -- a plain file, never a chain row; the
+    SEAL is the ``runtime.task_cancelled`` row this runtime writes when it acts."""
+    return rt.inbox.parent / "cancel" / brief_id
+
+
+def _cancel_requested(rt: Runtime, brief_id: str) -> bool:
+    return _cancel_marker(rt, brief_id).exists()
+
+
+#: Cancel-probe cadence while a campaign/rsi subprocess runs. A chain runs for
+#: hours, so a 2s stat is free and bounds how long an operator waits.
+_CANCEL_POLL_S = 2.0
+#: Grace between SIGTERM and SIGKILL on a cancelled subprocess group.
+_CANCEL_GRACE_S = 10.0
+
+
+def _run_watched(cmd: list[str], env: dict, rt: Runtime, brief_id: str,
+                 out: Path, what: str) -> tuple[int, str]:
+    """``subprocess.run`` for a campaign/rsi chain, plus operator cancellation.
+
+    ``start_new_session=True`` puts the child in its OWN process group, which is
+    the whole trick: a campaign is a worker POOL, and signalling only the parent
+    leaves the workers as orphans still burning GPU (learned the hard way), so
+    the stop is ``os.killpg`` over the group -- and because the group is NEW, the
+    runtime's own process is never in the blast radius.
+
+    On cancel the half-written store is marked ``CANCELLED`` before raising: a
+    truncated dev sweep must never be readable as a result (two-state law). The
+    raise lands in ``_process``'s crash-safety wrap, which sees the marker and
+    seals ``runtime.task_cancelled`` rather than ``runtime.task_error``.
+    """
+    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
+    while True:
+        try:
+            # communicate() drains both pipes while it waits, so a chatty
+            # campaign can never deadlock on a full stderr buffer; retrying
+            # after a timeout loses no output (documented contract).
+            _, err = proc.communicate(timeout=_CANCEL_POLL_S)
+            return proc.returncode, err
+        except subprocess.TimeoutExpired:
+            if not _cancel_requested(rt, brief_id):
+                continue
+            os.killpg(proc.pid, signal.SIGTERM)  # pgid == pid (start_new_session)
+            try:
+                proc.communicate(timeout=_CANCEL_GRACE_S)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+            out.mkdir(parents=True, exist_ok=True)
+            drop(out, "CANCELLED", json.dumps(
+                {"brief": brief_id, "what": what, "ts": time.time()}))
+            raise RuntimeError(f"{what} cancelled by the operator")
+
+
 def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     """Schedule one preregistered RSI campaign as an in-system task: guard the
     seed ledger, spawn the fixed campaign script as a SUBPROCESS, fold its
@@ -515,13 +656,11 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     _assert_unburned(brief, name)
 
     out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
-    proc = subprocess.run(
-        _campaign_cmd(name, script, out),
-        cwd=str(REPO_ROOT), env={**os.environ, "MUJOCO_GL": "egl"},
-        capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"campaign {name!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+    code, err = _run_watched(_campaign_cmd(name, script, out),
+                             {**os.environ, "MUJOCO_GL": "egl"},
+                             rt, brief_id, out, f"campaign {name!r}")
+    if code != 0:
+        raise RuntimeError(f"campaign {name!r} exited {code}: {err.strip()[-500:]}")
 
     copied = _copy_skills(out / "skills", rt.skills_root)
     rt.log.append("runtime.campaign_scheduled",
@@ -579,12 +718,16 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
         cmd += [f"--{key}", f"{blocks[key][0]}:{blocks[key][1]}"]
     if brief.get("node"):
         cmd += ["--node", str(brief["node"])]
-    proc = subprocess.run(cmd, cwd=str(REPO_ROOT),
-                          env={**os.environ, "MUJOCO_GL": "egl"},
-                          capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
+    env = {**os.environ, "MUJOCO_GL": "egl"}
+    if rt.frames:
+        # The 取景窗 life sign for a chain: ONE pool worker (lockfile winner in
+        # rsi_campaign._maybe_arm_frames) mirrors its episodes to the session's
+        # frame.jpg. Live state, not evidence -- same file the task path dumps.
+        env["PH_RSI_FRAMES"] = str(rt.inbox.parent / "frame.jpg")
+    code, err = _run_watched(cmd, env, rt, brief_id, out, f"rsi chain for {task!r}")
+    if code != 0:
         raise RuntimeError(
-            f"rsi chain for {task!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+            f"rsi chain for {task!r} exited {code}: {err.strip()[-500:]}")
 
     report = json.loads((out / "rsi_report.json").read_text())
     copied = _copy_skills(out / "skills", rt.skills_root)
@@ -616,8 +759,28 @@ _BRIEF_KEYS = {
 }
 
 
+def _seal_cancelled(rt: Runtime, brief_id: str, brief: dict, claimed: Path,
+                    stage: str) -> None:
+    """File a cancelled brief into ``cancelled/`` under its OWN chain row.
+
+    ``runtime.task_cancelled``, never ``runtime.task_error``: an operator
+    stopping a run and a run crashing must stay separable in the evidence
+    forever, or a later audit reads the human's decision as a capability the
+    harness lacks. ``stage`` records which boundary caught it -- ``queued`` (the
+    brief never started) or ``running`` (stopped at a node/subprocess boundary).
+    """
+    rt.log.append("runtime.task_cancelled",
+                  {"brief": brief_id, "task": brief.get("task") or brief.get("campaign"),
+                   "stage": stage})
+    opstream.emit("task_cancelled", brief=brief_id, task=brief.get("task"),
+                  stage=stage)
+    (rt.inbox.parent / "cancelled").mkdir(parents=True, exist_ok=True)
+    os.replace(claimed, rt.inbox.parent / "cancelled" / brief_id)
+    _cancel_marker(rt, brief_id).unlink(missing_ok=True)
+
+
 def _process(rt: Runtime, path: Path) -> None:
-    """Claim one brief, run it, file it under done/ or failed/."""
+    """Claim one brief, run it, file it under done/, failed/ or cancelled/."""
     brief_id = path.name
     claimed = rt.processing / brief_id
     try:
@@ -632,6 +795,13 @@ def _process(rt: Runtime, path: Path) -> None:
         return
     opstream.emit("task_claimed", brief=brief_id, task=brief.get("task"),
                   campaign=brief.get("campaign"), seed=brief.get("seed"))
+    # Checkpoint 1, AFTER the atomic claim: exactly one process owns this brief
+    # now, so cancelling a queued brief has no race with claiming it -- the
+    # winner of the rename is the one that reads the marker.
+    if _cancel_requested(rt, brief_id):
+        _seal_cancelled(rt, brief_id, brief, claimed, "queued")
+        return
+    stopped = False
     try:
         kind = brief.get("kind", "task")
         unknown = set(brief) - _BRIEF_KEYS.get(kind, set())
@@ -652,7 +822,14 @@ def _process(rt: Runtime, path: Path) -> None:
                     raise ValueError(
                         "skills-root mutated mid-session (execution mode): "
                         f"boot manifest {list(rt.skills_manifest)} != {current}")
-            _run_task(brief, rt)
+            # Checkpoint 2 lives INSIDE the workload (the node boundary). It
+            # reports back through the result, not through the marker: a cancel
+            # that arrives after the last node did not stop anything, and filing
+            # a mission that finished under cancelled/ would be a lie in the
+            # other direction.
+            stopped = cancelled_run(
+                _run_task(brief, rt,
+                          cancelled=lambda: _cancel_requested(rt, brief_id)))
         elif kind in ("campaign", "rsi"):
             # v4.1 hard rule: an evolution brief is accepted ONLY in evolution
             # mode. Rejection, not neutralization -- same pattern as the
@@ -665,6 +842,14 @@ def _process(rt: Runtime, path: Path) -> None:
         else:
             raise ValueError(f"unknown brief kind {kind!r}")
     except Exception as exc:  # noqa: BLE001 -- escape hatch: crash-safety lives here
+        # Checkpoint 3: a campaign/rsi cancellation ARRIVES as a raise (the
+        # killed group exits nonzero), so a set marker here means this ending is
+        # the operator's, not a fault. It also covers a task that raised while a
+        # stop was pending -- calling that a task_error would both misattribute
+        # it and strand the marker.
+        if _cancel_requested(rt, brief_id):
+            _seal_cancelled(rt, brief_id, brief, claimed, "running")
+            return
         rt.log.append("runtime.task_error",
                       {"brief": brief_id, "task": brief.get("task"),
                        "error": repr(exc)})
@@ -672,6 +857,12 @@ def _process(rt: Runtime, path: Path) -> None:
                       error=repr(exc))
         os.replace(claimed, rt.failed / brief_id)
         return
+    if stopped:
+        _seal_cancelled(rt, brief_id, brief, claimed, "running")
+        return
+    # The work finished. A marker that arrived too late cancelled nothing, and
+    # must not outlive the brief it named.
+    _cancel_marker(rt, brief_id).unlink(missing_ok=True)
     opstream.emit("task_done", brief=brief_id, task=brief.get("task"))
     try:
         os.replace(claimed, rt.done / brief_id)
@@ -685,6 +876,25 @@ def _process(rt: Runtime, path: Path) -> None:
 
 def _pending(rt: Runtime) -> list[Path]:
     return sorted(rt.inbox.glob("*.json"), key=lambda p: p.stat().st_mtime)
+
+
+#: Poll-loop heartbeat cadence for runtime_status.json (the UI liveness signal).
+HEARTBEAT_S = 10.0
+
+
+def _heartbeat(session_dir: Path) -> None:
+    """Re-stamp ``heartbeat_ts`` in runtime_status.json (read-modify-write, so
+    every boot-written field rides through verbatim; atomic via the shared
+    brief_drop temp+replace, so board.store.read_runtime_status never sees a
+    half write). boot_ts alone cannot tell a live poll loop from a dead one --
+    this can: the board passes the field through and the UI reads its age.
+    Never raises: a broken status file loses the badge, never the loop."""
+    try:
+        status = json.loads((session_dir / "runtime_status.json").read_text())
+        status["heartbeat_ts"] = time.time()
+        drop(session_dir, "runtime_status.json", json.dumps(status))
+    except (OSError, json.JSONDecodeError):
+        pass
 
 
 def main(session_dir: str | Path, inbox: str | Path | None = None, *,
@@ -701,9 +911,17 @@ def main(session_dir: str | Path, inbox: str | Path | None = None, *,
                 return rt
             for p in pending:
                 _process(rt, p)
+    session_dir = Path(session_dir)
+    last_beat = 0.0
     while True:
         for p in _pending(rt):
             _process(rt, p)
+        # ponytail: no beat while a brief runs (an rsi chain runs for hours), so
+        # the badge reads "busy or dead"; stamp from inside _process if that
+        # ambiguity ever hurts.
+        if time.time() - last_beat >= HEARTBEAT_S:
+            _heartbeat(session_dir)
+            last_beat = time.time()
         time.sleep(poll_interval)
 
 

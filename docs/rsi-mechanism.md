@@ -51,11 +51,16 @@
 ## 诚实边界
 
 **1. 恢复原语不存在就明说。**
-`plugins/rsi/repertoire.py` 里每条 `Strategy` 现在注册到一张**本体卡**（`card` 字段，
-默认 `embodiment_robosuite`）。理由：`RecoveryActor` 把 phase 名翻成动作靠的是
-`harness/spec_tabletop.py` 的 `PHASE_HEIGHT` —— tabletop 手臂的
-above/descend/close/lift 词汇，换本体即无意义。
-`for_card("embodiment_robocasa")` 返回 `[]`，链就原样报「该本体（卡 X）无注册恢复原语，
+恢复原语由**本体卡**在自己的 manifest.toml 里声明（`[recoveries.<name>]
+ref = "module:attr"`，如 `plugins/embodiment_robosuite/`），由
+`harness.manifest.discover()` 像 mounts/campaigns 一样折叠（重名 loud fail）；
+`plugins/rsi/repertoire.py` 只读折叠结果，并按
+`harness.contracts.RecoveryStrategy` Protocol 做 isinstance 校验。理由：
+`RecoveryActor` 把 phase 名翻成动作靠的是 `harness/spec_tabletop.py` 的
+`PHASE_HEIGHT` —— tabletop 手臂的 above/descend/close/lift 词汇，换本体即无意义，
+所以修复形状写在说这套词汇的那张卡里。
+`strategies_for("embodiment_robocasa")` 返回 `[]`（它的卡没声明任何
+`[recoveries.*]`，因为确实没有），链就原样报「该本体（卡 X）无注册恢复原语，
 RSI 无从下手」，并把 robosuite 侧的 `servo_descend`/`servo_probe` 指出来当**模板**，
 **不现编一条**。
 

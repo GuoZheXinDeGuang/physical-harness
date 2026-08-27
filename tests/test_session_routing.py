@@ -107,11 +107,16 @@ def test_mcp_submit_rejects_unknown_and_traversal_session(tmp_path):
     assert not list(runs.rglob("brief-*.json"))
 
 
-def test_mcp_run_task_rejects_unknown_session(tmp_path):
+def test_mcp_lifecycle_tools_reject_unknown_session(tmp_path):
+    """run_task/brief_status/cancel_brief route through the same one guard --
+    and run_task refuses BEFORE the submit, so nothing is dropped."""
     runs = _runs(tmp_path, "session-main")
     ms.configure(runs)
-    res = ms.run_task("stack", 1, session="../session-main")
-    assert res["status"] == "error" and "unknown session" in res["error"]
+    for res in (ms.run_task("stack", 1, session="../session-main"),
+                ms.brief_status("brief-x.json", session="../session-main"),
+                ms.cancel_brief("brief-x.json", session="../session-main")):
+        assert "unknown session" in res["error"]
+    assert not list(runs.rglob("brief-*.json"))
 
 
 def test_mcp_session_reads_default_to_main_and_reject_traversal(tmp_path):
