@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from mcp.server import MCPServer
 from board import cards as bc
 from board import store as bs
 from board import vault as bv
+from harness.manifest import discover
 
 
 #: The default routing session -- the resident runtime cockpit always brings up.
@@ -259,6 +261,105 @@ def vault_neighbors(id: str, relation: str | None = None) -> dict:
     return bv.neighbors(bv.build_graph(_Cfg.runs), id, relation)
 
 
+# --- the session x task advisory (READ-ONLY; it never gates a submit) --------
+#
+# The mismatch it names: a robocasa mission dropped into session-main is ACCEPTED
+# (the task string is in the manifest union, which is one table across every
+# card), and refused seconds later inside a DIFFERENT process, in a log the
+# operator is not reading. This puts that sentence in the answer they are already
+# reading -- and nowhere else. It is not validation: submit_brief refuses nothing
+# and names no provider by design (see its docstring), and moving the guard here
+# would launder the runtime's authority into the MCP seam.
+#
+# SILENCE IS THE DEFAULT. Every unreadable input -- unknown task, a binding with
+# no embodiment of its own, a chassis that will not fold, a dead runtime, an
+# unprobeable interpreter -- yields NO warning key at all, because a wrong
+# warning is exactly as bad as a wrong doc.
+
+#: Interpreter probe budget. A wedged interpreter must not stall the submit
+#: behind it; a timeout reads as unprobeable, i.e. as silence.
+_PROBE_TIMEOUT_S = 10.0
+#: Asked of the TARGET interpreter, never of ours: which of argv[1:] it cannot
+#: import. find_spec is the machinery the mount itself uses, so an editable or
+#: namespace install answers correctly where a dist-info glob would guess wrong.
+_PROBE = ("import importlib.util as u, sys; "
+          "print(' '.join(p for p in sys.argv[1:] if u.find_spec(p) is None))")
+
+
+def _session_python(session_dir: Path) -> str | None:
+    """The interpreter the session's LIVE runtime runs under, or ``None``.
+
+    The venv is what decides whether a sim's packages import at all, and the two
+    resident runtimes differ in exactly that. runtime_status.json (live state,
+    never a chain row) names the pid; ``/proc/<pid>/cmdline`` argv[0] names the
+    interpreter -- ``/proc/<pid>/exe`` is the venv's python3 symlink TARGET,
+    identical for both, so argv[0] is the only half that discriminates. Guarded
+    like store._model_identity: the cmdline must still be a harness runtime, so a
+    recycled pid reads as unknown rather than as some unrelated interpreter.
+    """
+    try:
+        pid = int(json.loads((session_dir / "runtime_status.json").read_text())["pid"])
+        argv = [a.decode(errors="replace")
+                for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if a]
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+    if not argv or not any("harness_runtime" in a for a in argv[1:]):
+        return None
+    exe = Path(argv[0])
+    if not exe.is_absolute():
+        # argv[0] is relative when the runtime was launched from the repo root
+        # (".venv/bin/python"); resolve it against THAT process's cwd, never ours.
+        try:
+            exe = Path(f"/proc/{pid}/cwd").readlink() / exe
+        except OSError:
+            return None
+    return str(exe) if exe.is_file() else None
+
+
+def _compat_warning(brief: dict, session: str, session_dir: Path) -> str | None:
+    """One sentence when this brief's task cannot mount in this session, else None.
+
+    Two already-existing data sources, joined:
+
+    * the manifest fold (``harness.manifest.discover``) -- ``task_bindings[task]``
+      carries an ``env`` ref only when the mission rides a DIFFERENT simulator
+      than the folded base (``harness_runtime._mount_plan`` overrides
+      ``embodiment.env`` with it); the plugin dir that ref names is an embodiment
+      card, and ``third_party`` is the top-level packages that card needs --
+      recorded even for an ``enabled = false`` card, which every second-sim card is.
+    * the target runtime's interpreter, asked whether it can import them.
+
+    A binding with no ``env`` rides whatever base the session already mounted, so
+    there is nothing to warn about and nothing is said.
+    """
+    if not isinstance(brief, dict) or not isinstance(brief.get("task"), str):
+        return None
+    try:
+        registry = discover()
+    except (OSError, ValueError):
+        return None  # a chassis that will not fold has no advice to give
+    env = (registry.task_bindings.get(brief["task"]) or {}).get("env")
+    if not isinstance(env, str):
+        return None
+    card = env.split(":")[0].rsplit(".", 1)[-1]  # plugins.embodiment_robocasa:provider
+    needs = registry.third_party.get(card)
+    python = _session_python(session_dir) if needs else None
+    if python is None:
+        return None
+    try:
+        # cwd="/" so the sims/ shadow trap (CLAUDE.md) can never answer for it.
+        probe = subprocess.run([python, "-c", _PROBE, *needs], cwd="/",
+                               capture_output=True, text=True, timeout=_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    missing = probe.stdout.split() if probe.returncode == 0 else []
+    if not missing:
+        return None
+    return (f"task {brief['task']!r} binds {card}; {session}'s runtime runs "
+            f"{python}, which cannot import {', '.join(missing)} -- it will "
+            f"refuse this at mount. Submitted anyway; the runtime decides.")
+
+
 @mcp.tool()
 def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     """Drop a brief into a runtime session's inbox for it to claim.
@@ -295,9 +396,20 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     It defaults to the resident session-main, so single-runtime behavior is
     unchanged. A non-default session is validated against runs/ (a real booted
     session, ``../`` rejected); an unknown one returns ``{"error": ...}``.
+
+    A successful submit may carry one extra READ-ONLY key, ``warning``, when this
+    session's runtime provably cannot mount this task's embodiment (see
+    _compat_warning). It is advice, computed AFTER the drop, and it never changes
+    whether the brief was delivered; when there is nothing certain to say the key
+    is absent entirely.
     """
-    return bs.submit_brief(_Cfg.runs, json.dumps(brief), session,
-                           _Cfg.session, _Cfg.inbox)
+    res = bs.submit_brief(_Cfg.runs, json.dumps(brief), session,
+                          _Cfg.session, _Cfg.inbox)
+    if "submitted" in res:
+        warning = _compat_warning(brief, session, Path(res["inbox"]).parent)
+        if warning:
+            res["warning"] = warning
+    return res
 
 
 @mcp.tool()
@@ -383,7 +495,9 @@ def run_task(task: str, seed: int, max_replans: int | None = None,
     surfaces as ``state: failed`` with the sealed error).
 
     ``session`` routes to a second runtime (default session-main); an unknown one
-    returns ``{"error": ...}`` before any submit.
+    returns ``{"error": ...}`` before any submit. The submit's advisory
+    ``warning`` (see submit_brief) rides onto the handle -- the same read-only
+    key, carried so the reason a brief cannot mount survives the hop.
     """
     inbox = _route_inbox(session)
     if inbox is None:
@@ -393,8 +507,9 @@ def run_task(task: str, seed: int, max_replans: int | None = None,
         brief["max_replans"] = max_replans
     if max_actuations is not None:
         brief["max_actuations"] = max_actuations
-    brief_id = submit_brief(brief, session=session)["submitted"]
-    return bs.brief_status(inbox.parent, brief_id)
+    submitted = submit_brief(brief, session=session)
+    out = bs.brief_status(inbox.parent, submitted["submitted"])
+    return {**out, "warning": submitted["warning"]} if "warning" in submitted else out
 
 
 def main(argv=None) -> int:

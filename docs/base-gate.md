@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 691 passed
+pass       : 678 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,30 +49,21 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~13.5s
+wall time  : ~10.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +17 pass over the model-server snapshot (674→691, skips unchanged) is the
-brief LIFECYCLE (`tests/test_brief_lifecycle.py`, plus the rewritten run_task
-block in `test_mcp_server.py` and the merged routing case, both net-zero). Two
-holes closed. **Status**: `run_task` no longer blocks — a 31-node mission always
-outran its timeout and came back `timeout` while the runtime was sealing it fine,
-so it now hands back a handle and `brief_status` answers where the brief is
-(the intake directory IS the state), what is ahead of it (`queue_position` in the
-runtime's own mtime claim order, `ahead_running_s` off the claim event because
-`os.rename` keeps a brief's drop mtime), and what it did (a chain row that names
-the brief, else the brief's own `plan_complete` event, attributed by the feed's
-claim boundary). `wait_ms` long-polls the read_runtime_frame way: waiting out
-the cap answers with the current state, never an error. **Cancel**: a marker in
-`cancel/`, read at the claim, at the node boundary before dispatch (so no
-episode tears), and on a 2s probe that kills a campaign's process GROUP — a
-lone parent kill orphans the worker pool. It ends in `cancelled/` under
-`runtime.task_cancelled`, its own ending, and `session_progress` tallies it apart
-from `failed`: an operator's stop must never read later as a capability gap.
-The subprocess-group test spawns a real child of a real child; everything else is
-sim-free, no seeds burned.
+The +4 pass over the model-server snapshot (674→678, skips unchanged) is the
+submit advisory (`tests/test_submit_advisory.py`): the session×task warning
+`submit_brief`/`run_task` attach when a mission's binding names an embodiment the
+target runtime's interpreter cannot import. What the tests pin is that it is
+ADVICE — the incompatible brief is still delivered, the compatible one carries no
+`warning` key at all (absent, not empty), and every unreadable input (no live
+runtime, a pid whose cmdline is not a harness runtime) answers with silence
+rather than a guess. The interpreter half is read from a really-spawned process
+under this venv, so "robocasa is not importable here" is a fact of the venv
+running the test, not a mock. Sim-free, no seeds burned.
 
 The +8 pass over the host-vitals snapshot (666→674, skips unchanged) is
 `model_server` — the console's local-model switch
@@ -241,8 +232,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `722 passed, 29 skipped` (re-measured
-2026-08-28 with the brief-lifecycle tests; 691 base + 28 robosuite-marked
+Full-suite parity (card present): `709 passed, 29 skipped` (re-measured
+2026-08-28 with the submit-advisory tests; 678 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items

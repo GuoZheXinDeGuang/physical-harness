@@ -38,6 +38,14 @@ board submit_brief(session=…) ── 路由：写哪个 session 的 inbox（�
   adopt-or-spawn 逐 session 应用；`--stop` 精确 pidfile 不变。
 * **board 面加一个 `session` 参数**（默认 `session-main`）：storecli / board fn /
   mcp tool 三脸同改（双脸铁律）。UI 会话选择器已存在，天然显示第二 runtime。
+* **路由错了照样投得进去**：任务名在 manifest 联合表里是一张表，所以 kitchen_thaw
+  投给 session-main 会被接受，几秒后在**另一个进程**的日志里 mount 失败。MCP 的
+  `submit_brief`/`run_task` 因此在返回值里附一个**只读** `warning`：绑定里的 `env`
+  ref 指向哪张 embodiment 卡（无 `env` = 跟着 session 自己的 base，不出声），那张卡
+  的 `third_party` 拿去问目标 session 活着的解释器（runtime_status.json 的 pid →
+  `/proc/<pid>/cmdline` 的 argv[0]）能否 import。它**不拦**——submit_brief 的零校验
+  是防权限洗白的设计，runtime 仍是唯一权威；任何读不出来的情形（绑定无 `env`、
+  runtime 已死、pid 被回收）一律**不给** warning 键，错的警告和错的文档一样坏。
 * **测试 marker 镜像 robosuite 模式**：`robocasa` marker + conftest 同款 find_spec
   自动跳过。base lane（`-m "not robosuite"`）会多出 robocasa 跳过项——base-gate
   快照 + README 计数**同 commit 刷**（纪律照旧）。robocasa venv 里只跑
