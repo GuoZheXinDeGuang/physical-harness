@@ -65,7 +65,7 @@
         displayName: Qwen3.8-27B (本机)
         apiKeyEnv: LOCAL_QWEN_API_KEY   # placeholder ref, see the note above
         api: openai-completions
-        baseURL: http://127.0.0.1:30000/v1
+        baseURL: http://127.0.0.1:30001/v1
         # The model is genuinely multimodal (Qwen3_5ForConditionalGeneration with
         # a vision_config); measured: a robosuite frame costs 300 image tokens.
         # Declared per-model AND as the route default so an added model inherits.
@@ -78,7 +78,7 @@
           maxTokensField: max_tokens
         models:
           - id: qwen3.8-27b            # --served-model-name; the real id is a path
-            name: Qwen3.8-27B AWQ (local)
+            name: Qwen3.8-27B Q4_K_XL (local)
             # HONEST capacity, not the advertised one. The server reports
             # max_model_len=32768, but Qwen3.5 is a HYBRID mamba/linear-attention
             # model: its mamba state cache and the attention KV pool compete for

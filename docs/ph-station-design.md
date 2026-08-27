@@ -478,6 +478,42 @@ cost no decode speed; there was none to give up.
 **26089 is the real ceiling, not the advertised 32768.** A request over the pool
 fails even while under the advertised window, so the harness is told 24576.
 
+### The backbone moved to llama.cpp (2026-08-28)
+
+sglang cannot shrink past ~21 GB for structural reasons: `embed_tokens` has no
+quantization path in it at all (`compressed_tensors.py` implements
+`ParallelLMHead` and nothing for `VocabParallelEmbedding`), so 2.37 GiB of the
+weights is a permanent floor, and every 4-bit checkpoint on the Hub leaves
+`lm_head` in its `ignore` list as well. GGUF quantizes both, but sglang's
+`GGUF_HF_NAME_MAP_BUILDERS` does not list `qwen3_5`, so serving a GGUF means
+serving it from llama.cpp — which costs nothing at the console, because
+`llama-server` is OpenAI-compatible and the route is a `baseURL`.
+
+Serving `unsloth/Qwen3.8-27B-GGUF` `UD-Q4_K_XL` (17.56 GB) + `mmproj-BF16.gguf`
+(931 MB) on the existing Vulkan build, `-ngl 999 -c 24576 --jinja`, measured:
+
+| | sglang AWQ | llama.cpp Q4_K_XL |
+|---|---|---|
+| resident, after a vision request | 21.8 GB | **19.3 GB** |
+| structured `tool_calls` | yes | yes (needs `--jinja`) |
+| vision on a robosuite frame | accurate | accurate |
+| generation | ~60 tok/s | 24 tok/s |
+| prompt | CUDA-fast | 307 tok/s |
+| smaller rungs | none | IQ4_XS 13.3 GB · Q3_K_XL 12.2 GB |
+
+The first request reports ~7 tok/s prompt eval; that is Vulkan compiling graphs,
+not the steady state — measure the second one. The generation gap is largely the
+Vulkan build: a CUDA build should recover most of it, and is the next move if the
+speed bites. Revert is `baseURL` back to `:30000` plus a sglang restart.
+
+Two levers that looked promising and are not: `--mamba-ssm-dtype bfloat16` saves
+0.36 GB and **breaks the model** — the same tool prompt went from 35 reasoning
+tokens to 600 with no answer, an endless loop; and `--enable-memory-saver` does
+work (`/release_memory_occupation` really does hand back 20 GB in 0.03 s, and
+`/resume_memory_occupation` takes it straight back), but it needs
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments` unset, and with fp32 state and
+24576 tokens the remaining budget then fails the mamba cache at startup.
+
 ### Sharing the card with the simulator (2026-08-28)
 
 The model at `0.92` leaves ~0.6 GB, which is enough for **one** sim task (a
