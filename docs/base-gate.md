@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 643 passed
+pass       : 645 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,13 @@ wall time  : ~8.9s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +2 pass over the planner_vlm snapshot (643→645) is the calibration
+per-episode wall cap (`scripts/rsi_campaign.py:EPISODE_WALL_S`, SIGALRM in the
+pool worker): 8 workers hung >1h each on pathological cal 0-149 scenes
+(2026-08-28) and starved the chain at 138/153. A capped episode returns an
+honest `first_death="wall_timeout"` row that `attribute()` counts as
+ungoverned — charged to nobody, never a target.
 
 The +10 pass over the five-track merge snapshot (633→643, skips unchanged) is
 the planner_vlm card (docs/vlm-graph-paper-plan.md §1 landed): +9

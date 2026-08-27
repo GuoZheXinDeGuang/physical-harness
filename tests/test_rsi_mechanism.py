@@ -206,3 +206,31 @@ def test_every_folded_strategy_satisfies_the_contract():
     assert repertoire.names(), "the fold must surface the robosuite repertoire"
     for name in repertoire.names():
         assert isinstance(repertoire.strategy(name), RecoveryStrategy)
+
+
+# ── the per-episode wall cap: a hung probe returns an honest row ─────────────
+
+
+def test_hung_probe_is_capped_and_returns_a_wall_timeout_row(monkeypatch):
+    import time as _time
+
+    import scripts.rsi_campaign as rc
+
+    monkeypatch.setattr(rc, "EPISODE_WALL_S", 1)
+    monkeypatch.setattr(rc, "_probe_one_uncapped",
+                        lambda *a: _time.sleep(30) or {})
+    t0 = _time.perf_counter()
+    row = rc._probe_one(("kitchen_thaw", 7, 3, 40))
+    assert _time.perf_counter() - t0 < 5
+    assert row["success"] is False and row["wall_timeout"] is True
+    assert row["first_death"] == "wall_timeout" and row["seed"] == 7
+
+
+def test_wall_timeout_deaths_are_ungoverned_never_the_target():
+    from scripts.rsi_campaign import attribute
+
+    cal = {"graph": [{"id": "a", "kind": "segment", "after": []}],
+           "first_death_by_node": {"a": 3, "wall_timeout": 5}}
+    att = attribute(cal)
+    assert att["target"] == "a"
+    assert att["ungoverned"] == {"wall_timeout": 5}

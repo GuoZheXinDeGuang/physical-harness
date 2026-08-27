@@ -133,6 +133,19 @@ def _binding(task: str) -> dict:
     return binding
 
 
+#: Per-episode wall cap for pool probes. A healthy kitchen_thaw episode is
+#: ~60-110s; a pathological scene can spin the driver forever (cal 0-149 hung 8
+#: workers >1h each, 2026-08-28), and a hung worker starves the whole chain.
+#: SIGALRM works because each pool worker is a PROCESS running fn on its main
+#: thread. A capped episode is an honest row: first_death="wall_timeout",
+#: which attribute() counts as ungoverned (charged to nobody, never a target).
+EPISODE_WALL_S = 600
+
+
+class _EpisodeWallTimeout(Exception):
+    pass
+
+
 def _probe_one(job: tuple[str, int, int, int]) -> dict:
     """ONE ungoverned episode of ``task`` at ``seed``, plus its node graph.
 
@@ -146,6 +159,28 @@ def _probe_one(job: tuple[str, int, int, int]) -> dict:
     table the hand-written probes used to hard-code.
     """
     task, seed, max_replans, max_actuations = job
+    import signal
+
+    def _alarm(signum, frame):  # noqa: ARG001 -- signal handler shape
+        raise _EpisodeWallTimeout
+
+    signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(EPISODE_WALL_S)
+    try:
+        return _probe_one_uncapped(task, seed, max_replans, max_actuations)
+    except _EpisodeWallTimeout:
+        return {
+            "seed": seed, "success": False, "first_death": "wall_timeout",
+            "graph": [], "node_ok": {}, "node_stages": {},
+            "replans": 0, "actuations": 0, "budget_exhaust": False,
+            "seconds": float(EPISODE_WALL_S), "wall_timeout": True,
+        }
+    finally:
+        signal.alarm(0)
+
+
+def _probe_one_uncapped(task: str, seed: int, max_replans: int,
+                        max_actuations: int) -> dict:
     from harness.definitions import CAPABILITIES
     from harness.events import SessionLog
     from harness.kernel import Kernel
