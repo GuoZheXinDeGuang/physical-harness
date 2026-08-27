@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import sys
 import tempfile
 import time
@@ -179,6 +180,46 @@ def _probe_one(job: tuple[str, int, int, int]) -> dict:
         signal.alarm(0)
 
 
+#: True once THIS pool worker won the frame.lock and armed the overlay.
+_FRAMES = False
+
+
+def _maybe_arm_frames() -> bool:
+    """Arm the 取景窗 overlay in exactly ONE pool worker, if the spawning
+    runtime asked for it (``PH_RSI_FRAMES`` = the session's frame.jpg path).
+
+    One writer, chosen by an O_EXCL lockfile keyed by pid: ten workers
+    overwriting one frame.jpg would flicker between ten kitchens. A stale lock
+    (dead pid, e.g. a previous chain's worker) is stolen. Live state, not
+    evidence -- the overlay delegates verbatim and a lost frame never moves an
+    episode (scripts/frame_dump.py's own contract).
+    """
+    global _FRAMES
+    if _FRAMES:
+        return True
+    dest = os.environ.get("PH_RSI_FRAMES")
+    if not dest:
+        return False
+    lock = Path(dest).with_suffix(".lock")
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+    except FileExistsError:
+        try:
+            os.kill(int(lock.read_text().strip() or "0"), 0)
+            return False          # a live worker already streams
+        except (ValueError, ProcessLookupError):
+            try:
+                lock.write_text(str(os.getpid()))   # steal the stale lock
+            except OSError:
+                return False
+    from scripts import frame_dump
+    frame_dump.arm(dest)
+    _FRAMES = True
+    return True
+
+
 def _probe_one_uncapped(task: str, seed: int, max_replans: int,
                         max_actuations: int) -> dict:
     from harness.definitions import CAPABILITIES
@@ -191,7 +232,8 @@ def _probe_one_uncapped(task: str, seed: int, max_replans: int,
     binding = _binding(task)
     with tempfile.TemporaryDirectory() as empty_skills:
         kernel = Kernel(CAPABILITIES, log=SessionLog())
-        kernel.mount(hr._mount_plan(binding, Path(empty_skills)))
+        kernel.mount(hr._mount_plan(binding, Path(empty_skills),
+                                    frames=_maybe_arm_frames()))
         brief = hr.task_brief(task, binding)
         # The planner call the loop's first attempt makes, verbatim -- so the
         # graph recorded here is the graph that ran.

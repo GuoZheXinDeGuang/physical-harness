@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-27, isolated, robosuite blocked)
 
 ```
-pass       : 645 passed
+pass       : 646 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,12 @@ wall time  : ~8.9s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +1 pass over the wall-cap snapshot (645→646) is the RSI 取景窗 life
+sign: when the spawning runtime has `--frames`, `_run_rsi` passes
+`PH_RSI_FRAMES` and exactly ONE calibration pool worker (O_EXCL lockfile
+winner, stale locks stolen) mounts the frame overlay and mirrors its episodes
+to the session's frame.jpg. Live state, not evidence.
 
 The +2 pass over the planner_vlm snapshot (643→645) is the calibration
 per-episode wall cap (`scripts/rsi_campaign.py:EPISODE_WALL_S`, SIGALRM in the

@@ -579,9 +579,14 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
         cmd += [f"--{key}", f"{blocks[key][0]}:{blocks[key][1]}"]
     if brief.get("node"):
         cmd += ["--node", str(brief["node"])]
+    env = {**os.environ, "MUJOCO_GL": "egl"}
+    if rt.frames:
+        # The 取景窗 life sign for a chain: ONE pool worker (lockfile winner in
+        # rsi_campaign._maybe_arm_frames) mirrors its episodes to the session's
+        # frame.jpg. Live state, not evidence -- same file the task path dumps.
+        env["PH_RSI_FRAMES"] = str(rt.inbox.parent / "frame.jpg")
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT),
-                          env={**os.environ, "MUJOCO_GL": "egl"},
-                          capture_output=True, text=True, check=False)
+                          env=env, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         raise RuntimeError(
             f"rsi chain for {task!r} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")

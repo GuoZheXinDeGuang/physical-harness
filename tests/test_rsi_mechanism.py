@@ -234,3 +234,22 @@ def test_wall_timeout_deaths_are_ungoverned_never_the_target():
     att = attribute(cal)
     assert att["target"] == "a"
     assert att["ungoverned"] == {"wall_timeout": 5}
+
+
+def test_frames_arm_is_single_writer_and_opt_in(monkeypatch, tmp_path):
+    import scripts.rsi_campaign as rc
+
+    monkeypatch.setattr(rc, "_FRAMES", False)
+    monkeypatch.delenv("PH_RSI_FRAMES", raising=False)
+    assert rc._maybe_arm_frames() is False          # opt-in: no env, no overlay
+
+    dest = tmp_path / "frame.jpg"
+    monkeypatch.setenv("PH_RSI_FRAMES", str(dest))
+    assert rc._maybe_arm_frames() is True           # first caller wins the lock
+    assert rc._maybe_arm_frames() is True           # idempotent in the winner
+
+    monkeypatch.setattr(rc, "_FRAMES", False)       # a SECOND worker, same pid
+    lock = dest.with_suffix(".lock")
+    lock.write_text("999999999")                    # lock held by a dead pid
+    assert rc._maybe_arm_frames() is True           # stale lock is stolen
+    assert lock.read_text().strip() != "999999999"
