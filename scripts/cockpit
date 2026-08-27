@@ -13,11 +13,12 @@
 #      dropped into a dead inbox. Skipped with a warning if the venv is absent.
 #   3. the web console (the ph-station fork build)
 #
-# RUNTIME adopt-vs-spawn: harness_runtime.py has no concurrent-session guard of
-#   its own (only a write-once MODE file; its inbox claim is an atomic rename so a
-#   double-run can't corrupt, but two runtimes on one session dir is still wrong).
-#   So cockpit enforces it: it scans `ps` for a live harness_runtime on
-#   runs/session-main. If one exists it is ADOPTED (its PID printed, NOT restarted,
+# RUNTIME adopt-vs-spawn: harness_runtime.py now guards its own session dir (an
+#   exclusive flock on runs/<session>/runtime.lock; a second instance refuses to
+#   start and names the holding pid, and the lock dies with the process). Cockpit's
+#   `ps` scan is the FRIENDLY half of the same rule -- it adopts instead of racing,
+#   so the lock only ever speaks when something bypassed cockpit. If one exists on
+#   runs/session-main it is ADOPTED (its PID printed, NOT restarted,
 #   NOT recorded for --stop -- cockpit did not start it, so cockpit won't kill it).
 #   If none exists cockpit SPAWNS one (nohup, logged to runs/session-main/
 #   runtime.log) and records its PID so --stop can kill it. --render is passed IFF

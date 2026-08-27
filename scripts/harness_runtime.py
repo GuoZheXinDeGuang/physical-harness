@@ -29,6 +29,13 @@ runtime claims by ``os.rename`` into ``processing/`` (the loser of a race gets
 ``done/`` or ``failed/``. On boot any ``processing/*.json`` left by a crash is
 re-queued to ``inbox/`` (at-least-once).
 
+ONE runtime per session dir, enforced here: ``boot`` takes an exclusive flock on
+``<session-dir>/runtime.lock`` and a second instance refuses to start, naming the
+pid that holds it (``_claim_session``). The guard lives in the guarded thing, not
+in whatever launched it -- scripts/cockpit's adopt-or-spawn scan keeps the normal
+path off this rail, but the operator starting a runtime by hand deserves the same
+protection.
+
 Authority-laundering defense (non-negotiable): a brief names NO provider/mount
 ref. It is a pure selector+budgets -- ``{"kind":"task","task":"stack","seed":
 90000,"max_replans":3,"max_actuations":3}``. The runtime resolves the task STRING
@@ -51,6 +58,7 @@ sibling closed-loop driver scripts/task_plan.py -- harness/ imports no plugin
 from __future__ import annotations
 
 import argparse
+import fcntl
 import importlib
 import json
 import os
@@ -112,6 +120,50 @@ def _load_attr(ref: str):
 #: never triggers RSI. EVOLUTION is the only mode that may accept a campaign
 #: brief and let a campaign write the shared skills root.
 MODES = ("execution", "evolution")
+
+#: The session claim. One runtime per session dir, enforced HERE rather than in
+#: whatever launched it: the guard belongs inside the thing it guards, and the
+#: operator starts runtimes by hand as often as scripts/cockpit does.
+LOCKFILE = "runtime.lock"
+
+#: Claims this process already holds, by resolved session dir. flock() is keyed
+#: to the OPEN FILE DESCRIPTION, so a second open()+flock() of the same file in
+#: one process contends with itself; re-booting a session we already hold (a
+#: --drain then serve, the reboot tests) must be a no-op, not a self-refusal.
+_CLAIMED: dict[Path, int] = {}
+
+
+def _claim_session(session_dir: Path) -> None:
+    """Take the exclusive, non-blocking flock on ``<session-dir>/runtime.lock``.
+
+    Two runtimes on one session dir cannot corrupt the inbox (the claim is an
+    atomic rename) but they double-run briefs, interleave two writers into one
+    session chain and fight over runtime_status.json/frame.jpg. So the second
+    one refuses to start and names the pid holding the claim.
+
+    flock, deliberately, not "the lock file exists": the kernel drops the
+    advisory lock when the fd closes, including on SIGKILL and on a crash, so
+    there is no zombie claim to clear by hand -- the file itself is allowed to
+    outlive its holder and means nothing on its own. The pid written inside is
+    a courtesy for the error message, never the lock.
+    """
+    key = session_dir.resolve()
+    if key in _CLAIMED:
+        return
+    fd = os.open(key / LOCKFILE, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        holder = os.read(fd, 32).decode("utf-8", "replace").strip() or "unknown"
+        os.close(fd)
+        raise SystemExit(
+            f"harness_runtime: session {session_dir} is already served by pid "
+            f"{holder} (its flock on {key / LOCKFILE} is held). Refusing to "
+            "start a second runtime on one session dir -- stop that one first, "
+            "or point --session-dir somewhere else.") from None
+    os.ftruncate(fd, 0)
+    os.write(fd, str(os.getpid()).encode())
+    _CLAIMED[key] = fd   # held for the life of the process; closing releases it
 
 
 @dataclass(frozen=True)
@@ -205,6 +257,10 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     failed = inbox.parent / "failed"
     for d in (log_dir, skills_root, inbox, processing, done, failed):
         d.mkdir(parents=True, exist_ok=True)
+
+    # Claim the session BEFORE the first mutation below (the crash re-queue
+    # moves files), so a refused second runtime has touched nothing.
+    _claim_session(session_dir)
 
     # write-once mode: fixed at first boot, immutable across restart.
     mode_file = session_dir / "MODE"
