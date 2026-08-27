@@ -37,6 +37,8 @@ Charter: [GOAL.md](GOAL.md) · internals: [ARCHITECTURE.md](ARCHITECTURE.md) · 
 [CLAUDE.md](CLAUDE.md). These three files anchor the project's direction and
 rules — do not modify them lightly; GOAL.md in particular is fixed and changes
 only by the operator's decision.
+Bringing your own VLM planner, VLA policy, or recovery primitives:
+[docs/plug-in-your-model.md](docs/plug-in-your-model.md).
 
 ## Architecture
 
