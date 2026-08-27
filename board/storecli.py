@@ -77,6 +77,8 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         return bs.campaign_progress(runs)
     if fn == "sessions":
         return bs.discover_sessions(runs)
+    if fn == "host_vitals":
+        return bs.host_vitals(runs)
     if fn == "ledger":
         return bs.parse_ledger(_read(status))
     if fn == "rounds":
@@ -164,7 +166,7 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
     parser.add_argument("--session", default="session-main", help="submit_brief: the runtime session whose inbox the brief routes into (default: session-main)")

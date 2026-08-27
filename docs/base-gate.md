@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 662 passed
+pass       : 666 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,10 +49,21 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~11.6s (measured while 10 RSI calibration workers held the GPU)
+wall time  : ~9.9s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +4 pass over the keyframes snapshot (662→666, skips unchanged) is
+`host_vitals` — the operator's live view of the machine's headroom
+(`tests/test_host_vitals.py`): the two-nvidia-smi join on GPU uuid
+(`--query-compute-apps` has no index column) with the per-card process list
+folded biggest-first, the MemTotal−MemAvailable RAM read, the statvfs disk read,
+the three-face byte equivalence with `ts` pinned, and the DEGRADATION contract —
+a missing binary, a timeout, a nonzero exit, an unparsable /proc/meminfo, and a
+nonexistent disk path each read as an empty list or zeros, never an exception,
+because this is live state on the same never-sealed footing as
+`runtime_status`. Host reads monkeypatched, sim-free, no seeds burned.
 
 The +12 pass over the submit-face snapshot (650→662, skips unchanged) is
 keyframes — stills pinned to opstream events (`tests/test_keyframes.py`): the
@@ -193,8 +204,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `693 passed, 29 skipped` (re-measured
-2026-08-28 with the keyframes tests; 662 base + 28 robosuite-marked
+Full-suite parity (card present): `697 passed, 29 skipped` (re-measured
+2026-08-28 with the host-vitals tests; 666 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items

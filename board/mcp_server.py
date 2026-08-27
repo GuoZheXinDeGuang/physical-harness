@@ -185,6 +185,16 @@ def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
 
 
 @mcp.tool()
+def host_vitals() -> dict:
+    """The machine's LIVE resource headroom: {gpu: [{index, name, used_mib,
+    total_mib, procs:[{pid, name, used_mib}]}], ram: {used_gb, total_gb},
+    disk: {path, free_gb, total_gb}, ts}. The disk is the filesystem holding
+    runs/. Live state, not sealed evidence, and it never raises: a host with no
+    NVIDIA driver reports an empty gpu list."""
+    return bs.host_vitals(_Cfg.runs)
+
+
+@mcp.tool()
 def ledger() -> list[dict]:
     """Seed-block burn map parsed from STATUS.md's budget section."""
     return bs.parse_ledger(_read(_Cfg.status))

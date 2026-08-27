@@ -15,8 +15,9 @@ server below; the exported deliverable is a self-contained HTML report.
   rounds feed. Headless, for cron. `--status` / `--progress` override the
   STATUS.md / progress.md paths (default: the files next to `runs/`).
 - **MCP server** — `board/mcp_server.py` is the stdio MCP server the ph-station
-  cockpit connects to: ten read-only tools (`list_stores`, `store`, `heldout`,
+  cockpit connects to: read-only tools (`list_stores`, `store`, `heldout`,
   `sessions`, `session`, `session_progress`, `runtime_status`, `runtime_events`,
+  `runtime_frame`, `runtime_keyframes`, `runtime_keyframe`, `host_vitals`,
   `ledger`, `rounds`), each one call into `board.store` returning the same dicts,
   plus `submit_brief`, which drops a brief into the
   resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —

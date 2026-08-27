@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -726,6 +728,104 @@ def discover_sessions(runs_dir: str | Path) -> list[dict]:
             s = read_session(p)
             out.append({k: s[k] for k in ("name", "mtime", "chain_ok", "kinds", "skipped")})
     return sorted(out, key=lambda s: s["mtime"], reverse=True)
+
+
+# --- host vitals ------------------------------------------------------------
+
+#: nvidia-smi budget. A wedged driver (a hung GPU reset) must not stall the poll
+#: behind it; the panel simply shows no GPU that tick and recovers on the next.
+_NVSMI_TIMEOUT_S = 2.0
+
+
+def _nvidia_smi(query: str) -> list[list[str]]:
+    """One ``nvidia-smi --query-<...> --format=csv,noheader,nounits`` read, split
+    into stripped cells. Any failure -- no driver, no binary, nonzero exit, a
+    timeout -- reads as no rows, because a box without an NVIDIA GPU is a normal
+    deployment, not an error."""
+    try:
+        proc = subprocess.run(["nvidia-smi", f"--query-{query}", "--format=csv,noheader,nounits"],
+                              capture_output=True, text=True, timeout=_NVSMI_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if proc.returncode != 0:
+        return []
+    return [[c.strip() for c in line.split(",")] for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _gpus() -> list[dict]:
+    """Every visible NVIDIA GPU with its memory and its compute processes,
+    biggest consumer first. Two nvidia-smi reads joined on the GPU uuid --
+    ``--query-compute-apps`` has no index column, so the uuid is the only key
+    that pairs a process with the card it sits on. Unparsable rows are dropped
+    (a driver that answers ``[N/A]`` for a field is not an outage)."""
+    gpus: dict[str, dict] = {}
+    for row in _nvidia_smi("gpu=uuid,index,name,memory.used,memory.total"):
+        if len(row) < 5:
+            continue
+        try:
+            entry = {"index": int(row[1]), "name": row[2],
+                     "used_mib": int(row[3]), "total_mib": int(row[4]), "procs": []}
+        except ValueError:
+            continue
+        gpus[row[0]] = entry
+    for row in _nvidia_smi("compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"):
+        if len(row) < 4 or row[0] not in gpus:
+            continue
+        try:
+            proc = {"pid": int(row[1]), "name": row[2], "used_mib": int(row[3])}
+        except ValueError:
+            continue
+        gpus[row[0]]["procs"].append(proc)
+    out = sorted(gpus.values(), key=lambda g: g["index"])
+    for g in out:
+        # The panel names the biggest consumer; the ranking is folded here so no
+        # reader has to sort (statistics live in board/, never in the cockpit TS).
+        g["procs"].sort(key=lambda p: p["used_mib"], reverse=True)
+    return out
+
+
+def _ram() -> dict:
+    """Physical memory in GiB from /proc/meminfo: ``used`` is MemTotal minus
+    MemAvailable (what a new allocation can actually get -- reclaimable cache is
+    free, not used). A kernel without /proc reads as 0/0."""
+    fields: dict[str, int] = {}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, _, rest = line.partition(":")
+            if key in ("MemTotal", "MemAvailable"):
+                fields[key] = int(rest.split()[0])  # kB
+    except (OSError, IndexError, ValueError):
+        return {"used_gb": 0.0, "total_gb": 0.0}
+    total, avail = fields.get("MemTotal", 0), fields.get("MemAvailable", 0)
+    return {"used_gb": round(max(total - avail, 0) / 1048576, 1),
+            "total_gb": round(total / 1048576, 1)}
+
+
+def host_vitals(path: str | Path = ".") -> dict:
+    """The machine's LIVE resource headroom: every GPU's VRAM (with the compute
+    processes holding it, biggest first), physical RAM, and the free space on
+    the filesystem holding ``path`` -- ``{"gpu": [...], "ram": {...},
+    "disk": {...}, "ts": <epoch>}``.
+
+    Same live-state family as read_runtime_status: a plain sample of the box,
+    never a chain row, no verify, and it NEVER raises. A host with no NVIDIA
+    driver returns ``"gpu": []``; an unreadable /proc or filesystem returns
+    zeros. The operator reads this to see a VRAM ceiling coming before it kills
+    a resident runtime, so a failed probe must degrade to a quiet gap in the
+    panel rather than take the whole poll down with it.
+
+    ``path`` selects the filesystem to report (the board passes runs/, the tree
+    a campaign actually fills); it is echoed back so the panel can say which
+    mount the number describes.
+    """
+    try:
+        st = os.statvfs(path)
+        disk = {"path": str(path),
+                "free_gb": round(st.f_bavail * st.f_frsize / 1073741824, 1),
+                "total_gb": round(st.f_blocks * st.f_frsize / 1073741824, 1)}
+    except OSError:
+        disk = {"path": str(path), "free_gb": 0.0, "total_gb": 0.0}
+    return {"gpu": _gpus(), "ram": _ram(), "disk": disk, "ts": time.time()}
 
 
 # --- markdown feeds ---------------------------------------------------------
