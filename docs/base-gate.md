@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 666 passed
+pass       : 674 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,10 +49,27 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~9.9s
+wall time  : ~10.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +8 pass over the host-vitals snapshot (666→674, skips unchanged) is
+`model_server` — the console's local-model switch
+(`tests/test_model_server.py`): the three status states the operator's badge
+reads (stopped / `running and not healthy` = the 1-2 minute load / serving,
+with `vram_mib` joined on our pid out of the same rows `host_vitals` reports),
+and the guards, which are most of the file. The action word is the whole
+caller-supplied surface — the launcher is a module constant, and every action
+outside `status|start|stop` answers with an error beside a truthful status
+while trip-wired `Popen`/`os.kill` prove nothing ran. Identity is
+`/proc/<pid>/exe`, not argv, so the launcher's own here-doc in an editor's
+command line is not adopted (and never killed); `start` adopts a live server
+instead of spawning a second and otherwise spawns the constant argv with
+`start_new_session`; `stop` SIGTERMs only a pid that still proves its identity
+at kill time and refuses a recycled or garbage one. Three-face byte
+equivalence includes the CLI's omitted argument reading rather than writing.
+/proc, the health probe and nvidia-smi monkeypatched, sim-free, no seeds burned.
 
 The +4 pass over the keyframes snapshot (662→666, skips unchanged) is
 `host_vitals` — the operator's live view of the machine's headroom
@@ -204,8 +221,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `697 passed, 29 skipped` (re-measured
-2026-08-28 with the host-vitals tests; 666 base + 28 robosuite-marked
+Full-suite parity (card present): `705 passed, 29 skipped` (re-measured
+2026-08-28 with the model-server tests; 674 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items

@@ -20,8 +20,10 @@ import base64
 import json
 import os
 import re
+import signal
 import subprocess
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -826,6 +828,158 @@ def host_vitals(path: str | Path = ".") -> dict:
     except OSError:
         disk = {"path": str(path), "free_gb": 0.0, "total_gb": 0.0}
     return {"gpu": _gpus(), "ram": _ram(), "disk": disk, "ts": time.time()}
+
+
+# --- local model server -----------------------------------------------------
+
+#: The ONE launcher this face may start, hardcoded. An ``action`` word is the
+#: only thing a caller supplies -- never a path, never a command line. This face
+#: is reachable from the operator's browser through the cockpit bridge, so a
+#: caller-supplied script would be remote code execution on the harness box; it
+#: is the same rule as a brief not naming its provider (CLAUDE.md).
+_MODEL_SCRIPT = Path.home() / "models" / "launch_llamacpp.sh"
+#: The identity a pid must prove before this face reports it as the server or
+#: kills it: the launcher execs llama-server, so the running process IS the
+#: server and its /proc/<pid>/exe is the unforgeable half of the check (argv
+#: alone matches any shell that merely mentions the binary -- an editor writing
+#: the launcher would have matched). The port pins WHICH llama-server it is.
+_MODEL_BIN = "llama-server"
+_MODEL_PORT = 30001
+#: Health-probe budget. A server mid-load holds the socket without answering,
+#: and that wait must not stall the operator's 5s poll behind it.
+_MODEL_PROBE_TIMEOUT_S = 1.5
+_MODEL_ACTIONS = ("status", "start", "stop")
+
+
+def _model_identity(pid: int) -> bool:
+    """True iff ``pid`` is live AND is the whitelisted model server right now.
+
+    The one guard behind both the scan and the kill: reading it again at kill
+    time is what makes a recycled pid safe (the pidfile's number can be handed
+    to an unrelated process between start and stop). Anything unreadable -- an
+    exited pid, another user's process -- reads as "not the server", so this
+    face never acts on something it cannot identify.
+    """
+    try:
+        if os.path.basename(os.readlink(f"/proc/{pid}/exe")) != _MODEL_BIN:
+            return False
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except OSError:
+        return False
+    return f"--port {_MODEL_PORT}" in cmdline
+
+
+def _find_model_server() -> int | None:
+    """pid of the live model server, or None -- a /proc scan, never a pattern
+    kill. Discovery is by identity, not by bookkeeping, so a server started
+    outside the cockpit is reported the same as one this face spawned (the
+    adopt half of adopt-or-spawn)."""
+    try:
+        pids = [int(p.name) for p in Path("/proc").iterdir() if p.name.isdigit()]
+    except OSError:
+        return None
+    return next((pid for pid in sorted(pids) if _model_identity(pid)), None)
+
+
+def _model_health() -> tuple[bool, str | None]:
+    """``(healthy, model_id)`` from a GET on the server's ``/v1/models``.
+
+    The load-vs-serving discriminator: the process is up for 1-2 minutes before
+    it answers, so ``running and not healthy`` is exactly "still loading". Any
+    failure -- refused, timed out, non-JSON, HTTP error -- is a healthy=False
+    reading, never an exception.
+    """
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{_MODEL_PORT}/v1/models",
+                                    timeout=_MODEL_PROBE_TIMEOUT_S) as resp:
+            data = json.loads(resp.read())
+    except Exception:      # URLError/HTTPError/timeout/JSON -- all read as "not serving yet"
+        return False, None
+    entries = data.get("data") or [] if isinstance(data, dict) else []
+    first = entries[0] if entries else {}
+    return True, (first.get("id") if isinstance(first, dict) else None)
+
+
+def _model_vram(pid: int | None) -> int | None:
+    """VRAM the server holds, from the same per-pid rows host_vitals already
+    reports (one source for the number the operator compares against the meter
+    right above this row)."""
+    if pid is None:
+        return None
+    return next((p["used_mib"] for g in _gpus() for p in g["procs"] if p["pid"] == pid), None)
+
+
+def _model_state() -> dict:
+    """The status payload every model_server action answers with."""
+    pid = _find_model_server()
+    healthy, model = _model_health()
+    return {"running": pid is not None, "pid": pid, "port": _MODEL_PORT,
+            "healthy": healthy, "model": model, "vram_mib": _model_vram(pid)}
+
+
+def model_server(action: str = "status", runs_dir: str | Path = ".") -> dict:
+    """Start, stop, or read the local model server -- ``{"running", "pid",
+    "port", "healthy", "model", "vram_mib"}``, plus an ``"error"`` key when an
+    action could not be carried out.
+
+    This switches the SERVICE PROCESS only. Which model a request goes to is the
+    operator's route choice in the console's model picker; stopping the server
+    hands its ~19 GB of VRAM back to the simulator, which is the whole reason
+    the control exists.
+
+    ``action`` is whitelisted to ``status``/``start``/``stop`` and the script it
+    may launch is the module constant ``_MODEL_SCRIPT`` -- a caller supplies a
+    word, never a path or a command line.
+
+    - ``start`` adopts a server that is already up rather than spawning a second
+      one, and spawns detached (``start_new_session``, i.e. setsid) so the
+      server outlives whatever terminal or agent session started it.
+    - ``stop`` sends SIGTERM to the ONE pid it can identify as this server
+      (pidfile first, then the scan), re-checking ``/proc/<pid>/exe`` at kill
+      time; a pattern kill is never used -- one has matched the killer's own
+      shell in this repo's history.
+    - ``status`` never mutates. ``running and not healthy`` means loading.
+
+    Live state in the read_runtime_status family: no chain row, no verify, and
+    it NEVER raises -- a failure is an ``"error"`` string beside a real status.
+    """
+    if action not in _MODEL_ACTIONS:
+        return {**_model_state(), "error": f"unknown action: {action}"}
+    pidfile = Path(runs_dir) / "model-server.pid"
+    if action == "start":
+        if _find_model_server() is None:
+            try:
+                if not _MODEL_SCRIPT.exists():
+                    return {**_model_state(), "error": f"launcher not found: {_MODEL_SCRIPT}"}
+                with open(Path(runs_dir) / "model-server.log", "ab") as log:
+                    # The launcher execs the server, so this pid IS the server.
+                    proc = subprocess.Popen([str(_MODEL_SCRIPT)], stdout=log, stderr=log,
+                                            stdin=subprocess.DEVNULL, start_new_session=True)
+                pidfile.write_text(str(proc.pid))
+                # ...but only once bash reaches the exec. Wait briefly for the
+                # identity to become true rather than answering "not running"
+                # about a process we just started (loading still takes minutes
+                # after this -- that is the caller's healthy=False window).
+                for _ in range(20):
+                    if _model_identity(proc.pid):
+                        break
+                    time.sleep(0.05)
+            except OSError as exc:
+                return {**_model_state(), "error": f"spawn failed: {exc}"}
+    elif action == "stop":
+        try:
+            recorded = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            recorded = 0
+        pid = recorded if _model_identity(recorded) else _find_model_server()
+        if pid is None:
+            return {**_model_state(), "error": "not running"}
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            return {**_model_state(), "error": f"kill {pid} failed: {exc}"}
+        pidfile.unlink(missing_ok=True)
+    return _model_state()
 
 
 # --- markdown feeds ---------------------------------------------------------

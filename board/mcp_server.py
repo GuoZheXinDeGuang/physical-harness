@@ -195,6 +195,19 @@ def host_vitals() -> dict:
 
 
 @mcp.tool()
+def model_server(action: str = "status") -> dict:
+    """Start/stop/read the LOCAL model server (llama.cpp on 127.0.0.1:30001) ->
+    {running, pid, port, healthy, model, vram_mib}, plus {error} when an action
+    failed. action is one of status|start|stop; anything else is rejected, and
+    the launcher script is a board constant -- no path or command may be passed.
+    This switches the SERVICE PROCESS only, not which model a request routes to
+    (that is the console's route picker). Stopping it hands ~19 GB of VRAM back
+    to the simulator. Loading takes 1-2 minutes: running=true with healthy=false
+    means loading. Live state, never sealed evidence, and it never raises."""
+    return bs.model_server(action, _Cfg.runs)
+
+
+@mcp.tool()
 def ledger() -> list[dict]:
     """Seed-block burn map parsed from STATUS.md's budget section."""
     return bs.parse_ledger(_read(_Cfg.status))

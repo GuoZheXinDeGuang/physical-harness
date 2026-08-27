@@ -8,7 +8,10 @@ renders the byte-identical dict the LLM gets -- no second statistics layer, no
 reinterpretation. The fork host bridge (packages/host/dsh-ph-board) execFiles
 this and JSON.parses stdout verbatim.
 
-This face is read-only but for ONE write fn: ``submit_brief`` (the cockpit's
+This face is read-only but for two write fns. ``model_server <action>`` is the
+console's local-model switch (``status``/``start``/``stop``, default ``status``)
+-- the launcher it may run is a constant in board.store, never an argument, and
+the action word is whitelisted there. The other is ``submit_brief`` (the cockpit's
 submit button; ``--brief '<json>' --session <name>``), a passthrough into
 board.store.submit_brief -- the SAME shared brief_drop atomic drop the MCP
 face's submit_brief tool uses, zero validation (the resident runtime's
@@ -79,6 +82,11 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         return bs.discover_sessions(runs)
     if fn == "host_vitals":
         return bs.host_vitals(runs)
+    if fn == "model_server":
+        # The action rides the `name` slot; it is whitelisted board-side and
+        # defaults to the read, so an omitted argument can never start or stop
+        # anything. The launcher path is a board constant, never an argument.
+        return bs.model_server(name or "status", runs)
     if fn == "ledger":
         return bs.parse_ledger(_read(status))
     if fn == "rounds":
@@ -166,8 +174,8 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|ledger|rounds|cards|vault|vault_node|vault_neighbors")
-    parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
+    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, or the model_server action (status|start|stop, default status)")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
     parser.add_argument("--session", default="session-main", help="submit_brief: the runtime session whose inbox the brief routes into (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
