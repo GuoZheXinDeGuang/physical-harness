@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 674 passed
+pass       : 678 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,17 @@ wall time  : ~10.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +4 pass over the model-server snapshot (674→678, skips unchanged) is the
+submit advisory (`tests/test_submit_advisory.py`): the session×task warning
+`submit_brief`/`run_task` attach when a mission's binding names an embodiment the
+target runtime's interpreter cannot import. What the tests pin is that it is
+ADVICE — the incompatible brief is still delivered, the compatible one carries no
+`warning` key at all (absent, not empty), and every unreadable input (no live
+runtime, a pid whose cmdline is not a harness runtime) answers with silence
+rather than a guess. The interpreter half is read from a really-spawned process
+under this venv, so "robocasa is not importable here" is a fact of the venv
+running the test, not a mock. Sim-free, no seeds burned.
 
 The +8 pass over the host-vitals snapshot (666→674, skips unchanged) is
 `model_server` — the console's local-model switch
@@ -221,8 +232,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `705 passed, 29 skipped` (re-measured
-2026-08-28 with the model-server tests; 674 base + 28 robosuite-marked
+Full-suite parity (card present): `709 passed, 29 skipped` (re-measured
+2026-08-28 with the submit-advisory tests; 678 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
