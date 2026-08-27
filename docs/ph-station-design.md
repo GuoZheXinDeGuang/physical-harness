@@ -433,3 +433,96 @@ BoardBridge row lives in the fork bundle, see §3).
    read-only, so even a fence bypass exposes only sealed `runs/` reads.
 6. **`GenericToolCard` for MCP tools** shows `mcp__physical-harness__…` as a plain
    card in v1 — acceptable; custom card is roadmap.
+
+---
+
+## 9. Backbone LLM — local Qwen3.8-27B (2026-08-28)
+
+The console's agent runs on the **local** sglang server, not the DeepSeek API.
+One model serves chat, planning, and vision.
+
+### Server — `~/models/launch_qwen38.sh` (outside any repo; back-up `.bak-agent`)
+
+```
+--served-model-name qwen3.8-27b        stable id; the real one is a filesystem path
+--tool-call-parser  qwen3_coder        ← without this, NO agent works
+--reasoning-parser  qwen3              splits <think>…</think> into reasoning_content
+--context-length 32768 --max-total-tokens 32768 --max-prefill-tokens 32768
+--mem-fraction-static 0.92 --disable-piecewise-cuda-graph
+```
+
+**`qwen3_coder`, not `qwen`/`qwen25`.** The checkpoint's own
+`chat_template.jinja:68` instructs the model to answer in the XML dialect
+`<tool_call><function=NAME><parameter=K>v</parameter></function></tool_call>`,
+not the hermes-style JSON the `qwen` parsers expect. With the wrong parser (or
+none) sglang returns that XML as ordinary `content` with no `tool_calls` field,
+and every agent silently calls nothing — it reads as a dumb model rather than a
+misconfigured one. Verify with a `tools:` request and look for `finish_reason:
+"tool_calls"`, never by reading the prose.
+
+**Qwen3.5 is a hybrid mamba/linear-attention model, and that is the whole memory
+story.** Its mamba state cache and the attention KV pool are drawn from the same
+`--mem-fraction-static` budget, so raising context *starves* the state cache:
+`--max-total-tokens 32768` at `0.86` dies at startup with `max_mamba_cache_size=4,
+mamba_ratio=5, resulting max_num_reqs=0`. The fix is a bigger static fraction, and
+what pays for it is `--disable-piecewise-cuda-graph` (the piecewise prefill graph
+cost 1.15 GB for little benefit at these prompt lengths).
+
+Measured on the 24 GB 4090D: weights 17.71 GB, attention KV ~64 KiB/token,
+`max_total_num_tokens=26089`, ~1.0 GB free at idle. **sglang silently clamps
+`--max-running-requests` from 2 to 1** — the state cache affords one concurrent
+request — so concurrent calls queue rather than fail. MTP/NEXTN speculative
+decoding stays off (unusable in the installed sglang), so the context increase
+cost no decode speed; there was none to give up.
+
+**26089 is the real ceiling, not the advertised 32768.** A request over the pool
+fails even while under the advertised window, so the harness is told 24576.
+
+### Console — `profiles/dsh/cordis.patch.yml`
+
+`llm-pi-ai` is mounted **dormant** by the base bundle (zero routes) exactly so a
+deployment can declare its own, so the row is a bare `- id:` **override** — the
+mirror image of the `insert:` rule at the top of that file, and wrong in the
+other direction here. `local-qwen` is a hand-declared route (`api` + `baseURL` +
+an explicit `models` list; pi-ai ships no catalog for it and nothing interrogates
+the endpoint), declaring `input: [text, image]` and `compat.maxTokensField:
+max_tokens` + `supportsDeveloperRole: false` (pi-ai cannot recognize a private
+baseURL and otherwise addresses it as OpenAI itself).
+
+**The placeholder credential is not optional.** sglang is unauthenticated on
+loopback, but a hand-declared route has no catalog and `llm-pi-ai`'s
+`provider.ts:132` therefore always declares apiKey auth for it — there is no
+spelling for "keyless". Omitting `apiKeyEnv` fails every request up front with
+`PI_AI_ERROR: No API key for provider: local-qwen`. The route names
+`LOCAL_QWEN_API_KEY` and the value lives in `$DSH_HOME/.credentials.yaml`
+(mode 0600), never in this repo. sglang ignores the header.
+
+### Deploy — two files, and the second is the one that runs
+
+`scripts/cockpit` does **not** deploy this patch. `$DSH_HOME/cordis.patch.yml` is
+a manual copy, so editing the repo file alone changes nothing:
+
+```
+cp profiles/dsh/cordis.patch.yml ~/.dsh/cordis.patch.yml
+```
+
+`$DSH_HOME/settings.yaml` **wins over the entry config**, so its
+`agent-default-model:` section was switched to `local-qwen`/`qwen3.8-27b` in the
+same change — patching only the cordis row would have left every new session on
+DeepSeek. Settings are hot-reloaded; the cordis row needs a console restart.
+
+Verify against the **runtime**, not the files:
+
+```
+curl -s -X POST http://127.0.0.1:3080/api/llm.models -H 'Content-Type: application/json' \
+  -d '{"type":"client-request","rpcId":"...","method":"llm.models","payload":{}}'
+```
+
+`local-qwen` must appear in `groups` with `failures: []`.
+
+### Restarting the console without killing an experiment
+
+`runs/session-main/cockpit.pids` can carry `runtime_adopted=0`, meaning a previous
+cockpit **spawned** the resident runtime — `cockpit --stop` would then kill it.
+To restart only the console, `kill` the exact `web_pid` and start cockpit again;
+it re-adopts the live runtimes (`adopting resident runtime … not restarting`).

@@ -31,3 +31,73 @@
           - /home/yusenzlabpc/Desktop/physical-harness/board/mcp_server.py
           - --runs
           - /home/yusenzlabpc/Desktop/physical-harness/runs
+
+# ── local backbone LLM: Qwen3.8-27B on sglang ───────────────────────────────
+#
+# The base bundle mounts `llm-pi-ai` DORMANT (zero routes) precisely so a
+# deployment can declare its own; this is that declaration, so it is a bare
+# `- id:` OVERRIDE, not an `insert:` -- the row already exists (see the
+# INSERT note above; the rule cuts both ways and an `insert:` here would
+# collide instead of configuring).
+#
+# `local-qwen` is a HAND-DECLARED route: pi-ai ships no catalog under that key,
+# so per llm-pi-ai's README the profile must supply `api` + `baseURL` + a
+# non-empty `models` list itself. Nothing interrogates the endpoint.
+#
+# THE CREDENTIAL IS A PLACEHOLDER, and it is NOT optional. sglang serves
+# unauthenticated on loopback, but a hand-declared route has no pi-ai catalog and
+# llm-pi-ai's provider.ts:132 therefore ALWAYS declares apiKey auth for it -- there
+# is no spelling for "keyless". Omitting apiKeyEnv fails every request up front
+# with `PI_AI_ERROR: No API key for provider: local-qwen`. So the route names a
+# reference, and the reference resolves through the credentials store
+# ($DSH_HOME/.credentials.yaml, mode 0600) -- never a value in this file, which is
+# version-controlled. sglang ignores the Authorization header it ends up sending.
+#
+# Server side is ~/models/launch_qwen38.sh; the two flags that make an AGENT
+# possible are --tool-call-parser qwen3_coder (this model's chat template emits
+# the <tool_call><function=…> XML dialect, so without the parser sglang hands
+# back tool calls as plain prose and nothing is ever invoked) and
+# --reasoning-parser qwen3 (splits <think>…</think> into reasoning_content).
+- id: llm-pi-ai
+  config:
+    providers:
+      local-qwen:
+        displayName: Qwen3.8-27B (本机)
+        apiKeyEnv: LOCAL_QWEN_API_KEY   # placeholder ref, see the note above
+        api: openai-completions
+        baseURL: http://127.0.0.1:30000/v1
+        # The model is genuinely multimodal (Qwen3_5ForConditionalGeneration with
+        # a vision_config); measured: a robosuite frame costs 300 image tokens.
+        # Declared per-model AND as the route default so an added model inherits.
+        defaultInput: [text, image]
+        compat:
+          # pi-ai cannot recognize a private baseURL, so it addresses the route as
+          # though it were OpenAI itself: `developer` role for the system prompt and
+          # `max_completion_tokens` for the cap. sglang takes neither reliably.
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: qwen3.8-27b            # --served-model-name; the real id is a path
+            name: Qwen3.8-27B AWQ (local)
+            # HONEST capacity, not the advertised one. The server reports
+            # max_model_len=32768, but Qwen3.5 is a HYBRID mamba/linear-attention
+            # model: its mamba state cache and the attention KV pool compete for
+            # the same --mem-fraction-static budget, and on a 24GB card sglang
+            # settles at max_total_num_tokens=26089. A request past the POOL fails
+            # even though it is under the advertised window, so the harness is told
+            # the number it can actually serve, with margin.
+            contextWindow: 24576
+            maxTokens: 4096
+            input: [text, image]
+            # reasoningEfforts is deliberately UNDECLARED: a hand-declared model has
+            # no reasoning capability, so nothing is sent and the model's own
+            # template default (thinking on) stands. Declaring efforts here would
+            # put a `reasoning_effort` on the wire that sglang does not take.
+
+# The transport-independent default for new sessions. NOTE: $DSH_HOME/settings.yaml
+# has an `agent-default-model:` section, and settings WIN over this entry -- both
+# were switched together, so changing only this row would not move the default.
+- id: agent-default-model
+  config:
+    provider: local-qwen
+    model: qwen3.8-27b
