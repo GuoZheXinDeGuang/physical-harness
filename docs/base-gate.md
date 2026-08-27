@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 678 passed
+pass       : 704 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,13 @@ wall time  : ~10.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +26 over the three-track merge point (678 -> 704) is the brief-lifecycle
+hardening, measured on the merged tree: the parent-side episode watchdog and the
+runtime's own session lock (`hard-watchdog`), the async `run_task` + `brief_status`
+long-poll + `cancel_brief` three-checkpoint stop (`brief-lifecycle`), and the
+submit-time compatibility advisory (`submit-advisory`). Below, the per-branch
+increments those three measured before the merge.
 
 The +4 pass over the model-server snapshot (674→678, skips unchanged) is the
 submit advisory (`tests/test_submit_advisory.py`): the session×task warning

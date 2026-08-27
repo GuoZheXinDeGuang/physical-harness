@@ -86,15 +86,16 @@ def test_recycled_pid_is_not_read_as_an_interpreter(tmp_path):
         other.kill(); other.wait()
 
 
-def test_run_task_carries_the_advisory_onto_its_outcome(tmp_path):
-    """run_task blocks on a runtime that will never claim (the spawned process is
-    a sleeper), so it times out -- and the reason rides along."""
+def test_run_task_carries_the_advisory_onto_its_handle(tmp_path):
+    """run_task hands back a brief_status handle at once (it no longer blocks),
+    and the reason the task cannot mount here rides along on it."""
     runs, proc = _live_session(tmp_path, "session-main")
     try:
         ms.configure(runs)
         start = time.monotonic()
-        res = ms.run_task("kitchen_thaw", 42004, timeout_s=0.1)
-        assert res["status"] == "timeout" and time.monotonic() - start < 30
+        res = ms.run_task("kitchen_thaw", 42004)
+        assert time.monotonic() - start < 5      # a handle, not a wait
+        assert res["state"] == "queued" and res["brief_id"]
         assert "robocasa" in res["warning"]
     finally:
         proc.kill(); proc.wait()
