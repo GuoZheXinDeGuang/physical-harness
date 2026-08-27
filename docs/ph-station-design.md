@@ -478,6 +478,40 @@ cost no decode speed; there was none to give up.
 **26089 is the real ceiling, not the advertised 32768.** A request over the pool
 fails even while under the advertised window, so the harness is told 24576.
 
+### Sharing the card with the simulator (2026-08-28)
+
+The model at `0.92` leaves ~0.6 GB, which is enough for **one** sim task (a
+`stack` run completed with the server live, 23.9/24.5 GB) and nowhere near
+enough for an RSI calibration, whose ten pool workers each want an EGL context.
+Measured while hunting for a smaller footprint — every row a real boot attempt:
+
+| `--mem-fraction-static` / context | result |
+|---|---|
+| 0.92 / 32768 | boots, 22.5 GB, ~0.6 GB free |
+| 0.88 / 24576 + `--kv-cache-dtype fp8_e5m2` | boots, 21.2 GB, ~2.8 GB free ← current |
+| 0.88 / 8192 | boots, 21.0 GB, but 8 K cannot hold the agent's own prompt (~22 K with the board tools) |
+| 0.855 / 8192, cuda graphs off | **fails**: `max_mamba_cache_size=2, mamba_ratio=5 → max_num_reqs=0` |
+| 0.81 / 16384 | **fails**: 0.22 GB left after weights; the state cache needs 146.81 MB *per request* |
+
+**There is no configuration under ~21 GB.** The weights occupy ~19.7 GB resident
+(17.71 GB of tensors plus activations and graphs) and the hybrid state cache
+needs five 146.81 MB slots before it will serve one request, so the arithmetic
+floor sits just above 20 GB no matter how the knobs are turned.
+
+Two levers do not apply here. `--cpu-offload-gb` (host RAM for VRAM, and there
+is 64 GB of it) **crashes this model at load**: `Expected all tensors to be on
+the same device, but found at least two devices, cuda:0 and cpu` — AWQ weights
+plus the hybrid layers do not survive the split. Speculative decoding
+(`--speculative-*`, MTP/NEXTN, DFlash2) buys latency, not memory: a draft model
+*adds* resident weights, which is why DFlash2 was abandoned here before.
+`--kv-cache-dtype fp8_e5m2` is the one that pays: it halves the attention pool,
+which is what bought 24576 tokens back at a lower fraction.
+
+**So one 24 GB card cannot host this backbone and an RSI calibration at the same
+time.** Either stop the server for a calibration run, or move the backbone to a
+smaller multimodal checkpoint (8-14 B AWQ, ~8-10 GB) — the route is
+configuration, so swapping the model is one edit in the patch below.
+
 ### Console — `profiles/dsh/cordis.patch.yml`
 
 `llm-pi-ai` is mounted **dormant** by the base bundle (zero routes) exactly so a
