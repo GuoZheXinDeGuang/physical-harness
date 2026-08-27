@@ -101,3 +101,37 @@
   config:
     provider: local-qwen
     model: qwen3.8-27b
+
+# ── the project charter reaches the browser agent ───────────────────────────
+#
+# The web-app bundle mounts `agent-instructions` DISABLED (its own row, over the
+# base bundle's `maxBytes: 65536` mount), so until now the cockpit agent's ENTIRE
+# discipline was whatever the MCP tools' docstrings happened to say -- it had
+# never read the seed ledger law, the two-state law, or "never game a gate".
+# This turns it back on for OUR deployment.
+#
+# A bare `- id:` here is the RIGHT spelling (the INSERT note above cuts both
+# ways): the row already exists, so this is an override, exactly like the
+# llm-pi-ai declaration. applyEntryPatches assigns the named keys onto the target
+# entry and touches nothing else, so the base bundle's `maxBytes` survives --
+# only `disabled` flips.
+#
+# WHAT IT COSTS, measured off a real session that had it (before the preset roster
+# landed, $DSH_HOME/sessions/.../session-995fed86*): one injected user message,
+# 4775 bytes -- the repo root CLAUDE.md (4471) inside a 304-byte <system-reminder>
+# frame. Candidates are ['AGENTS.md','CLAUDE.md'] per directory from the project
+# root down to the session cwd plus $DSH_HOME/AGENTS.md, and on this box exactly
+# ONE of them exists, so that is the whole bill: ~1.3k tokens against a 65536-byte
+# render budget and dsh's 98304-token declared window. No truncation, no risk.
+#
+# CAVEAT to check at the next restart: every session since the preset roster
+# carries an `agentPreset` and NONE has an agent-instructions event -- not even the
+# two `standard` ones, whose preset declares its own row. So this host-plane flip is
+# proven for preset-less sessions and UNPROVEN for the `physical` preset the cockpit
+# defaults to. The check is one grep: a new session.jsonl under
+# $DSH_HOME/sessions/ should now carry a `"kind":"agent-instructions"` baseline
+# event. If it does not, the row belongs in ph-station's
+# apps/cli/config/agent-presets/physical/agent.cordis.yml instead, spelled exactly
+# as the `standard` preset spells it.
+- id: agent-instructions
+  disabled: false
