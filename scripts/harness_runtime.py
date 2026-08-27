@@ -67,6 +67,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from board.store import parse_ledger
 from harness import opstream
+from scripts.brief_drop import drop
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
@@ -263,10 +264,15 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     # NOT a chain row -- render is live runtime state, not sealed evidence, so it
     # cannot ride the write-once runtime.boot seal (which is blank for sessions
     # that predate it). Sits at the session root, so chain verification (session-
-    # log/rows.jsonl only) never sees it.
-    (session_dir / "runtime_status.json").write_text(json.dumps({
+    # log/rows.jsonl only) never sees it. Written atomically (the shared
+    # brief_drop temp+replace) so a poll never reads a half write;
+    # ``heartbeat_ts`` starts at boot and is re-stamped by the poll loop
+    # (_heartbeat) so a reader can tell a live runtime from a dead one.
+    now = time.time()
+    drop(session_dir, "runtime_status.json", json.dumps({
         "pid": os.getpid(), "render": render, "frames": frames, "mode": mode,
-        "boot_ts": time.time(), "display": os.environ.get("DISPLAY")}))
+        "boot_ts": now, "heartbeat_ts": now,
+        "display": os.environ.get("DISPLAY")}))
 
     # Same live-state family: arm (or disarm) the frames overlay's destination.
     # runs/<session>/frame.jpg is overwritten in place, never a chain row; a
@@ -692,6 +698,25 @@ def _pending(rt: Runtime) -> list[Path]:
     return sorted(rt.inbox.glob("*.json"), key=lambda p: p.stat().st_mtime)
 
 
+#: Poll-loop heartbeat cadence for runtime_status.json (the UI liveness signal).
+HEARTBEAT_S = 10.0
+
+
+def _heartbeat(session_dir: Path) -> None:
+    """Re-stamp ``heartbeat_ts`` in runtime_status.json (read-modify-write, so
+    every boot-written field rides through verbatim; atomic via the shared
+    brief_drop temp+replace, so board.store.read_runtime_status never sees a
+    half write). boot_ts alone cannot tell a live poll loop from a dead one --
+    this can: the board passes the field through and the UI reads its age.
+    Never raises: a broken status file loses the badge, never the loop."""
+    try:
+        status = json.loads((session_dir / "runtime_status.json").read_text())
+        status["heartbeat_ts"] = time.time()
+        drop(session_dir, "runtime_status.json", json.dumps(status))
+    except (OSError, json.JSONDecodeError):
+        pass
+
+
 def main(session_dir: str | Path, inbox: str | Path | None = None, *,
          drain: bool = False, poll_interval: float = 1.0,
          mode: str = "execution", render: bool = False,
@@ -706,9 +731,17 @@ def main(session_dir: str | Path, inbox: str | Path | None = None, *,
                 return rt
             for p in pending:
                 _process(rt, p)
+    session_dir = Path(session_dir)
+    last_beat = 0.0
     while True:
         for p in _pending(rt):
             _process(rt, p)
+        # ponytail: no beat while a brief runs (an rsi chain runs for hours), so
+        # the badge reads "busy or dead"; stamp from inside _process if that
+        # ambiguity ever hurts.
+        if time.time() - last_beat >= HEARTBEAT_S:
+            _heartbeat(session_dir)
+            last_beat = time.time()
         time.sleep(poll_interval)
 
 

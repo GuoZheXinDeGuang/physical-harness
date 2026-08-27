@@ -1,6 +1,8 @@
 """Read-only parse layer over RSI campaign stores + STATUS/progress markdown.
 
-Pure functions, no server, no writes -- runs/ is sealed evidence. The store
+Pure functions, no server, and ONE write: ``submit_brief`` (the shared
+brief_drop atomic drop into a session inbox -- live intake, never sealed
+evidence; both the MCP and CLI submit faces are passthroughs into it). The store
 shape is the one `plugins.rsi.campaign.CampaignStore` writes: an
 ``index.jsonl`` of ``{seq, kind, sha, time}`` rows plus content-addressed
 ``artifacts/<sha>.json`` payloads. The *kind* lives in the index, never in the
@@ -18,9 +20,11 @@ import base64
 import json
 import re
 import time
+import uuid
 from pathlib import Path
 
 from harness.events import SessionLog
+from scripts.brief_drop import drop
 
 # --- store discovery / robust reads -----------------------------------------
 
@@ -375,6 +379,46 @@ def session_inbox(runs_dir: str | Path, session: str) -> Path | None:
     ``_BRIEF_KEYS`` stays the sole authority on what a brief may say."""
     path = safe_child(runs_dir, session, is_session)
     return (path / "inbox") if path else None
+
+
+def brief_inbox(runs_dir: str | Path, session: str,
+                default_session: str = "session-main",
+                default_inbox: str | Path | None = None) -> Path | None:
+    """The inbox a brief routes into, or ``None`` for an unknown session.
+
+    The default session resolves WITHOUT the is_session gate (a first submit may
+    precede the runtime's first boot) to ``default_inbox`` when given (the MCP
+    server's configure(inbox=) override) else ``<runs>/<session>/inbox``; any
+    other session goes through session_inbox (real booted session, ``../``
+    rejected). The ONE routing rule for every submit face."""
+    if session == default_session:
+        return (Path(default_inbox) if default_inbox
+                else Path(runs_dir) / default_session / "inbox")
+    return session_inbox(runs_dir, session)
+
+
+def submit_brief(runs_dir: str | Path, raw: str, session: str = "session-main",
+                 default_session: str = "session-main",
+                 default_inbox: str | Path | None = None) -> dict:
+    """Atomically drop ``raw`` as a brief into ``session``'s inbox.
+
+    The ONE submit implementation both write faces (board/mcp_server.py's
+    submit_brief tool, ``storecli submit_brief``) pass through, so their outputs
+    are the same dict from the same code: ``{"submitted": <name>, "inbox":
+    <dir>}``, or ``{"error": ...}`` for an unknown session. ZERO validation of
+    ``raw`` -- not even a JSON parse: a brief rides through verbatim and the
+    resident runtime's ``_BRIEF_KEYS`` re-validation on claim is the SOLE
+    authority (a malformed or injected brief must hard-fail THERE, loudly,
+    never be silently normalized by a producer). Atomicity is the shared
+    brief_drop.drop (temp write + os.replace), so the runtime never claims a
+    half-written file."""
+    inbox = brief_inbox(runs_dir, session, default_session, default_inbox)
+    if inbox is None:
+        return {"error": f"unknown session {session!r}"}
+    inbox.mkdir(parents=True, exist_ok=True)
+    name = f"brief-{uuid.uuid4().hex}.json"
+    drop(inbox, name, raw)
+    return {"submitted": name, "inbox": str(inbox)}
 
 
 def _chain_rows(log_dir: Path) -> tuple[list[dict], int]:

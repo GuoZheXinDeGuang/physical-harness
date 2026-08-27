@@ -32,10 +32,10 @@ Two ways:
   `import sys; sys.modules["robosuite"] = sys.modules["mujoco"] = None`, on
   `PYTHONPATH`, then `pytest -m "not robosuite"`.
 
-## current snapshot (2026-08-27, isolated, robosuite blocked)
+## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 646 passed
+pass       : 650 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,10 +49,20 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~8.9s
+wall time  : ~11.6s (measured while 10 RSI calibration workers held the GPU)
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +4 pass over the RSI-life-sign snapshot (646→650) is the submit CLI face
+plus the runtime heartbeat: +2 `test_storecli.py` (`submit_brief`, storecli's
+ONE write fn — a passthrough into the shared `board.store.submit_brief` the
+MCP tool also delegates to: raw-bytes brief_drop with ZERO validation, and an
+unknown session drops nothing) and +2 `test_runtime_drain.py`
+(`runtime_status.json` carries `heartbeat_ts` from boot on; the poll loop's
+`_heartbeat` re-stamps only that field, atomically, and the board face passes
+it through so the UI can age it; a missing status file is a no-op). Sim-free,
+no seeds burned.
 
 The +1 pass over the wall-cap snapshot (645→646) is the RSI 取景窗 life
 sign: when the spawning runtime has `--frames`, `_run_rsi` passes
@@ -169,9 +179,9 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `674 passed, 29 skipped` (re-measured
-2026-08-27 with the planner_vlm card; the count had lagged since the five-track
-merge) (the robocasa-marked
+Full-suite parity (card present): `681 passed, 29 skipped` (re-measured
+2026-08-28 with the submit-face/heartbeat tests; 650 base + 28 robosuite-marked
++ the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;

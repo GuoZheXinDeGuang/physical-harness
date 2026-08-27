@@ -71,6 +71,33 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
     assert bs.parse_ledger(status.read_text()) and bs.parse_rounds(progress.read_text())
 
 
+def test_submit_brief_two_faces_share_one_drop(tmp_path, capsys):
+    """The ONE write fn: the CLI face is a passthrough into board.store.
+    submit_brief (the same function the MCP tool delegates to), so both faces
+    drop the raw brief bytes VERBATIM into the same inbox and answer the same
+    {"submitted", "inbox"} shape -- zero validation on this side (the resident
+    runtime's _BRIEF_KEYS on claim stays the sole authority)."""
+    runs, status, progress = _fixture(tmp_path)
+    base = ["--runs", str(runs), "--status", str(status), "--progress", str(progress)]
+    raw = '{"kind":"rsi","task":"kitchen_thaw"}'
+    code, out = _run(capsys, "submit_brief", "--brief", raw, "--session", "session-main", *base)
+    cli = json.loads(out)
+    direct = bs.submit_brief(runs, raw, "session-main")
+    inbox = runs / "session-main" / "inbox"
+    assert code == 0
+    assert cli["inbox"] == direct["inbox"] == str(inbox)
+    for res in (cli, direct):  # both faces landed the SAME bytes, unparsed
+        assert (inbox / res["submitted"]).read_text() == raw
+
+
+def test_submit_brief_unknown_session_drops_nothing(tmp_path, capsys):
+    runs, status, progress = _fixture(tmp_path)
+    code, out = _run(capsys, "submit_brief", "--brief", "{}", "--session", "../oops",
+                     "--runs", str(runs), "--status", str(status), "--progress", str(progress))
+    assert code == 0 and json.loads(out) == {"error": "unknown session '../oops'"}
+    assert not list(runs.rglob("brief-*.json"))
+
+
 def test_traversal_name_rejected_by_shared_guard(tmp_path, capsys):
     runs, status, progress = _fixture(tmp_path)
     base = ["--runs", str(runs), "--status", str(status), "--progress", str(progress)]

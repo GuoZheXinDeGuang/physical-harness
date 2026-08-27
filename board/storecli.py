@@ -8,8 +8,12 @@ renders the byte-identical dict the LLM gets -- no second statistics layer, no
 reinterpretation. The fork host bridge (packages/host/dsh-ph-board) execFiles
 this and JSON.parses stdout verbatim.
 
-This face is READ-only. The write face is board/mcp_server.py's ``submit_brief``,
-which takes the three brief kinds -- ``task``, ``campaign``, and ``rsi`` (the
+This face is read-only but for ONE write fn: ``submit_brief`` (the cockpit's
+submit button; ``--brief '<json>' --session <name>``), a passthrough into
+board.store.submit_brief -- the SAME shared brief_drop atomic drop the MCP
+face's submit_brief tool uses, zero validation (the resident runtime's
+``_BRIEF_KEYS`` re-validation on claim is the SOLE authority). Briefs take
+three kinds -- ``task``, ``campaign``, and ``rsi`` (the
 generic self-improvement chain, minimal form ``{"kind":"rsi","task":"<task>"}``;
 docs/rsi-mechanism.md). An rsi run heartbeats ``runs/<store>/progress.json`` with a
 ``stage`` field (calibrate / gate / dev / done) that ``campaign_progress`` below
@@ -45,13 +49,20 @@ def _read(path: Path) -> str:
 
 def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path,
              after: int = 0, relation: str | None = None, after_ts: float = 0.0,
-             wait_ms: int = 0):
+             wait_ms: int = 0, brief: str | None = None,
+             session: str | None = None):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
     main() can map both to an ``{"error": ...}`` line with a nonzero exit while
     every valid call is a bare board.store passthrough.
     """
+    if fn == "submit_brief":
+        # the ONE write fn: raw passthrough into the shared atomic drop, zero
+        # validation (see module docstring -- runtime is the sole authority).
+        if brief is None:
+            raise ValueError("submit_brief needs --brief")
+        return bs.submit_brief(runs, brief, session or "session-main")
     if fn == "list_stores":
         return bs.list_stores(runs)
     if fn == "cards":
@@ -130,7 +141,8 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
             req = json.loads(line)
             result = dispatch(req.get("fn", ""), req.get("name"), runs, status, progress,
                               int(req.get("after", 0)), req.get("relation"),
-                              float(req.get("after_ts", 0.0)), int(req.get("wait_ms", 0)))
+                              float(req.get("after_ts", 0.0)), int(req.get("wait_ms", 0)),
+                              req.get("brief"), req.get("session"))
         except KeyError:
             result = {"error": f"unknown fn: {req.get('fn', '')}"}
         except Exception as exc:  # bad JSON / rejected name / anything: reply, keep serving
@@ -141,8 +153,10 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|submit_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_events|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, or vault node id for vault_node/vault_neighbors")
+    parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
+    parser.add_argument("--session", default="session-main", help="submit_brief: the runtime session whose inbox the brief routes into (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
@@ -158,7 +172,7 @@ def main(argv=None) -> int:
         return serve(sys.stdin, sys.stdout, runs, status, progress)
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
-                          args.after_ts, args.wait_ms)
+                          args.after_ts, args.wait_ms, args.brief, args.session)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2

@@ -19,7 +19,6 @@ import argparse
 import json
 import sys
 import time
-import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,7 +28,6 @@ from mcp.server import MCPServer
 from board import cards as bc
 from board import store as bs
 from board import vault as bv
-from scripts.brief_drop import drop
 
 
 #: The default routing session -- the resident runtime cockpit always brings up.
@@ -61,14 +59,11 @@ def configure(runs, status=None, progress=None, inbox=None,
 
 def _route_inbox(session: str) -> Path | None:
     """The inbox a per-call ``session`` routes into, or ``None`` for an unknown
-    one. The server's default session returns the configured inbox verbatim (zero
-    behavior change plus the configure(inbox=) override tests rely on, and no
-    is_session gate so a first submit can precede the runtime's first boot); any
-    OTHER session is validated against runs/ (a real booted session, ``../``
-    rejected) through the shared board.store guard and routed to <session>/inbox."""
-    if session == _Cfg.session:
-        return _Cfg.inbox
-    return bs.session_inbox(_Cfg.runs, session)
+    one -- board.store.brief_inbox fed this server's configured defaults (the
+    default session resolves to the configured inbox verbatim, no is_session
+    gate, so a first submit can precede the runtime's first boot; any OTHER
+    session is validated against runs/ through the shared guard)."""
+    return bs.brief_inbox(_Cfg.runs, session, _Cfg.session, _Cfg.inbox)
 
 
 def _read(path: Path) -> str:
@@ -231,7 +226,9 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
       seed. See docs/rsi-mechanism.md.
 
     This tool does NO brief
-    validation and names NO provider: it only performs the shared atomic drop
+    validation and names NO provider: it is a passthrough into
+    board.store.submit_brief -- the ONE submit implementation the CLI face
+    (``storecli submit_brief``) shares, doing only the shared atomic drop
     (brief_drop.drop -- temp write + os.replace) so the runtime never claims a
     half-written brief. The resident runtime re-validates ``_BRIEF_KEYS``
     server-side on claim and stays the SOLE authority, so an injected extra key
@@ -243,13 +240,8 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     unchanged. A non-default session is validated against runs/ (a real booted
     session, ``../`` rejected); an unknown one returns ``{"error": ...}``.
     """
-    inbox = _route_inbox(session)
-    if inbox is None:
-        return {"error": f"unknown session {session!r}"}
-    inbox.mkdir(parents=True, exist_ok=True)
-    name = f"brief-{uuid.uuid4().hex}.json"
-    drop(inbox, name, json.dumps(brief))
-    return {"submitted": name, "inbox": str(inbox)}
+    return bs.submit_brief(_Cfg.runs, json.dumps(brief), session,
+                           _Cfg.session, _Cfg.inbox)
 
 
 def _outcome(status: str, brief_id: str, session_dir: Path, baseline: int,
