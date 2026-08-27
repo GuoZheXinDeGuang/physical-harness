@@ -31,7 +31,8 @@ robosuite/MuJoCo（或 RoboCasa）回合：没有伪造的验证，没有外部 
 
 宪章见 [GOAL.md](GOAL.md) · 内部结构见 [ARCHITECTURE.md](ARCHITECTURE.md) · 智能体手册见
 [CLAUDE.md](CLAUDE.md)。这三份文件锚定项目的方向与规则，请勿轻易修改；GOAL.md 是固定的，
-只能由操作员决定变更。
+只能由操作员决定变更。东西在哪、谁说了算：
+[docs/project-documentation.md](docs/project-documentation.md)。
 接入你自己的 VLM planner / VLA policy / 恢复原语：[docs/plug-in-your-model.md](docs/plug-in-your-model.md)（英文）。
 
 ### 架构

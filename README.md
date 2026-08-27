@@ -36,7 +36,8 @@ measurable ablation curve rather than a worry.
 Charter: [GOAL.md](GOAL.md) · internals: [ARCHITECTURE.md](ARCHITECTURE.md) · agent handbook:
 [CLAUDE.md](CLAUDE.md). These three files anchor the project's direction and
 rules — do not modify them lightly; GOAL.md in particular is fixed and changes
-only by the operator's decision.
+only by the operator's decision. Where things live and who decides what:
+[docs/project-documentation.md](docs/project-documentation.md).
 Bringing your own VLM planner, VLA policy, or recovery primitives:
 [docs/plug-in-your-model.md](docs/plug-in-your-model.md).
 
