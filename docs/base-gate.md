@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-28, isolated, robosuite blocked)
 
 ```
-pass       : 704 passed
+pass       : 717 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,14 @@ wall time  : ~10.0s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +13 over the vlm-graph branch tip (704 -> 717) is `main`'s own node-level
+RoboCasa RSI work (`e73476b`) arriving through the merge: its kitchen recovery
+primitives now reach RSI through the manifest fold instead of the central
+registry the branch deleted. `harness/manifest.py` folds `[recoveries.*]` ABOVE
+the `enabled` gate for the same reason `third_party` is folded there -- a
+second-simulator card is `enabled = false` permanently, so gating its repair
+shapes on that flag would mean a card that can never contribute one.
 
 The +26 over the three-track merge point (678 -> 704) is the brief-lifecycle
 hardening, measured on the merged tree: the parent-side episode watchdog and the

@@ -193,20 +193,16 @@ def test_every_strategy_resolves_to_offset_steps():
     # The actor resolves heights from PHASE_HEIGHT merged with STACK_PHASE_HEIGHT
     # (recovery._HEIGHT); a place-shaped strategy legitimately names the latter.
     from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT
-<<<<<<< HEAD
-    from plugins.rsi.repertoire import REPERTOIRE, ROBOSUITE
-    for s in REPERTOIRE:
-=======
-    from plugins.rsi.repertoire import names, strategy
-    for s in (strategy(n) for n in names()):
->>>>>>> vlm-graph
+    from plugins.rsi.repertoire import strategies_for, strategy
+    tabletop = set(strategies_for("embodiment_robosuite"))
+    for s in (strategy(n) for n in sorted(tabletop | set(strategies_for("embodiment_robocasa")))):
         assert s.steps, f"{s.name} has no steps"
         for name, dur, dx, dy in s.steps:
             # Only the robosuite card's strategies flow through the tabletop
             # RecoveryActor (which resolves heights from _HEIGHT); a second card's
             # repairs are executed by that card's own actor and speak its own phase
             # vocabulary (plugins/embodiment_robocasa/recovery.py).
-            if s.card == ROBOSUITE:
+            if s.name in tabletop:
                 assert name in PHASE_HEIGHT or name in STACK_PHASE_HEIGHT or name.startswith("servo_"), (
                     f"{s.name} uses unknown step {name!r}"
                 )

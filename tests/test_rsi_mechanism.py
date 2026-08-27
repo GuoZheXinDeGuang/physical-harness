@@ -190,29 +190,22 @@ def test_a_no_go_verdict_names_the_missing_capability():
 
 # ── the repertoire declaration the boundary rests on ─────────────────────────
 
-<<<<<<< HEAD
-def test_every_repertoire_strategy_is_registered_to_an_embodiment_card():
-    # Every strategy carries a card; the registered cards partition names().
-    cards = {s.card for s in repertoire.REPERTOIRE}
-    assert cards == {repertoire.ROBOSUITE, repertoire.KITCHEN}
-    partition = repertoire.for_card(repertoire.ROBOSUITE) + repertoire.for_card(repertoire.KITCHEN)
-    assert sorted(partition) == sorted(repertoire.names())
-
-
-def test_an_unregistered_card_has_no_recovery_primitives():
-    """The whole point: absence is reportable, not fillable. RoboCasa now HAS
-    primitives (round: node-level RSI), so a card with genuinely none is the probe."""
-    assert repertoire.for_card("embodiment_nonexistent") == []
-    assert repertoire.for_card(repertoire.KITCHEN) == ["regrasp_kitchen", "redock_retry"]
-=======
 def test_every_repertoire_strategy_is_declared_by_an_embodiment_card():
-    assert repertoire.strategies_for("embodiment_robosuite") == repertoire.names()
+    declared = (repertoire.strategies_for("embodiment_robosuite")
+            + repertoire.strategies_for("embodiment_robocasa"))
+    assert sorted(declared) == sorted(repertoire.names())
+    # the kitchen card declares its own two, folded even though it is
+    # enabled = false (a second-simulator card permanently is)
+    assert repertoire.strategies_for("embodiment_robocasa") == [
+        "regrasp_kitchen", "redock_retry"]
 
 
 def test_an_undeclaring_card_has_no_recovery_primitives():
-    """The whole point: absence is reportable, not fillable. robocasa's card
-    declares no [recoveries.*] because none exist -- and that stays honest."""
-    assert repertoire.strategies_for("embodiment_robocasa") == []
+    """The whole point: absence is reportable, not fillable. Both installed
+    embodiment cards now declare their own, so a card that declares none at all
+    is the probe -- and it gets [], never another card's shapes."""
+    assert repertoire.strategies_for("embodiment_nonexistent") == []
+    assert repertoire.strategies_for("embodiment_libero") == []
 
 
 def test_every_folded_strategy_satisfies_the_contract():
@@ -300,4 +293,3 @@ def test_frames_arm_is_single_writer_and_opt_in(monkeypatch, tmp_path):
     lock.write_text("999999999")                    # lock held by a dead pid
     assert rc._maybe_arm_frames() is True           # stale lock is stolen
     assert lock.read_text().strip() != "999999999"
->>>>>>> vlm-graph

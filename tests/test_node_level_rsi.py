@@ -28,9 +28,9 @@ from scripts.rsi_campaign import _segment_isolation, build_prereg, gate, recover
 # ── A. recovery primitives ────────────────────────────────────────────────────
 
 def test_robocasa_strategies_registered_per_card():
-    assert repertoire.for_card("embodiment_robocasa") == ["regrasp_kitchen", "redock_retry"]
+    assert repertoire.strategies_for("embodiment_robocasa") == ["regrasp_kitchen", "redock_retry"]
     # the tabletop card's vocabulary is untouched -- no cross-card leak either way.
-    rs = repertoire.for_card("embodiment_robosuite")
+    rs = repertoire.strategies_for("embodiment_robosuite")
     assert "regrasp" in rs and "regrasp_kitchen" not in rs
     assert "redock_retry" not in rs
 
@@ -132,7 +132,7 @@ def test_segment_isolation_chains_prefix_then_target():
 
 def test_build_prereg_threads_segment_isolate():
     cal = {"graph": _KITCHEN_GRAPH, "episodes": []}
-    allowed = repertoire.for_card("embodiment_robocasa")
+    allowed = repertoire.strategies_for("embodiment_robocasa")
     p = build_prereg("kitchen_thaw", _GRASP, cal, (52300, 52301), (52600, 52601), allowed)
     assert p.task == "kitchen_thaw"                      # mission env, not "grasp_meat"
     assert p.segment_isolate == ("nav_fridge", "grasp_meat")

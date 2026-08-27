@@ -134,6 +134,17 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         # untouched -- the robocasa card sits inactive yet owns robocasa/robosuite.
         if "third_party" in data:
             third_party[plugin] = tuple(data["third_party"])
+        # Recovery OWNERSHIP is likewise declared even for a disabled card, and for
+        # the same reason: a second-simulator card is enabled = false PERMANENTLY
+        # (it re-claims embodiment.env and activates per session through a mission
+        # binding), so gating its repair shapes on `enabled` would mean a card that
+        # can never contribute one -- and RSI would report "nothing to work with"
+        # for an embodiment that plainly has primitives. Like third_party this feeds
+        # no mount, so the base_profile sha is untouched.
+        for name, spec in data.get("recoveries", {}).items():
+            ref = spec if isinstance(spec, str) else spec["ref"]
+            _claim(recoveries, recov_owner, name, (plugin, ref),
+                   kind="recovery", plugin=plugin)
         # ``enabled = false`` = installed but inactive: doctor it (card_mounts
         # reads the file directly, ignoring this), then flip it on and disable the
         # incumbent. Lets an ALTERNATIVE provider for an already-claimed seam --
@@ -154,10 +165,6 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, mounts_ in card_bundles(data).items():
             _claim(bundles, bundle_owner, name, tuple(mounts_),
                    kind="bundle", plugin=plugin)
-        for name, spec in data.get("recoveries", {}).items():
-            ref = spec if isinstance(spec, str) else spec["ref"]
-            _claim(recoveries, recov_owner, name, (plugin, ref),
-                   kind="recovery", plugin=plugin)
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
                     third_party, bundles, recoveries)

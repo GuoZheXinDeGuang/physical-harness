@@ -4,7 +4,7 @@
 sims/
 __pycache__/
 *.pyc
-runs/
+runs
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
