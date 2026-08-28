@@ -383,7 +383,7 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 ### 3.2 当前快照（2026-08-29，隔离，robosuite 被挡）
 
 ```
-pass       : 757 passed
+pass       : 761 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -397,14 +397,15 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~19.0s
+wall time  : ~19.3s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-**全量对照（卡在场）**：`779 passed, 29 skipped`。这是算术值：最后一次实测是 2026-08-29
-的 `778 passed, 29 skipped`，本轮新增的 `tests/test_docs_allowlist.py` 那条
-`docs-dev/` 未跟踪断言是 sim-free 且无标记的，两条车道各 +1。robocasa 标记项在 harness
+**全量对照（卡在场）**：`783 passed, 29 skipped`。这是算术值：最后一次实测是 2026-08-29
+的 `778 passed, 29 skipped`，此后新增的 `tests/test_docs_allowlist.py` 那条 `docs-dev/`
+未跟踪断言（+1）和 `tests/test_policy_vla_remote.py` 的握手身份闸四条（+4）都是 sim-free
+且无标记的，两条车道各 +5。robocasa 标记项在 harness
 `.venv` 里也跳过（那里同样没装 robocasa），1 个 libero 标记项只在 `sims/libero-venv`
 里跑；robocasa 那些只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑，结果是
 `13 passed, 5 xfailed`——那 5 个 xfail 是实测出来的驱动诚实失败面（nav-microwave 空载
@@ -823,17 +824,25 @@ provider 的默认值 —— `host="127.0.0.1", port=8000`）。
 **握手就是契约检查。** 卡的 manifest params 声明**训练时的观测契约**；连接时
 `reconcile()` 拿它跟服务端第一帧 metadata 对：
 
-| manifest param | 服务端回显的握手键 |
-|---|---|
-| `image_size` | `training_obs_image_size` |
-| `views` | `camera_views`（StarVLA 从不回显 —— 落进 `unverified`） |
-| `chunk` | `action_chunk_size` |
-| `unnorm_key` | `default_unnorm_key`（列在 `available_unnorm_keys` 里也算） |
+| manifest param | 服务端回显的握手键 | 没回显时 |
+|---|---|---|
+| `image_size` | `training_obs_image_size` | 落进 `unverified` |
+| `views` | `camera_views`（StarVLA 从不回显） | 落进 `unverified` |
+| `chunk` | `action_chunk_size` | 落进 `unverified` |
+| `unnorm_key` | `default_unnorm_key`（列在 `available_unnorm_keys` 里也算） | 落进 `unverified` |
+| `checkpoint_sha`（可选） | `checkpoint_sha` | **抛** |
 
 任何被回显的键不匹配就**在 mount 时抛**——train/test 漂移响亮地失败，绝不表现为悄悄
-变低的成功率。服务端没回显的键落进 `handshake["unverified"]`（openpi 服务端常发空
+变低的成功率。前四个键服务端没回显就落进 `handshake["unverified"]`（openpi 服务端常发空
 metadata —— 合法，但那样这道闸什么也验不了），整份握手记录随驱动进入 episode 证据。
 提交在 manifest 里的值是 openpi LIBERO π0.5 约定的模板——按你的 checkpoint 设。
+
+**第五个键 `checkpoint_sha` 是另一类东西，规则也不一样**（§7.4）。前四个说的是"在什么
+观测契约下训练的"，同一个任务的两次 π0.5 训练按构造共享这四个值——它们分不出**是哪份权重
+在应答**。`checkpoint_sha` 分得出，所以它**失败朝闭**：manifest 声明了它而服务端不回显，
+就跟服务端回显了一个不同的摘要一样**抛**，不进 `unverified`。理由是"没人回答"和"错的权重
+回答了"在证据上无法区分。它同时是**可选的**：manifest 不写，就完全不验这一项（见 §7.4
+末尾为什么这个 opt-in 是诚实的）。
 
 **包你自己的模型**：在你的模型 venv 里复用 vendored 的 server（它只 import
 websockets + msgpack + numpy）：
@@ -979,15 +988,41 @@ ref = "plugins.policy_vla_remote:provider"
 ### 7.4 冻结机制就是握手
 
 `plugins/policy_vla_remote/` 的握手校验（§6.2）**同时也是冻结机制**：SkillRecord 存
-checkpoint 的**摘要**，绝不存权重（GB 级）。执行时握手证明服务端正在服务**那个**
-checkpoint；换一个 checkpoint 就 mount 失败——和冻结 SkillRecord 规则给脚本策略的保证
-完全一样。
+checkpoint 的**摘要**，绝不存权重（GB 级）。
 
 ```
 harness (base venv)  ──websocket+msgpack──▶  policy venv (JAX/torch)
-   policy_vla_remote card                      serve_policy.py
-   handshake gate ────── checkpoint digest ───── /v1 metadata
+   policy_vla_remote card                      serve_policy.py wrapper
+   handshake gate ────── checkpoint_sha ─────── 第一帧 metadata
 ```
+
+**摘要是什么。** `checkpoint_sha` 是 64 位小写 sha256 hexdigest，算的是**权重字节本身**：
+遍历 checkpoint 目录，按 POSIX 相对路径排序，把每个文件的
+`relpath.encode() + b"\0" + file_bytes` 依次喂进同一个 sha256。不哈希路径、不哈希 run
+名——那些能改名，而 SkillRecord 的身份主张必须扛得住改名。这是
+`plugins/policies/bc.py` 里 `MLPPolicy.sha()` 的同一招（那边哈希的是 numpy 权重数组的
+`tobytes()`）。权威定义在 `plugins/policy_vla_remote/__init__.py` 的 `_IDENTITY_KEY`
+注释里，**服务端包装器按那个算并回显**；闸只做字符串比对，不会去验证对面是不是真按这个
+规约算的——所以这条规约是两边必须共同遵守的契约。
+
+**闸怎么判。** manifest 声明了 `checkpoint_sha` 时：服务端回显同一个摘要才 mount；回显
+了不同的摘要**抛**；**一个字都不回显也抛**（错误信息是 `handshake gap`，不是
+`handshake mismatch`）。最后这条是刻意跟前四个键分开的——观测契约那四个键容忍部分回显，
+因为 `views` 上游根本不回显、openpi 服务端默认发 `{}`，严格化会让这张卡压根挂不上；而身份
+键是"声明出来就是为了被回答"的，"没人回答"和"错的权重回答了"在证据上无法区分，所以它必须
+**失败朝闭**。
+
+**它是 opt-in，这是有意的。** manifest 不写 `checkpoint_sha`，就没有这道身份闸——原样的
+openpi `serve_policy.py` 发的是 `{}`，强制要求摘要会让任何没包过的服务端挂不上，进而逼人
+往 manifest 里填一个没人真算过的摘要：**缺席的身份主张是诚实的沉默，编造的是 SkillRecord
+里的谎**。封存的握手记录里 `contract` 有没有这个键是看得见的，所以"这次 mount 关于权重
+什么也没证明"在下游读得出来；某个成对比较**要不要求**已验身份，是封 SkillRecord 的人的判断，
+不是一个 websocket 客户端的判断。反过来说：**执行模式下要把某个 delta 归因给这个 executor
+的成对比较，manifest 里就必须有这个摘要**，否则那条归因是空的。
+
+一个已知残留：`connect()` 对 `self._client is None` 幂等，而协议只在连接后的**第一帧**发
+metadata——所以服务端在一条活连接上热重载了不同权重，这边不会重验。协议层面重验就等于重连；
+现在的规约是**一次 mount 一次身份证明**。
 
 ### 7.5 数据：RoboCasa 自带示范
 

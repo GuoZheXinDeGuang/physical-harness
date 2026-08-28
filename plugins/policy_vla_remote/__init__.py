@@ -25,6 +25,15 @@ camera order, which StarVLA explicitly refuses to own) land in
 ``handshake["unverified"]``; the whole handshake record rides on the driver so
 the caller can seal it into episode evidence.
 
+**Checkpoint identity.** The observation contract does not say WHICH weights
+are behind the socket -- two pi0.5 runs of the same task share ``image_size``,
+``views``, ``chunk`` and ``unnorm_key`` by construction, so a swapped checkpoint
+passes a contract-only gate. A manifest that also declares ``checkpoint_sha``
+gates the weights themselves, and there it fails CLOSED: a server that does not
+echo the digest is refused, not filed under ``unverified``. Identity is opt-in
+(omit the param and nothing is checked) because a stock openpi server echoes
+``{}`` -- see :data:`_IDENTITY_KEY` for the digest the server side must send.
+
 **Denormalization never leaves the server**: actions crossing this boundary
 are already un-normalized; norm stats stay with the checkpoint on the server
 side. The driver only unwraps, caches the chunk, and pops one action per step.
@@ -51,7 +60,21 @@ _HANDSHAKE_KEYS = {
     "views": "camera_views",
     "chunk": "action_chunk_size",
     "unnorm_key": "default_unnorm_key",
+    "checkpoint_sha": "checkpoint_sha",
 }
+
+#: The identity key: WHICH weights are behind the socket, as opposed to which
+#: observation contract they were trained under. The serving wrapper must echo
+#: ``metadata["checkpoint_sha"]`` = lowercase sha256 hexdigest (64 chars) over
+#: the checkpoint's parameter files -- walk the checkpoint directory, sort by
+#: POSIX relative path, and feed ``relpath.encode() + b"\0" + file_bytes`` of
+#: each file into one sha256. Same move as ``plugins/policies/bc.py``'s
+#: ``MLPPolicy.sha()``: hash the actual weight bytes, never a path or a run name
+#: (those are renameable, and a SkillRecord's identity claim has to survive a
+#: rename). The gate compares the string the manifest declares against the
+#: string the server sends -- it does not verify the digest was computed that
+#: way, so the reduction above is the contract both sides must agree on.
+_IDENTITY_KEY = "checkpoint_sha"
 
 
 def _norm(v: Any) -> Any:
@@ -62,15 +85,42 @@ def _norm(v: Any) -> Any:
 def reconcile(contract: Mapping, metadata: Mapping) -> dict:
     """Check the declared training-observation contract against the server's
     first-frame metadata. Mismatch on any echoed key raises ``ValueError``
-    (fail loud at mount, never a silently degraded success rate); keys the
-    server does not echo are returned in ``unverified``. The returned record
-    is what the caller seals into episode evidence."""
+    (fail loud at mount, never a silently degraded success rate); contract keys
+    the server does not echo are returned in ``unverified``, but a declared
+    ``checkpoint_sha`` the server does not echo raises. The returned record is
+    what the caller seals into episode evidence.
+
+    A param the manifest omits is not gated at all -- including the identity
+    key, which is deliberately opt-in. A stock openpi ``serve_policy.py`` echoes
+    ``{}``, so a mandatory digest would make every unwrapped server unmountable
+    and push operators to declare a digest nobody computes; an absent identity
+    claim is honest silence, a fabricated one is a lie in the SkillRecord. The
+    sealed record shows which keys were declared, so "this mount proved nothing
+    about its weights" stays readable downstream -- deciding that a given paired
+    comparison REQUIRES a gated identity belongs to whoever seals the record,
+    not to a websocket client.
+    """
     unverified = []
     for param_key, meta_key in _HANDSHAKE_KEYS.items():
         if param_key not in contract:
             continue
         got = metadata.get(meta_key)
         if got is None:
+            # Absent echo is tolerated for the OBSERVATION-CONTRACT keys only:
+            # servers advertise little (openpi's default metadata is {}) and
+            # `views` has no echo upstream at all, so refusing there would make
+            # the card unmountable. The identity key is the opposite case -- it
+            # is declared precisely to be answered, and "nobody answered" is
+            # indistinguishable from "the wrong weights answered". Fail closed:
+            # an unproven identity must not mount, or every paired number
+            # attributed to this executor rests on an empty claim.
+            if param_key == _IDENTITY_KEY:
+                raise ValueError(
+                    f"policy_vla_remote handshake gap: manifest declares "
+                    f"{param_key}={contract[param_key]!r} but the server echoes "
+                    f"no {meta_key} -- cannot prove which checkpoint is behind "
+                    f"the socket, refusing to mount. Full server metadata: "
+                    f"{dict(metadata)!r}")
             unverified.append(param_key)
             continue
         if _norm(contract[param_key]) == _norm(got):
@@ -80,11 +130,13 @@ def reconcile(contract: Mapping, metadata: Mapping) -> dict:
         if (param_key == "unnorm_key"
                 and contract[param_key] in (metadata.get("available_unnorm_keys") or ())):
             continue
+        why = ("the server is serving different weights than the manifest claims"
+               if param_key == _IDENTITY_KEY else
+               "train/test observation contracts diverge")
         raise ValueError(
             f"policy_vla_remote handshake mismatch: manifest {param_key}="
-            f"{contract[param_key]!r} vs server {meta_key}={got!r} -- train/test "
-            f"observation contracts diverge, refusing to mount. Full server "
-            f"metadata: {dict(metadata)!r}")
+            f"{contract[param_key]!r} vs server {meta_key}={got!r} -- {why}, "
+            f"refusing to mount. Full server metadata: {dict(metadata)!r}")
     return {"contract": dict(contract), "metadata": dict(metadata),
             "unverified": unverified}
 

@@ -63,6 +63,52 @@ def test_reconcile_unechoed_keys_land_in_unverified():
     assert rec["unverified"] == ["image_size", "views", "chunk", "unnorm_key"]
 
 
+def test_reconcile_gates_checkpoint_identity_when_declared():
+    """The four contract keys cannot tell two pi0.5 runs of the same task apart
+    -- they share image_size/views/chunk/unnorm_key by construction. Declaring
+    `checkpoint_sha` gates the WEIGHTS: the run the manifest names mounts, the
+    other one is refused instead of quietly serving a different executor."""
+    run_a = dict(_METADATA, checkpoint_sha="a" * 64, checkpoint_path="/w/pi05_run_A")
+    run_b = dict(_METADATA, checkpoint_sha="b" * 64, checkpoint_path="/w/pi05_run_B")
+    pinned = dict(_CONTRACT, checkpoint_sha="a" * 64)
+    assert reconcile(pinned, run_a)["unverified"] == ["views"]  # digest matched
+    with pytest.raises(ValueError, match="different weights"):
+        reconcile(pinned, run_b)
+
+
+def test_reconcile_identity_is_opt_in():
+    """Bypass by design: a manifest that declares no digest is not gated on one,
+    so a card mounts against a stock openpi server (which echoes {}). The swap
+    is then merely *recorded* -- which is why a paired comparison that means to
+    attribute a delta to this executor has to declare the digest."""
+    run_b = dict(_METADATA, checkpoint_sha="b" * 64)
+    rec = reconcile(_CONTRACT, run_b)  # no checkpoint_sha in the contract
+    assert rec["unverified"] == ["views"]
+    assert rec["metadata"]["checkpoint_sha"] == "b" * 64  # recorded, not gated
+    assert "checkpoint_sha" not in rec["contract"]  # ...and visibly not claimed
+
+
+def test_reconcile_declared_identity_with_no_echo_refuses():
+    """The identity key does NOT fall through to `unverified`: a server that
+    stays silent about its weights is indistinguishable from one serving the
+    wrong ones, so an unproven identity fails closed."""
+    with pytest.raises(ValueError, match="handshake gap.*echoes no checkpoint_sha"):
+        reconcile(dict(_CONTRACT, checkpoint_sha="a" * 64), _METADATA)
+    with pytest.raises(ValueError, match="checkpoint_sha"):
+        reconcile(dict(_CONTRACT, checkpoint_sha="a" * 64), {})  # openpi default
+
+
+def test_reconcile_absent_echo_beats_a_diverging_contract():
+    """For the OBSERVATION-CONTRACT keys, an omitted echo is still skipped, not
+    refused -- a partial echo gates only what it happens to cover. Here the
+    server is a chunk-10 checkpoint, the manifest declares chunk=50, and the
+    mount still passes. Deliberate: `views` has no echo upstream at all and
+    openpi servers advertise little, so strictness here would make the card
+    unmountable. Only `checkpoint_sha` fails closed on silence."""
+    rec = reconcile(dict(_CONTRACT, chunk=50), {"training_obs_image_size": [224, 224]})
+    assert rec["unverified"] == ["views", "chunk", "unnorm_key"]
+
+
 # ── the chunk driver (stub client: no network, no msgpack) ───────────────────
 
 class _StubClient:
