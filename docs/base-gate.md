@@ -297,14 +297,14 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
 - the two 30-秒上手 commands in README work as written: the `dev` extra carries
   everything collection needs (including `mcp` for the both-faces tests)
 
-A fresh clone that shows a FAILURE (not a skip) is a real regression, with ONE
-known exception, measured 2026-08-29 on a real fresh clone
-(`713 passed, 1 failed, 23 skipped, 51 deselected` on the both-marker lane):
+A fresh clone that shows a FAILURE (not a skip) is a real regression -- no
+exceptions. There used to be one:
 `test_runtime_campaign.py::test_burned_range_brief_is_rejected_without_spawning`
-asserts against burned block 41000-41580 in the REAL seed ledger, and `STATUS.md`
-is untracked operator state -- a clone has no ledger, so nothing is burned and
-the brief is (correctly, per the runtime's own rule) accepted. Copying a
-`STATUS.md` in makes it pass. The test needs a ledger of its own, not the box's.
+asserted against a burned block in the operator's REAL `STATUS.md`, which is
+untracked -- so a clone had no ledger, nothing was burned, and the brief was
+(correctly, per the runtime's own rule) accepted. The test now writes a ledger of
+its own into `tmp_path` and points `harness_runtime.STATUS_MD` at it. A test that
+reads operator-local state is the bug, never the missing-ledger semantics.
 
 ## repeat-offender: keep this snapshot + the two README counts in lockstep
 

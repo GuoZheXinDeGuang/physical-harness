@@ -473,13 +473,18 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
                         cancelled=cancelled)
 
 
-def _ledger_text(status_md: Path = STATUS_MD) -> str:
+def _ledger_text(status_md: Path | None = None) -> str:
     """STATUS.md is the operator's local ledger, untracked in the public repo:
-    a fresh clone has no ledger, which correctly reads as 'nothing burned'."""
+    a fresh clone has no ledger, which correctly reads as 'nothing burned'.
+
+    ``STATUS_MD`` is read at CALL time, not bound as a default: a test must be
+    able to point this at a ledger of its own, or it silently asserts against
+    whatever the box happens to have burned (and fails on a fresh clone)."""
+    status_md = status_md or STATUS_MD
     return status_md.read_text() if status_md.exists() else ""
 
 
-def _burned_ranges(status_md: Path = STATUS_MD) -> list[tuple[int, int]]:
+def _burned_ranges(status_md: Path | None = None) -> list[tuple[int, int]]:
     """Burned seed intervals from the one prose ledger (STATUS.md 区块预算)."""
     return [(r["lo"], r["hi"]) for r in parse_ledger(_ledger_text(status_md))
             if r["state"] == "burned"]

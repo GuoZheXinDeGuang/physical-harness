@@ -74,6 +74,18 @@ def _campaign(monkeypatch, name: str, script: Path) -> None:
     monkeypatch.setattr(runtime, "discover", lambda: reg)
 
 
+def _ledger(monkeypatch, tmp_path: Path, *bullets: str) -> Path:
+    """Write a seed ledger of the test's own and point the runtime's guard at it.
+
+    Only the 区块预算 section is parsed, so a heading plus the bullets is a whole
+    ledger as far as board.store.parse_ledger is concerned.
+    """
+    status = tmp_path / "STATUS.md"
+    status.write_text("**PHASE 3 区块预算:**\n" + "\n".join(bullets) + "\n")
+    monkeypatch.setattr(runtime, "STATUS_MD", status)
+    return status
+
+
 def test_campaign_publishes_skills_and_notes_the_chain(tmp_path, monkeypatch):
     _campaign(monkeypatch, "stub", _stub_script(tmp_path))
     session = tmp_path / "session-main"
@@ -146,10 +158,15 @@ def test_burned_range_brief_is_rejected_without_spawning(tmp_path, monkeypatch):
     # the stub would run and write a campaign_scheduled note instead -- the
     # assertion on the overlap reason then fails fast rather than hanging.
     _campaign(monkeypatch, "stack", _stub_script(tmp_path))
+    # The guard reads the operator's LOCAL STATUS.md, which is untracked: on a
+    # fresh clone nothing is burned and the brief is (correctly) accepted. So
+    # bring our own ledger -- one burned block, in the prose shape parse_ledger
+    # reads -- instead of asserting against whatever this box has burned.
+    _ledger(monkeypatch, tmp_path, "**已烧(round 78-79):** stack-g1 dev 41000-41580。")
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
-    # 41000-41100 intersects burned 41000-41580 (round 78-79) in the real ledger.
+    # 41000-41100 intersects the burned 41000-41580 the fixture ledger declares.
     _drop(inbox, "burned.json", {"kind": "campaign", "campaign": "stack",
                                  "dev": [[41000, 41100]]})
 
