@@ -4,7 +4,7 @@
 strings, not module-global hooks, because a hook does not survive
 multiprocessing spawn while a string pickles, content-hashes, and audits
 cleanly (see governor/env.py, ARCHITECTURE.md's "L0 迁移方式", and
-docs/design/observability.md's spawn findings). This file covers:
+local-archive/docs/retired-from-public/observability-design.md's spawn findings). This file covers:
 
 (a) the new fields default to the pre-seam shape, and a spec with refs set
     still pickles;

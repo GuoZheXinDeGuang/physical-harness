@@ -7,7 +7,7 @@
 机制细节见 [ARCHITECTURE.md](../ARCHITECTURE.md)，项目方向见
 [GOAL.md](../GOAL.md)，给 agent 的操作手册见 [CLAUDE.md](../CLAUDE.md)，安装与依赖
 清单见 [README.md](../README.md) 与 [requirements.md](../requirements.md)。
-`docs/` 下除本文外只有 `docs/design/`（图表源文件，不是散文）。
+`docs/` 下只有本文一份。没有第二份，也没有豁免的子目录。
 
 | 章 | 内容 | 谁读 |
 |---|---|---|
@@ -383,7 +383,7 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 ### 3.2 当前快照（2026-08-29，隔离，robosuite 被挡）
 
 ```
-pass       : 756 passed
+pass       : 757 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable

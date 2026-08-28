@@ -49,6 +49,20 @@ def test_docs_is_a_closed_set():
     )
 
 
+def test_docs_has_no_exempt_subdirectory():
+    """The allowlist globs the top level, so a subdirectory would be a blind spot.
+
+    It was one: a `docs/design/` carve-out for "diagram sources, not prose" ended
+    up holding 110 KB of design Q&A. Prose parks wherever the rule is not looking,
+    so the rule looks everywhere.
+    """
+    nested = [str(p.relative_to(DOCS)) for p in DOCS.rglob("*") if p.is_dir()]
+    assert not nested, (
+        f"docs/ gained subdirectories: {nested}. There is no exempt corner -- "
+        f"development docs go to docs-dev/, retired ones to local-archive/docs/."
+    )
+
+
 def test_no_public_link_points_into_the_local_archive_as_if_it_shipped():
     """A `docs/<name>.md` link must resolve inside the clone."""
     broken: list[str] = []

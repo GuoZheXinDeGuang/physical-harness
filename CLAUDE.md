@@ -15,8 +15,8 @@ the board (query it), architecture in `ARCHITECTURE.md`.
 - **Docs stay true, and there is ONE of them.** When you change behavior,
   update the doc in the same commit; when a doc goes stale, delete or rewrite
   it. A wrong doc is worse than no doc. The public set is exactly
-  `docs/project-documentation.md` (plus `docs/design/`, diagram sources, not
-  prose). A second file in `docs/` fails `tests/test_docs_allowlist.py` — the
+  `docs/project-documentation.md` -- there is no second file and no exempt
+  subdirectory (a `docs/design/` carve-out was used to park 110 KB of prose). A second file in `docs/` fails `tests/test_docs_allowlist.py` — the
   test is the gate, not your judgement. Everything else has a home:
   **development docs** (current state, open campaign goals, round plans) go to
   `docs-dev/` — git-ignored, local, never tracked (the test checks that too);
