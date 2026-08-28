@@ -12,7 +12,7 @@ The load-bearing claims, in test order:
     faked — all without numpy in the import chain.
 (d) WorldSceneGraph ports the retired zos world model's `relative` bearing math
     byte-for-byte (goldens produced by the source function before retirement) and
-    propagates pose staleness. salvage: docs/zos-salvage.md §6.
+    propagates pose staleness. salvage: local-archive/docs/retired-from-public/zos-salvage.md §6.
 """
 
 from __future__ import annotations

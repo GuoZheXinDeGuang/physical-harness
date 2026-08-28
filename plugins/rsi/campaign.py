@@ -12,7 +12,7 @@ Deliberate divergences
   generation against the raw baseline would let one good rule keep collecting
   credit for later generations that added nothing.
 * **The privilege ablation runs at every promotion, not once at the end.**
-  docs/headline-finding.md is the reason: a gain measured under a privileged
+  local-archive/docs/retired-from-public/headline-finding.md is the reason: a gain measured under a privileged
   percept is not the same quantity as a transferable gain, and finding that out
   only at the end of a campaign means every intermediate decision was made on
   the wrong number.

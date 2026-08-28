@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal the M7 ``clear_workspace`` preregistration (docs/m7-persistent-mission.md §3).
+"""Seal the M7 ``clear_workspace`` preregistration (local-archive/docs/retired-from-public/m7-persistent-mission.md §3).
 
 Seals, into ONE new campaign store, the pre-committed evidence plan BEFORE any
 dev/held-out burn:
@@ -52,7 +52,7 @@ from profiles import base_profile
 
 TASK = "clear_workspace"
 
-#: The design's block allocation (docs/m7-persistent-mission.md §3; reserved in
+#: The design's block allocation (local-archive/docs/retired-from-public/m7-persistent-mission.md §3; reserved in
 #: STATUS.md 区块预算). Calibration is burned (measured); the rest reserved,
 #: GATED on a governable residual the calibration must first prove (it did not).
 BLOCKS = {

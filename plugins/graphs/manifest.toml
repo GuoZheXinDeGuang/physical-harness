@@ -9,6 +9,6 @@ ref = "plugins.graphs:scene_graph_provider"
 # World.snapshot() bridge). profiles.bundle("robot-world") layers this over
 # base_profile -- only graph.scene differs, and the plan sha moves. Neutral name:
 # its first consumer was the now-retired zos cockpit, and it is reserved for the
-# future actuation:real embodiment card (salvage: docs/zos-salvage.md §6).
+# future actuation:real embodiment card (salvage: local-archive/docs/retired-from-public/zos-salvage.md §6).
 [bundles.robot-world]
 "graph.scene" = "plugins.graphs:world_scene_graph_provider"

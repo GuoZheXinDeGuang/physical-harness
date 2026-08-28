@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Calibration probe for the M6 ``inventory_build`` heterogeneous mission
-(docs/m6-mission-design.md §4).
+(local-archive/docs/retired-from-public/m6-mission-design.md §4).
 
 Runs the BASELINE (ungoverned) 11-node heterogeneous chain over the calibration
 block and reports the go/no-go numbers the design's abort criteria read: chain
@@ -139,7 +139,7 @@ def summarize(rows: list[dict], kinds: dict[str, str]) -> dict:
     total_replans = sum(r["replans"] for r in rows)
     chains_with_replan = sum(r["replans"] > 0 for r in rows)
 
-    # docs/m6-mission-design.md §4 abort / go-no-go (reuse M5 §4 gates)
+    # local-archive/docs/retired-from-public/m6-mission-design.md §4 abort / go-no-go (reuse M5 §4 gates)
     base_degenerate = successes == 0 or successes == n            # (1) 0%/100% STOP
     c2_ceiling = chain_rate >= 0.90                               # (2) null ceiling
     c1_low_qpre = q_pre_rate < 0.30                               # (3) q_pre lever

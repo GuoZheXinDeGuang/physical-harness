@@ -5,14 +5,14 @@ Statistics
 Both arms run the same seeds through the same code path, so the comparison is
 paired and the right test is exact McNemar on the discordant pairs (b01 fixed,
 b10 broken) -- a two-sided binomial test against p=0.5. Under the bitwise
-determinism verified in docs/verified-environment.md the only source of
+determinism verified in local-archive/docs/retired-from-public/verified-environment.md the only source of
 difference between arms is the governance itself.
 
 Transfer ablation
 -----------------
 `ablation_curve` re-runs the SAME bundle with the recovery's percept degraded
 from ground truth to onboard-sensor quality. It is the number this project
-exists to produce: docs/headline-finding.md records a +50pp gain collapsing to
+exists to produce: local-archive/docs/retired-from-public/headline-finding.md records a +50pp gain collapsing to
 +13.3pp (n.s.) once the recovery could no longer read the simulator. Reporting a
 gain without its curve is reporting an artifact.
 """

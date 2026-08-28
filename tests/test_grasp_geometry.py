@@ -2,7 +2,7 @@
 privileged ground truth in sim, plus the vendored client's fail-closed
 validation exercised through an injected fake transport (no ZMQ, no server).
 
-The sim-render test is the one that makes the rung real (docs/anygrasp-scout.md
+The sim-render test is the one that makes the rung real (local-archive/docs/retired-from-public/anygrasp-scout.md
 risk #2): a wrong depth scale or a wrong image-flip / frame conversion still
 yields a "reasonable"-looking cloud, so it is checked against the obs cube_pos
 and the known table height, not eyeballed.

@@ -117,7 +117,7 @@ def run_rescore(store_dir: str | Path, out_dir: str | Path, block: int, *,
         # dev measurement: a reproduction block without its failure distribution
         # would be a thinner claim than the campaign it reproduces. paired_gate
         # keeps returning a PairedResult and discarding rollouts, so this re-runs
-        # the governed arm -- bitwise-identical per docs/verified-environment.md.
+        # the governed arm -- bitwise-identical per local-archive/docs/retired-from-public/verified-environment.md.
         # ponytail: n extra rollouts on the stages path; teach paired_gate to
         # surface raw results if that cost ever matters.
         from plugins.rsi.gate import _run

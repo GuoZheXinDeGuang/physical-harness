@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal the M6 ``inventory_build`` preregistration (docs/m6-mission-design.md §4).
+"""Seal the M6 ``inventory_build`` preregistration (local-archive/docs/retired-from-public/m6-mission-design.md §4).
 
 Seals, into ONE new campaign store, the pre-committed evidence plan the next
 phase reads BEFORE any dev/held-out burn:
@@ -70,7 +70,7 @@ GOVERNED_SKILLS = [
     ("runs/place-g2/skills/eb46481a88b93cf9db9e774734fdde063725557d83f1abffe3033cd33a45a40f.json", "place-g2", "replace"),
 ]
 
-#: The design's block allocation (docs/m6-mission-design.md §4; reserved in
+#: The design's block allocation (local-archive/docs/retired-from-public/m6-mission-design.md §4; reserved in
 #: STATUS.md 区块预算). Calibration is burned (measured); the rest reserved.
 BLOCKS = {
     "calibration": {"lo": 50000, "hi": 50149, "n": 150, "gates": False,

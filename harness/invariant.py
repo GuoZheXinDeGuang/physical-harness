@@ -12,7 +12,7 @@ the embodied analogue before every candidate dispatch:
       declaration
 
 Both fail loudly. A harness that only documents these gets exactly the bug this
-project already hit once (docs/headline-finding.md).
+project already hit once (local-archive/docs/retired-from-public/headline-finding.md).
 """
 
 from __future__ import annotations

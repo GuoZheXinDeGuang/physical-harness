@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal the clear_build preregistration (docs/long-horizon-design.md §5).
+"""Seal the clear_build preregistration (local-archive/docs/retired-from-public/long-horizon-design.md §5).
 
 Seals, into ONE new campaign store, the pre-committed evidence plan BEFORE any
 dev/held-out burn:
@@ -59,7 +59,7 @@ GOVERNED_SKILLS = [
     (REPO / "runs/place-g2/skills/eb46481a88b93cf9db9e774734fdde063725557d83f1abffe3033cd33a45a40f.json", "place-g2", "replace"),
 ]
 
-#: The design's block allocation (docs/long-horizon-design.md §4; reserved in
+#: The design's block allocation (local-archive/docs/retired-from-public/long-horizon-design.md §4; reserved in
 #: STATUS.md 区块预算). Calibration is burned (measured); the rest reserved.
 BLOCKS = {
     "calibration": {"lo": 48900, "hi": 49049, "n": 150, "gates": False,

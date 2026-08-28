@@ -6,7 +6,7 @@ OpenCV camera OPTICAL frame (x right, y down, z forward), in meters, together
 with the 4x4 optical->world transform so poses the grasp backend returns in the
 observation frame can be lifted back to world.
 
-Three robosuite traps, all handled here (docs/anygrasp-scout.md risk #2 --
+Three robosuite traps, all handled here (local-archive/docs/retired-from-public/anygrasp-scout.md risk #2 --
 each returns "reasonable" garbage if skipped):
 
 1. robosuite's depth obs is NORMALIZED [0, 1], not meters:

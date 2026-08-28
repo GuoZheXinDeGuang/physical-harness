@@ -11,7 +11,7 @@ world as it now is (retry a slipped grasp in place, or drop an unplaceable objec
 and continue the rest) -> a final integrity sweep -> a machine report. Twelve
 nodes over four KINDS (perceive x2, decide x2, segment x4, verify x4); each
 segment is itself grasp->lift->transport->release, so the graph unfolds to 20+
-sub-steps inside one world (docs/m7-persistent-mission.md).
+sub-steps inside one world (local-archive/docs/retired-from-public/m7-persistent-mission.md).
 
 Dropping this dir is the whole install: ``manifest.toml`` binds the new task
 ``clear_workspace`` to its fault-adaptive planner + the composite

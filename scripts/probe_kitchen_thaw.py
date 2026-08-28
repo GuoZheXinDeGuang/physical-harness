@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Calibration probe for the ``kitchen_thaw`` PERSISTENT mission (RSI campaign
-step 1 on the RoboCasa embodiment; docs/m7-persistent-mission.md §3 discipline).
+step 1 on the RoboCasa embodiment; local-archive/docs/retired-from-public/m7-persistent-mission.md §3 discipline).
 
 Runs the BASELINE (ungoverned) 15-node persistent episode over the calibration
 block and reports the numbers the §3 go/no-go criteria read -- it never gates.

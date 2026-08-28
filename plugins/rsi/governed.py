@@ -5,7 +5,7 @@ Ownership
 This module holds the raw observation and is the only place that does. The
 critic and the recovery each receive a :class:`FeatureView` built under their
 own budget, and both invariants are asserted before every dispatch. That is the
-structural answer to the leak recorded in docs/headline-finding.md, where a
+structural answer to the leak recorded in local-archive/docs/retired-from-public/headline-finding.md, where a
 hand-written recovery read ``obs["cube_pos"]`` directly and inflated a +13.3%
 (n.s.) result into a reported +50%.
 

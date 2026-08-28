@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E3: the long-horizon chain battery (docs/long-horizon-design.md §2).
+"""E3: the long-horizon chain battery (local-archive/docs/retired-from-public/long-horizon-design.md §2).
 
 Run the ``clear_build`` 4-node chain over a seed block under ONE mount config,
 aggregating chain-success + a per-node first-death histogram read straight from

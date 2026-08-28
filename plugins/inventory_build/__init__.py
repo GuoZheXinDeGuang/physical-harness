@@ -7,7 +7,7 @@ order from geometry -> grasp / build / clear with verify gates between ->
 final integrity check -> a machine report. Eleven nodes, four kinds (perceive
 x2, decide x2, verify x3, manipulate x4); a verify-node failure is folded back
 as a ``node_failure`` fault the workload's OWN replan loop reroutes -- no new
-routing code (docs/m6-mission-design.md).
+routing code (local-archive/docs/retired-from-public/m6-mission-design.md).
 
 Dropping this dir is the whole install: ``manifest.toml`` binds the new task
 ``inventory_build`` to its planner + the composite ``clear_build_provider``

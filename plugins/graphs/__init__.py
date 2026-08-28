@@ -16,7 +16,7 @@ The caller supplies the raw observation (contracts.SceneGraph.snapshot(obs));
 this module is a pure normalizer that imports neither a robot runtime nor numpy,
 so it stays light enough to load in a real robot's minimal venv. The bearing
 math is PORTED from the retired zos world model (world.py:471 ``relative``;
-goldens in the self-check below, salvage in docs/zos-salvage.md §6) and array
+goldens in the self-check below, salvage in local-archive/docs/retired-from-public/zos-salvage.md §6) and array
 values are coerced with float()/list().
 """
 
@@ -64,7 +64,7 @@ class InMemorySkillGraph:
 # ── shared bearing math ────────────────────────────────────────────────────
 
 #: Mirrors the retired zos world model's ODOM_STALE_S — a pose older than this
-#: renders stale (salvage: docs/zos-salvage.md §6).
+#: renders stale (salvage: local-archive/docs/retired-from-public/zos-salvage.md §6).
 _ODOM_STALE_S = 2.0
 
 # Ported from the retired zos world model (world.py:471 `relative`). LLMs cannot do metric

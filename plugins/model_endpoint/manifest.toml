@@ -1,5 +1,5 @@
 # The model-endpoint card: ONE OpenAI-compatible chat client behind the
-# model.endpoint seam (docs/vlm-graph-paper-plan.md §1b). Local sglang and
+# model.endpoint seam (local-archive/docs/retired-from-public/vlm-graph-paper-plan.md §1b). Local sglang and
 # hosted APIs are the same shape; a preset is a filled-in {base_url,
 # api_key_env, model} config, overridable per-field in params.
 #

@@ -1,5 +1,5 @@
 """Process-pool rollout. On this machine 10 workers reach ~212 episodes/min,
-which makes the rollout budget a non-issue for gating; see docs/verified-environment.md."""
+which makes the rollout budget a non-issue for gating; see local-archive/docs/retired-from-public/verified-environment.md."""
 from __future__ import annotations
 
 from collections.abc import Sequence

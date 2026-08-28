@@ -12,9 +12,13 @@ the board (query it), architecture in `ARCHITECTURE.md`.
 - **Simplest thing that works.** Prefer deletion over addition; no speculative
   abstractions; a task-name `if` branch in a generic path means the design is
   wrong — add a card instead.
-- **Docs stay true.** When you change behavior, update the doc in the same
-  commit; when a doc goes stale, delete or rewrite it. A wrong doc is worse
-  than no doc.
+- **Docs stay true, and there are few of them.** When you change behavior,
+  update the doc in the same commit; when a doc goes stale, delete or rewrite
+  it. A wrong doc is worse than no doc. `docs/` is a **closed allowlist**
+  (`docs/README.md`, enforced by `tests/test_docs_allowlist.py`): a file ships
+  only if a stranger cloning this repo would be worse off without it. Round
+  plans, scout reports, design drafts and acceptance write-ups go to
+  `local-archive/docs/` — never to `docs/`.
 - **Evidence over demos.** A claim is worth exactly the sealed evidence behind
   it. An honest null and an honest NO-GO are deliverables, not failures.
 - **Never game a gate.** No tuning thresholds, swapping gates, or cherry-picking

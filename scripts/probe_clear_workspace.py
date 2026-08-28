@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Calibration probe for the M7 ``clear_workspace`` PERSISTENT mission
-(docs/m7-persistent-mission.md §3).
+(local-archive/docs/retired-from-public/m7-persistent-mission.md §3).
 
 Runs the BASELINE (ungoverned) 12-node persistent episode over the calibration
 block and reports the go/no-go numbers the design's abort criteria read. UNLIKE
@@ -147,7 +147,7 @@ def summarize(rows: list[dict]) -> dict:
     deaths_grasp = deaths_by_stage.get("grasp", 0)                    # governable residual
     deaths_placement = deaths_by_stage.get("placement", 0)           # ungoverned residual
 
-    # docs/m7-persistent-mission.md §3 go/no-go (reuse M6 §4 gates on the CLEARING rate)
+    # local-archive/docs/retired-from-public/m7-persistent-mission.md §3 go/no-go (reuse M6 §4 gates on the CLEARING rate)
     base_degenerate = full_clear == 0 or full_clear == n             # (1) 0%/100% STOP
     c2_ceiling = full_rate >= 0.90                                    # (2) null ceiling
     horizon_dominant = horizon_exhaust > (n - graph_complete) and horizon_exhaust > 0  # (3)

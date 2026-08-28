@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-29, isolated, robosuite blocked)
 
 ```
-pass       : 753 passed
+pass       : 755 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -177,7 +177,7 @@ honest `first_death="wall_timeout"` row that `attribute()` counts as
 ungoverned — charged to nobody, never a target.
 
 The +10 pass over the five-track merge snapshot (633→643, skips unchanged) is
-the planner_vlm card (docs/vlm-graph-paper-plan.md §1 landed): +9
+the planner_vlm card (local-archive/docs/retired-from-public/vlm-graph-paper-plan.md §1 landed): +9
 `test_planner_vlm.py` (canned-endpoint generation through validate_plan, the
 one-re-ask-then-rejectable parse path, the per-(task, seed) frozen-graph cache,
 the replan prompt echoing done nodes, doctor exemption/SKIP, and the committed

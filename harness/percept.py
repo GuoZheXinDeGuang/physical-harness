@@ -4,7 +4,7 @@ Why containment rather than a tier lattice
 ------------------------------------------
 The privilege leak that actually happened in this project was not a mis-tiered
 feature name. It was ``target = obs["cube_pos"]`` inside a hand-written recovery
-(docs/headline-finding.md) -- a raw-observation read that no naming rule would
+(local-archive/docs/retired-from-public/headline-finding.md) -- a raw-observation read that no naming rule would
 have caught, and which turned a +13.3% (n.s.) result into a reported +50%.
 
 So the enforcement is structural: ``governed_rollout`` holds the raw dict, and

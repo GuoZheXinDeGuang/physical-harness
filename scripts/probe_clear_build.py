@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Calibration probe for the clear_build long-horizon mission (docs/long-horizon-design.md §4).
+"""Calibration probe for the clear_build long-horizon mission (local-archive/docs/retired-from-public/long-horizon-design.md §4).
 
 Runs the BASELINE (ungoverned) 4-node chain over the calibration block and reports
 the go/no-go numbers the design's abort criteria read: chain base rate, q_pre =
@@ -105,7 +105,7 @@ def summarize(rows: list[dict]) -> dict:
     chain_rate = successes / n if n else 0.0
     q_pre_rate = q_pre / n if n else 0.0
 
-    # docs/long-horizon-design.md §4 abort / go-no-go
+    # local-archive/docs/retired-from-public/long-horizon-design.md §4 abort / go-no-go
     base_degenerate = successes == 0 or successes == n            # task step 2 STOP
     c1_low_qpre = q_pre_rate < 0.30                               # §4.1
     c2_ceiling = chain_rate >= 0.90                               # §4.2

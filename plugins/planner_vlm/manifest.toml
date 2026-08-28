@@ -1,5 +1,5 @@
 # The planner_vlm card: a VLM-backed TaskPlanner behind the SAME plan(brief)
-# seam the deterministic planners fill (docs/vlm-graph-paper-plan.md §1).
+# seam the deterministic planners fill (local-archive/docs/retired-from-public/vlm-graph-paper-plan.md §1).
 #
 # No [mounts]: task.planner is mounted per-task by the runtime's binding
 # override, so this card declaring only task_bindings leaves the folded base

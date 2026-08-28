@@ -15,7 +15,7 @@ Sibling of ``plugins/inventory_build/planner.py`` (M6), one file, two halves:
   ``verify-X`` failure (the segment lifted the object but the frozen policy can
   not carry it to its bin) is UNRECOVERABLE by re-lifting, so the object is
   dropped from the next plan -- the "replan over the REMAINING sub-goals in the
-  same context" of docs/m7-persistent-mission.md §2c. A ``clear-X`` failure (the
+  same context" of local-archive/docs/retired-from-public/m7-persistent-mission.md §2c. A ``clear-X`` failure (the
   grasp slipped) IS recoverable: the base loop re-dispatches it in the SAME world
   (in-episode retry) until ``_MAX_SEG_RETRIES``, then the object is skipped too.
   The skip set is derived PURELY from the fault stream (instance state the loop's
@@ -43,7 +43,7 @@ import numpy as np
 #: lower-case object name (robosuite ``object_to_id`` key) -> its obs pose key.
 _OBJECTS: tuple[str, ...] = ("milk", "bread", "cereal", "can")
 #: A ``clear-X`` grasp that slips is re-driven in the SAME world this many times
-#: before the object is skipped (docs/m7-persistent-mission.md §2c retry budget).
+#: before the object is skipped (local-archive/docs/retired-from-public/m7-persistent-mission.md §2c retry budget).
 #: A ``verify-X`` failure skips immediately -- re-lifting can not place it.
 _MAX_SEG_RETRIES = 2
 
@@ -89,7 +89,7 @@ PREDICATES: dict[str, str] = {
 #: The ONE persistent episode's spec block (workload._episode_spec kwargs): a
 #: mode-0 PickPlace staging all four objects, driven at the phase-3 operating
 #: point. horizon well above the nominal so four segments + retries + recovery
-#: splices fit under robosuite's hard ceiling (docs/m7-persistent-mission.md §0).
+#: splices fit under robosuite's hard ceiling (local-archive/docs/retired-from-public/m7-persistent-mission.md §0).
 EPISODE: dict[str, Any] = {
     "task": "clearall",
     "percept_noise": 0.012,
@@ -283,7 +283,7 @@ def _verify_placed(node: Mapping, ctx) -> dict:
     """VERIFY: the object named in this node's args is resting in its bin RIGHT
     NOW -- ``_in_bin`` on the live persistent env + obs. On False the loop's
     existing fault->replan fires; the planner then drops this object and continues
-    the others in the SAME world (docs/m7-persistent-mission.md §2c). This is the
+    the others in the SAME world (local-archive/docs/retired-from-public/m7-persistent-mission.md §2c). This is the
     live-state, consequence-carrying verify that M6 (reset-based) could not have."""
     ep = _episode(ctx)
     obj = (node.get("args") or {}).get("object")

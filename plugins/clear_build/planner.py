@@ -21,7 +21,7 @@ mostly at the ungoverned grasp-cube first node (52 ungoverned deaths vs 31 at th
 governed stack node), so stack governance could not touch the headline. Ordering
 stack first makes every chain reach it (no ``q_pre`` dilution on the governed
 node) and makes it the node chains actually die at, which is the precondition
-the §4.3 go/no-go gate checks before any dev burn (docs/long-horizon-design.md
+the §4.3 go/no-go gate checks before any dev burn (local-archive/docs/retired-from-public/long-horizon-design.md
 §1, §4.1, §4.3). The clear-then-build narrative is the deliberate cost.
 """
 

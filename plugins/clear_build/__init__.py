@@ -15,7 +15,7 @@ boot. Each node's governance is the bundle its task's mounted skills assemble to
 (``plugins.task.workload.assemble_bundle``): a stack node pulls BOTH the stack-g1
 regrasp and place-g2 replace families into one Bundle when their sealed records
 are mounted -- the mission's "both governance families on one node" without any
-new promotion. See docs/long-horizon-design.md.
+new promotion. See local-archive/docs/retired-from-public/long-horizon-design.md.
 
 The planner/catalogue/oracles are this card's own from-scratch vocabulary
 (skill_geometric_grasp pattern), imported by ref, never by a sibling import

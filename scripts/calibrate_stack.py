@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline difficulty calibration for the Stack baseline policy.
 
-Two passes, run in order (docs/difficulty-calibration.md discipline):
+Two passes, run in order (local-archive/docs/retired-from-public/difficulty-calibration.md discipline):
 
   pass A  fix percept sd, sweep the place/release height knob to seat cubeA
           reliably BEFORE difficulty is measured (a wrong seat height makes

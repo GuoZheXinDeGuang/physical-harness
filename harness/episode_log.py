@@ -6,7 +6,7 @@ dsh keeps every model-visible fact in an append-only session log, but a chat
 turn is ~10 events while a 20 Hz episode is 100 control steps and a campaign is
 thousands of episodes. dsh already solved the same pressure once, packing many
 ``assistant/chunk`` rows into a single ``text-chunks`` row that keeps per-chunk
-timing (see the packed row in docs/verified-environment.md). Governor uses the
+timing (see the packed row in local-archive/docs/retired-from-public/verified-environment.md). Governor uses the
 same split: a handful of semantic ROWS per episode, and the per-step feature
 values as one columnar BLOCK addressed by content hash.
 

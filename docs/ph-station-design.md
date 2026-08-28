@@ -1,7 +1,7 @@
 # ph-station design — the physical-harness console (fork of deepseek-harness)
 
 Status: design, 2026-08-24. Supersedes the *overlay* half of
-`docs/dsh-cockpit-design.md` (npx + `rebrand.sh` string-patching). It does **not**
+`local-archive/docs/retired-from-public/dsh-cockpit-design.md` (npx + `rebrand.sh` string-patching). It does **not**
 re-open the seam ruling: the MCP inbox seam, the killed board HTTP shell, and the
 two-mode rule all stand. This doc specifies the **fork** (`ph-station`), which now
 holds the console *code*; design capital lives here in the motherboard repo.
@@ -41,7 +41,7 @@ it does not contradict it:
   statistics, no gate decisions in TypeScript. The fork adds *presentation*
   (brand, panels) and *transport* (a data bridge). Every number a panel shows is
   computed in `board/store.py` (Python) and rendered verbatim. This is the
-  "GUI 同源" rule from `docs/motherboard-design.md`: MCP tool, CLI, and GUI panel
+  "GUI 同源" rule from `local-archive/docs/retired-from-public/motherboard-design.md`: MCP tool, CLI, and GUI panel
   are three call-faces of the *same* `board.store` functions; logic lives in one
   place.
 - **Two-mode rule is untouched.** The console is an operator surface. Mode
@@ -131,7 +131,7 @@ TypeScript** (render only).
 
 **(a) A thin Python JSON-HTTP service in `board/` that panels `fetch`.**
 Rejected. This is exactly `scripts/rsi_board.py` — the HTTP shell round 95
-*deleted* (`docs/dsh-cockpit-design.md` rung 4). It reintroduces a second
+*deleted* (`local-archive/docs/retired-from-public/dsh-cockpit-design.md` rung 4). It reintroduces a second
 long-running server on a second port, cross-origin to the dsh app at
 `127.0.0.1:3080` (CORS + its own trust fence to re-implement), and a second thing
 for the cockpit to supervise. Reversing a landed deletion for no gain.
@@ -151,7 +151,7 @@ right and is what (c) keeps.
 
 **(c) [CHOSEN] A fork host bridge over the harness's CLI call-face.**
 Logic stays in `board/store.py`. Expose it to panels through the charter's own
-model — `docs/motherboard-design.md`: "MCP 与 CLI 是同一函数的两个调用面". The MCP
+model — `local-archive/docs/retired-from-public/motherboard-design.md`: "MCP 与 CLI 是同一函数的两个调用面". The MCP
 face (`board/mcp_server.py`) serves the LLM/chat; add the **CLI face** for the
 panel transport, and bridge it to the browser same-origin through the dsh gateway.
 
