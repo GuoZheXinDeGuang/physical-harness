@@ -1,4 +1,8 @@
 .venv
+# machine-local console config + credentials; the committed template is
+# .env.example. NO trailing slash -- a pattern with one matches only a
+# directory, and this repo has already lost data to `runs/` failing that way.
+.env
 # per-sim interpreters + third-party sim checkouts (docs/sim-adaptation.md);
 # venvs and cloned sim repos never enter git
 sims/

@@ -32,10 +32,10 @@ Two ways:
   `import sys; sys.modules["robosuite"] = sys.modules["mujoco"] = None`, on
   `PYTHONPATH`, then `pytest -m "not robosuite"`.
 
-## current snapshot (2026-08-28, isolated, robosuite blocked)
+## current snapshot (2026-08-29, isolated, robosuite blocked)
 
 ```
-pass       : 717 passed
+pass       : 728 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -49,10 +49,25 @@ skips      : 32 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              [2] test_policy_vla_remote.py     policy_remote extra not installed
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~10.0s
+wall time  : ~18.2s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +11 over the node-level-RSI snapshot (717 -> 728, skips unchanged at 32) is
+`tests/test_deploy_profile.py`: the fresh-clone deploy path. The console's
+`$DSH_HOME/cordis.patch.yml` used to be a MANUAL copy of a committed file that
+carried three absolute paths under one operator's home -- so a clone on another
+machine reached a console with no `mcp__physical-harness__*` tools at all and the
+agent silently fell back to native bash. The committed file is now a TEMPLATE and
+`profiles/dsh/deploy_profile.py` renders it (cockpit runs it before serving).
+What is pinned: the template carries no home directory at all, every `PH_`
+placeholder is substituted (an unknown one raises rather than reaching the
+deployed file), paths come from the repo root and stay valid YAML when that root
+contains a space, `.env` moves the model route while a credential in the same
+file is never rendered, the console default preset is `physical`, the write is
+idempotent and leaves no temp residue, and `settings.yaml` -- which outranks the
+patch -- is reported and never written. Sim-free, no seeds burned.
 
 The +13 over the vlm-graph branch tip (704 -> 717) is `main`'s own node-level
 RoboCasa RSI work (`e73476b`) arriving through the merge: its kitchen recovery
@@ -247,9 +262,11 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `709 passed, 29 skipped` (re-measured
-2026-08-28 with the submit-advisory tests; 678 base + 28 robosuite-marked
-+ the 3 camera-env skips that convert to passes when the card is present) (the robocasa-marked
+Full-suite parity (card present): `759 passed, 29 skipped` (re-measured
+2026-08-29 with the deploy-profile tests; 728 base + 28 robosuite-marked
++ the 3 camera-env skips that convert to passes when the card is present).
+This line had gone stale at `709` -- the arithmetic was last done in the
+678-base era and the base count moved to 717 without it (the robocasa-marked
 items also skip in the harness .venv — robocasa is not installed there either, and
 the 1 libero-marked item likewise runs only in sims/libero-venv; the robocasa items
 run only in sims/robocasa-venv via `pytest -m robocasa` → `13 passed, 5 xfailed`;
@@ -280,7 +297,14 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
 - the two 30-秒上手 commands in README work as written: the `dev` extra carries
   everything collection needs (including `mcp` for the both-faces tests)
 
-A fresh clone that shows a FAILURE (not a skip) is a real regression.
+A fresh clone that shows a FAILURE (not a skip) is a real regression, with ONE
+known exception, measured 2026-08-29 on a real fresh clone
+(`713 passed, 1 failed, 23 skipped, 51 deselected` on the both-marker lane):
+`test_runtime_campaign.py::test_burned_range_brief_is_rejected_without_spawning`
+asserts against burned block 41000-41580 in the REAL seed ledger, and `STATUS.md`
+is untracked operator state -- a clone has no ledger, so nothing is burned and
+the brief is (correctly, per the runtime's own rule) accepted. Copying a
+`STATUS.md` in makes it pass. The test needs a ledger of its own, not the box's.
 
 ## repeat-offender: keep this snapshot + the two README counts in lockstep
 

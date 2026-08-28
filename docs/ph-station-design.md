@@ -550,7 +550,7 @@ time.** Either stop the server for a calibration run, or move the backbone to a
 smaller multimodal checkpoint (8-14 B AWQ, ~8-10 GB) — the route is
 configuration, so swapping the model is one edit in the patch below.
 
-### Console — `profiles/dsh/cordis.patch.yml`
+### Console — `profiles/dsh/cordis.patch.template.yml`
 
 `llm-pi-ai` is mounted **dormant** by the base bundle (zero routes) exactly so a
 deployment can declare its own, so the row is a bare `- id:` **override** — the
@@ -566,22 +566,37 @@ loopback, but a hand-declared route has no catalog and `llm-pi-ai`'s
 `provider.ts:132` therefore always declares apiKey auth for it — there is no
 spelling for "keyless". Omitting `apiKeyEnv` fails every request up front with
 `PI_AI_ERROR: No API key for provider: local-qwen`. The route names
-`LOCAL_QWEN_API_KEY` and the value lives in `$DSH_HOME/.credentials.yaml`
-(mode 0600), never in this repo. sglang ignores the header.
+`PH_MODEL_KEY_ENV` (default `LOCAL_QWEN_API_KEY`) and the value lives in the
+repo's git-ignored `.env` or `$DSH_HOME/.credentials.yaml`, never in a committed
+file. sglang ignores the header.
 
-### Deploy — two files, and the second is the one that runs
+### Deploy — the template is committed, the rendered file is what runs
 
-`scripts/cockpit` does **not** deploy this patch. `$DSH_HOME/cordis.patch.yml` is
-a manual copy, so editing the repo file alone changes nothing:
+`scripts/cockpit` renders `$DSH_HOME/cordis.patch.yml` on every start, from the
+committed template, through `profiles/dsh/deploy_profile.py` (idempotent, atomic,
+no third-party dependency). A failed render **refuses to serve**: without that
+file the agent has no `mcp__physical-harness__*` tools and falls back to native
+bash, the ungoverned path the MCP server exists to prevent — the exact failure a
+fresh clone hit, because for one round nothing deployed the patch at all and the
+committed copy carried three absolute paths under one operator's home.
 
-```
-cp profiles/dsh/cordis.patch.yml ~/.dsh/cordis.patch.yml
-```
+Every path in the rendered file is derived from the repo root. The variable part
+— backbone `base_url` / model id / display name / `apiKeyEnv`, console port,
+optional trusted host — comes from the repo root's git-ignored `.env`
+(`.env.example` is committed and documents each key). `.env` is also the console's
+own credential layer: dsh resolves keys as process env > `$DSH_HOME/.credentials.yaml`
+> `<cwd>/.env` > `$DSH_HOME/.env`, and cockpit `cd`s to the repo root before
+`exec node … web` so that `<cwd>` is deterministic.
 
-`$DSH_HOME/settings.yaml` **wins over the entry config**, so its
-`agent-default-model:` section was switched to `local-qwen`/`qwen3.8-27b` in the
-same change — patching only the cordis row would have left every new session on
-DeepSeek. Settings are hot-reloaded; the cordis row needs a console restart.
+Two pieces of host state outrank the patch, so the deploy only **reports** them
+and never writes:
+
+- `$DSH_HOME/settings.yaml`'s `agent-default-model:` **wins over the entry
+  config** — an existing dsh install keeps its own default model until it is
+  changed there too. Settings are hot-reloaded; the cordis row needs a console
+  restart.
+- `reasoningEffort: high` in the same file fights the `physical` preset's
+  one-call dispatch. It is operator state; nothing here changes it.
 
 Verify against the **runtime**, not the files:
 

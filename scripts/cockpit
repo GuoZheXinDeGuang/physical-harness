@@ -35,13 +35,13 @@
 #   (the pre-fork npx + profiles/dsh/rebrand.sh overlay retired once the fork
 #   reached parity -- see docs/ph-station-design.md §6.)
 #
-# the harness MCP integration is loaded automatically by dsh from
-# $DSH_HOME/cordis.patch.yml -- there is NO `--patch` flag on `dsh web`. the fork
-# inherits the `- insert:` mcp-physical-harness row from $DSH_HOME.
+# the harness MCP integration is loaded from $DSH_HOME/cordis.patch.yml -- there
+# is NO `--patch` flag on `dsh web`. That file is RENDERED here on every start by
+# profiles/dsh/deploy_profile.py from the committed template; a fresh clone
+# therefore reaches a tool-equipped console with no manual copy.
 set -o pipefail
 set -u
 
-PORT=3080
 DO_STOP=0
 NO_RUNTIME=0
 NO_RENDER=0
@@ -58,10 +58,12 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
        cockpit --stop
        cockpit -h|--help
 
-  --port N       port to serve the console on (default: 3080)
+  --port N       port to serve the console on (default: PH_CONSOLE_PORT from
+                 the repo's .env, else 3080)
   --trusted-host H  also trust gateway requests arriving via host H (dsh binds
                  127.0.0.1 only; pair this with a LAN forward like socat when
-                 the operator's browser is on another machine)
+                 the operator's browser is on another machine). Default:
+                 PH_TRUSTED_HOST from the repo's .env, else unset.
   --no-render    spawn the runtime headless even with a display attached
                  (default: --render IFF \$DISPLAY is set; the runtime refuses
                  --render without a display)
@@ -76,6 +78,10 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
                  exact PIDs in each session's pidfile. An ADOPTED runtime is left
                  running. Reaps every session (main + robocasa) it recorded.
   -h, --help     show this help
+
+Before serving it renders \$DSH_HOME/cordis.patch.yml from
+profiles/dsh/cordis.patch.template.yml (the console's MCP tools, LLM route and
+default agent preset) and seeds the workspace record. Both are idempotent.
 
 Starting (no --stop) brings up three things and leaves them running:
   1. the resident harness_runtime on $SESSION_DIR --
@@ -95,6 +101,32 @@ serves the ph-station fork build (native brand). use this instead of running
 EOF
 }
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO="$(cd "$HERE/.." && pwd -P)"
+
+# Defaults come from the repo root's git-ignored .env (see .env.example); a flag
+# below still wins. The file is READ, never sourced -- exporting it would put
+# credentials in the process environment, which outranks the console's own
+# credential store and would shadow a key the Models page writes. Same parse
+# rules as profiles/dsh/deploy_profile.py: comment lines and blanks skipped,
+# `export ` dropped, one layer of matching quotes stripped, last assignment wins.
+_env_get() {
+  [ -f "$REPO/.env" ] || return 0
+  local line out=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$1="*)          out="${line#*=}";;
+      "export $1="*)   out="${line#*=}";;
+      *) continue;;
+    esac
+  done < "$REPO/.env"
+  out="${out%\"}"; out="${out#\"}"; out="${out%\'}"; out="${out#\'}"
+  printf '%s' "$out"
+}
+
+PORT="$(_env_get PH_CONSOLE_PORT)"; PORT="${PORT:-3080}"
+TRUSTED_HOST="$(_env_get PH_TRUSTED_HOST)"
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --port)   PORT="${2:?--port needs a value}"; shift 2;;
@@ -110,8 +142,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO="$(cd "$HERE/.." && pwd -P)"
 PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"
 # robocasa runtime interpreter: its venv is a SIBLING of the repo (see
 # docs/sim-adaptation.md §0 -- numpy 1/2 ABI forces a separate venv), overridable.
@@ -349,6 +379,26 @@ if [ ! -f "$DIST" ] || [ ! -f "$BIN" ]; then
   exit 1
 fi
 
+# A fresh clone has no runs/ -- it is gitignored evidence. board/mcp_server.py
+# REFUSES to start on a missing runs dir (a deliberate typo guard), so without
+# this the console comes up with the harness MCP row failing to compose and the
+# agent silently toolless. The runtime path already mkdirs its own session dir;
+# this covers --no-runtime and the very first start after a clone.
+mkdir -p "$REPO/runs"
+
+# render $DSH_HOME/cordis.patch.yml from the committed template. This is what
+# gives the console its mcp__physical-harness__* tools, its LLM route and the
+# `physical` agent preset, and dsh has no --patch flag, so the file must exist
+# BEFORE the server starts. It is the one step that must never fail quietly:
+# without it the agent has no harness tools at all and falls back to native
+# bash -- the ungoverned path the MCP server exists to prevent.
+if ! python3 "$REPO/profiles/dsh/deploy_profile.py" --repo "$REPO" --dsh-home "$DSH_HOME"; then
+  echo "cockpit: ERROR could not render $DSH_HOME/cordis.patch.yml" >&2
+  echo "cockpit: WITHOUT IT THE AGENT HAS NO mcp__physical-harness__* TOOLS -- it" >&2
+  echo "cockpit:   falls back to native bash, the ungoverned path. Refusing to serve." >&2
+  exit 1
+fi
+
 # seed the workspace user-data record (orthogonal to brand; native brand does
 # not seed a workspace). MUST run before the server starts -- the server holds
 # the workspace unit open and republishes the whole file on every mutation.
@@ -366,4 +416,8 @@ export PH_BOARD_REPO="${PH_BOARD_REPO:-$REPO}"
 export PH_BOARD_RUNS="${PH_BOARD_RUNS:-$REPO/runs}"
 
 echo "cockpit: serving physical-harness console (fork build) at http://127.0.0.1:$PORT" >&2
+# cd to the repo root FIRST: dsh's credential store falls back to `<invocation
+# cwd>/.env`, so without this the keys the console can see depend on which
+# directory the operator happened to type the command in.
+cd "$REPO" || { echo "cockpit: ERROR cannot cd to $REPO" >&2; exit 1; }
 exec node "$BIN" web --no-open --port "$PORT" ${TRUSTED_HOST:+--trusted-host "$TRUSTED_HOST"}

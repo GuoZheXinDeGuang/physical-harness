@@ -109,6 +109,33 @@ full recipe. Two traps to know up front:
 + pnpm; it is not launched standalone — `scripts/cockpit` builds it and serves it. The panels read
 the board over MCP and `POST /api/board/<fn>`; briefs go in via `submit_brief`.
 
+### Fresh clone → a working console
+
+Four commands, nothing copied by hand:
+
+```bash
+git clone https://github.com/Z-Robotics-Lab/physical-harness && cd physical-harness
+uv venv && uv pip install -e ".[dev]"   # the MCP server runs under THIS interpreter
+cp .env.example .env                    # then edit: backbone base_url / model id / its key
+scripts/cockpit                         # renders the console config, then serves :3080
+```
+
+`$DSH_HOME/cordis.patch.yml` is what gives the browser agent its `mcp__physical-harness__*` tools,
+its LLM route, and the `physical` agent preset (which mounts no shell and no filesystem — a
+dispatch is one `run_task` call). dsh has no `--patch` flag, so that file must exist before the
+server starts: cockpit renders it from `profiles/dsh/cordis.patch.template.yml` on every start and
+**refuses to serve if it cannot** — without it the agent silently falls back to native bash.
+
+Every path in it is derived from the repo root, so a clone anywhere works. The variable part lives
+in the git-ignored `.env` (`.env.example` documents every key): the backbone route, the console
+port, and the API key. `.env` is also dsh's own credential layer — it resolves keys as process env
+> `$DSH_HOME/.credentials.yaml` > `<cwd>/.env` > `$DSH_HOME/.env`, and cockpit `cd`s to the repo
+root before serving so `<cwd>` is always this checkout.
+
+Two things live in `$DSH_HOME/settings.yaml`, outrank the generated config, and are yours — the
+deploy only prints a note: `agent-default-model:` **wins over** the rendered model row, and
+`reasoningEffort: high` fights the `physical` preset's one-call dispatch.
+
 ## Run
 
 ```bash
@@ -144,6 +171,6 @@ plugin/card model, and how to write a card all live in [ARCHITECTURE.md](ARCHITE
 
 Always use `python -m pytest` (not `bin/pytest`, which drops cwd from `sys.path` and yields
 spurious collection errors). The **base fast lane** is `pytest -m "not robosuite and not
-robocasa"`, run isolated with the sim cards absent: **717 passed, 32 skipped, 28 deselected**.
+robocasa"`, run isolated with the sim cards absent: **728 passed, 32 skipped, 28 deselected**.
 The snapshot format and the isolation recipe are in [docs/base-gate.md](docs/base-gate.md); refresh
 that file and this line in the same commit whenever the count moves.

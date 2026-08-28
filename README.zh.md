@@ -97,6 +97,32 @@ python -m pytest -m "not robosuite and not robocasa"   # 基座车道
 + pnpm；它不独立启动——由 `scripts/cockpit` 构建并托管。面板通过 MCP 与 `POST /api/board/<fn>`
 读取 board；brief 经由 `submit_brief` 投入。
 
+#### 全新 clone → 一个能用的控制台
+
+四条命令，不需要手工拷贝任何文件：
+
+```bash
+git clone https://github.com/Z-Robotics-Lab/physical-harness && cd physical-harness
+uv venv && uv pip install -e ".[dev]"   # MCP server 就跑在这个解释器下
+cp .env.example .env                    # 然后编辑：backbone 的 base_url / model id / key
+scripts/cockpit                         # 渲染控制台配置，然后在 :3080 提供服务
+```
+
+`$DSH_HOME/cordis.patch.yml` 才是给浏览器 agent 提供 `mcp__physical-harness__*` 工具、LLM
+route 与 `physical` agent preset（不挂 shell、不挂文件系统——一次派发就是一次 `run_task`）的
+东西。dsh 没有 `--patch` 参数，所以这个文件必须在服务启动前就存在：cockpit 每次启动都从
+`profiles/dsh/cordis.patch.template.yml` 渲染它，**渲染不成就拒绝启动**——没有它 agent 会静默
+退回原生 bash。
+
+文件里的路径全部由仓库根推导，所以 clone 到哪都能用。可变项在 git-ignored 的 `.env` 里
+（`.env.example` 逐项注释）：backbone route、控制台端口、API key。`.env` 同时就是 dsh 自己的
+凭据层——它的优先级是 进程环境 > `$DSH_HOME/.credentials.yaml` > `<cwd>/.env` >
+`$DSH_HOME/.env`，而 cockpit 在启动服务前会 `cd` 到仓库根，所以 `<cwd>` 恒等于这个 checkout。
+
+有两项在 `$DSH_HOME/settings.yaml` 里，优先级高于生成的配置，且属于你自己的状态——部署脚本只
+打印提示，不改动：`agent-default-model:` **会盖过**渲染出来的模型行；`reasoningEffort: high`
+与 `physical` preset 的一步派发相冲。
+
 ### 运行
 
 ```bash
@@ -128,6 +154,6 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/parity_check.py <archived_ca
 
 始终使用 `python -m pytest`（不要用 `bin/pytest`，它会把 cwd 从 `sys.path` 中移除并产生虚假的
 收集错误）。**基座快车道**是 `pytest -m "not robosuite and not robocasa"`，在仿真卡片缺席的隔离
-环境下运行：**717 passed, 32 skipped, 28 deselected**。快照格式与隔离流程见
+环境下运行：**728 passed, 32 skipped, 28 deselected**。快照格式与隔离流程见
 [docs/base-gate.md](docs/base-gate.md)；每当计数变动时，请在同一个 commit 中刷新该文件与本行。
 

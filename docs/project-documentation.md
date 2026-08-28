@@ -52,13 +52,18 @@ physical-harness/
 │     plugin_doctor.py     card 体检
 │
 ├── profiles/dsh/     ← 注意：控制台的配置在这里，不在 ph-station
-│     cordis.patch.yml    MCP server 注册 + LLM route
+│     cordis.patch.template.yml  MCP server 注册 + LLM route + 默认 preset
+│     deploy_profile.py   把模板渲染到 $DSH_HOME/cordis.patch.yml
 │
 └── runs/             证据（gitignored）
 ```
 
-**关键**：`profiles/dsh/cordis.patch.yml` 在 physical-harness 里。控制台的配置
-由 harness 仓库拥有——换模型、注册 MCP server 都改这个文件。
+**关键**：控制台的配置在 physical-harness 里，由 harness 仓库拥有——换模型、注册
+MCP server 都改 `profiles/dsh/cordis.patch.template.yml`（模板里没有任何绝对家目录，
+路径全从仓库根推导）。`scripts/cockpit` 每次启动都用 `deploy_profile.py` 把它渲染成
+`$DSH_HOME/cordis.patch.yml`；渲染失败就拒绝启动，因为没有那个文件 agent 就没有
+`mcp__physical-harness__*` 工具，会退回原生 bash。可变项（base_url / model id / 显示名 /
+apiKeyEnv / 端口）来自仓库根的 `.env`，见 `.env.example`。
 
 ### ph-station 里有什么
 
@@ -112,7 +117,7 @@ ph-station 从不直接读 `runs/`。它只会调 dsh-ph-board，后者 exec sto
         → JSON 逐字返回，TS 只负责画
 ```
 
-配置由 ① 那条线的 `profiles/dsh/cordis.patch.yml` 注入。
+配置由 ① 那条线的 `profiles/dsh/cordis.patch.template.yml` 渲染后注入。
 
 ### 谁拥有什么决策
 
