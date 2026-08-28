@@ -29,18 +29,19 @@ from board import mcp_server as ms
 
 def _live_session(tmp_path: Path, name: str):
     """A real session dir whose runtime_status.json points at a LIVE process
-    running ``harness_runtime.py --session-dir <this session>`` under this
-    interpreter -- the production cmdline, because the liveness guard reads the
-    session dir back out of argv (a runtime that does not name THIS session is
-    not ours: sibling sessions share an interpreter and one pid space)."""
+    running ``harness_runtime.py`` under this interpreter."""
     runs = tmp_path / "runs"
     runs.mkdir(exist_ok=True)
     _session(runs, name)
     fake = tmp_path / "harness_runtime.py"
     fake.write_text("import time; time.sleep(60)\n")
-    proc = subprocess.Popen(
-        [sys.executable, str(fake), "--session-dir", str(runs / name)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # --session-dir rides the argv because board.store.runtime_liveness checks
+    # WHICH session a pid serves (this box runs three runtimes at once, so a
+    # recycled pid must not vouch for the wrong one) -- without it the session
+    # reads as dead and every brief here comes back `stalled`.
+    proc = subprocess.Popen([sys.executable, str(fake),
+                             "--session-dir", str(runs / name)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     (runs / name / "runtime_status.json").write_text(json.dumps({"pid": proc.pid}))
     return runs, proc
 

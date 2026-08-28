@@ -613,3 +613,135 @@ curl -s -X POST http://127.0.0.1:3080/api/llm.models -H 'Content-Type: applicati
 cockpit **spawned** the resident runtime — `cockpit --stop` would then kill it.
 To restart only the console, `kill` the exact `web_pid` and start cockpit again;
 it re-adopts the live runtimes (`adopting resident runtime … not restarting`).
+
+## 10. 静默失败面 — the brief pipeline audited end to end (2026-08-29)
+
+Three incidents in three days, all one disease: **a piece of the pipeline was
+dead and every face still read normal.**
+
+- **08-27** an RSI brief was dropped into a session whose runtime had died. It
+  lay in `inbox/` for 21 hours. Nothing said so.
+- **08-28** the web process was reaped with the terminal that started it. Every
+  runtime was alive; the one surface the operator uses was gone. (Fixed by
+  `setsid` in `runtime_up` + the console detach.)
+- **08-29** `session-robocasa`'s runtime had been dead for hours; its leftover
+  `runtime_status.json` made every face answer *"runtime alive"*, and the agent
+  reported that verbatim while its brief held queue position 1 forever.
+
+The common root: **`runtime_status.json` is a file, and a file outlives the
+process that wrote it.** Nothing in the read path ever asked the kernel whether
+that pid was still there.
+
+### 10.1 The failure-mode table (delivery → claim)
+
+`✅ loud` = the operator or agent is told, by name, without asking a second
+question. Fixed rows are the ones this audit closed.
+
+| # | Failure | Where | Before this audit | Now |
+|---|---|---|---|---|
+| 1 | **Runtime is dead**, brief queued | `harness_runtime` gone; `inbox/` untouched | 🔴 SILENT — `brief_status` → `queued`, position 1, forever. All three incidents. | ✅ `brief_status` → `state: stalled`, `runtime.alive: false` with the reason; `health()` names the session and the count |
+| 2 | **Runtime died holding a brief** (`processing/` orphan) | `_process` interrupted | 🔴 SILENT — `brief_status` → `running` forever; nothing beats, nothing moves | ✅ `state: stalled`, `stalled_from: running` |
+| 3 | **Same brief keeps killing the runtime** (segfault / OOM-kill — nothing `_process`'s `try/except` can catch) | `boot()` re-queue | 🔴 SILENT + **UNBOUNDED**: re-queued on every boot, killed the runtime again, only symptom "the runtime won't stay up" | ✅ `_MAX_REQUEUES = 2` (3 attempts), then `failed/` + a `runtime.task_error` row naming the count → surfaces as `brief_status.outcome` |
+| 4 | **Runtime alive, poll loop wedged** | `main()` loop | 🟠 half-visible — `heartbeat_ts` went stale, but "no beat" is also normal *during* a brief, so no reader could judge it | ✅ `health()` breaks the tie with `processing/`: stale beat **while idle** = wedged, and it says so |
+| 5 | **Wrong mode**: `campaign`/`rsi` brief into an execution session | `_process` | ✅ loud — `ValueError` → `failed/` + `runtime.task_error` → `brief_status.outcome`. But only *after* the claim | ✅ unchanged; `health().sessions[].mode` now lets you check before submitting |
+| 6 | **Session dir does not exist**, non-default session | `store.session_inbox` → `safe_child(is_session)` | ✅ loud — `{"error": "unknown session"}` before any drop | unchanged |
+| 7 | **Session dir does not exist**, DEFAULT session | `store.brief_inbox` bypasses the `is_session` gate on purpose (a first submit may precede the first boot), then `submit_brief` does `inbox.mkdir(parents=True)` | 🔴 SILENT — a typo'd `--session` on `mcp_server`/`cockpit` **creates** `runs/<typo>/inbox/` and the brief rots in a directory no runtime will ever watch | 🟠 partial — `health()` lists every dir with an `inbox/`, so the phantom session shows up as `DOWN` with `queued≥1` and is flagged. The gate itself is deliberately open; see 10.3 |
+| 8 | **Inbox not writable** | `brief_drop.drop` | ✅ loud — `OSError` out of the tool call | unchanged |
+| 9 | **Brief is malformed JSON** | `_process` | 🟠 half-loud — straight to `failed/` **with no chain row** (deliberate: nothing to attribute a note to). `brief_status` → `failed`, `outcome` absent | unchanged, and now honest enough: `failed` is a terminal answer |
+| 10 | **Injected/unknown brief key** | `_BRIEF_KEYS` in `_process` | ✅ loud — `failed/` + `runtime.task_error` | unchanged |
+| 11 | **Unknown task name** | `_run_task` | ✅ loud — `ValueError` listing every known task | unchanged |
+| 12 | **Known task, wrong session** (robocasa mission → `session-main`) | mount time, inside the runtime | 🟠 advisory only — `submit_brief` returns a `warning` when it can prove the target interpreter cannot import the card's `third_party`; silence otherwise. The real refusal is an `ImportError` at mount, in a log nobody reads | unchanged, see 10.2 |
+| 13 | **Console dead, runtimes alive** | node web server | 🔴 SILENT to every harness face (they all read `runs/`) | ✅ `health().console.serving` |
+| 14 | **Model endpoint down** | llama.cpp :30001 | 🟠 only via `model_server("status")`, a separate call | ✅ folded into `health().model` |
+| 15 | **Two runtimes on one session** | `_claim_session` flock | ✅ loud — the second refuses to start and names the holding pid | unchanged |
+| 16 | **Last rename to `done/` fails** | end of `_process` | ✅ loud — `runtime.task_error` row; the brief stays in `processing/` and re-queues next boot | now bounded by row 3 |
+
+**How liveness is decided now** (`board.store.runtime_liveness`): read the pid out
+of `runtime_status.json`, then ask `/proc/<pid>/cmdline` whether that pid is still
+a `harness_runtime` **whose `--session-dir` is this session**. Both halves matter
+— a dead pid is incidents 1/3, and a *recycled* pid would otherwise vouch for the
+wrong session on a box that runs three runtimes at once. It is the same identity
+guard `store._model_identity` applies to the model server. Heartbeat age is
+**reported, never judged** at this layer: the poll loop does not beat while a
+brief runs, so only `health()` — which can also see `processing/` — turns age into
+a verdict.
+
+### 10.2 Can `plugin_doctor` answer "can this session run this task"?
+
+**Not today, and it is one flag away — but the flag belongs to the doctor, not to
+a new script.** What exists:
+
+- `plugin_doctor.check(card)` is **card-oriented and session-blind**. Its Tier A
+  loads every `[task_bindings]` ref through the same `Kernel.provide` gate the
+  runtime uses, and `needs_sim` + missing `third_party` makes it *SKIP*, not fail
+  — "the simulator is absent **here**", where *here* is the interpreter running
+  the doctor. It never asks about another process's venv.
+- `mcp_server._compat_warning` already computes exactly the missing half: it
+  reads the *target session's* interpreter off `/proc/<pid>/cmdline` (argv[0] —
+  `/proc/<pid>/exe` is the same python3 symlink for both venvs and does not
+  discriminate) and asks **that** interpreter, via `importlib.util.find_spec`,
+  which of the card's `third_party` it cannot import.
+
+So the compatibility judgement exists, at the wrong altitude: it fires **per
+submit**, as advice, only when a task's binding carries an `env` ref, and it
+stays silent on every unreadable input (by design — a wrong warning is as bad as
+a wrong doc). What it cannot do is answer *before* you write a brief.
+
+The lazy shape: `plugin_doctor --session <name>` = the existing
+`_compat_warning` probe, lifted into `board/store.py` beside `runtime_liveness`
+(which already resolves a session to its live pid), then run over **every** task
+in the manifest union rather than one — printing a PASS/SKIP line per task, the
+doctor's existing report card. Roughly 30 lines and no new machinery: the
+`third_party` fold, the interpreter probe, and the report card all exist. It is
+NOT built here because nothing yet consumes a pre-submit compatibility answer;
+`health()` closes the operational half (is the session up, in which mode), and
+the mount-time refusal stays the sole authority either way — GOAL v4.2's
+"不合格在 mount 报错" is not softened by a doctor that agrees in advance.
+
+### 10.3 What is still open
+
+- **Row 7** — the default session's inbox is created on demand, on purpose (a
+  first submit may precede the first boot). A typo therefore manufactures a
+  phantom session. `health()` makes it *visible* (it appears `DOWN` with a
+  backlog) but nothing refuses it. Closing it properly means the console
+  declaring its expected session set; that list does not exist yet.
+- **Row 12** — still advisory. A pre-submit `plugin_doctor --session` (10.2) is
+  the shape.
+- **Row 3's ceiling** — `_MAX_REQUEUES` is per-brief and lifetime, so three
+  *operator* restarts during one long brief also spend it. That is loud
+  (`failed/` + a chain row naming the count) and re-submittable, which beats an
+  invisible boot loop. Make it a decaying window only if a real run trips it.
+- `health()` probes the console with a **TCP connect**, not an HTTP GET: a
+  listening socket behind a wedged node process reads as SERVING.
+- **The fork's panels are not wired yet.** `stalled` is a new value on
+  `brief_status.state` and `health` is a new `storecli` fn -- both are served,
+  neither is rendered. A 战报 tile over `health().problems` (a red count plus the
+  lines) and a `stalled` badge on the brief row are ph-station-side work; until
+  then the operator reads them through `scripts/cockpit --status` and the console
+  agent through the `health` tool.
+
+### 10.4 The first command
+
+```
+scripts/cockpit --status        # starts nothing, needs no node; exit 1 = a problem
+```
+
+Same face three ways, one implementation (`board.store.health`) — the charter's
+"MCP 与 CLI 是同一函数的两个调用面":
+
+| face | call |
+|---|---|
+| operator terminal | `scripts/cockpit --status` |
+| console / agent | `mcp__physical-harness__health` |
+| UI bridge / script | `python -m board.storecli health [PORT] --runs runs/` |
+
+It covers, in one call: every intake session's runtime liveness (`/proc`, not the
+status file) + mode + heartbeat age + inbox backlog + `processing/` orphans, then
+the console and the model server. `problems` is the list to read; everything else
+is the evidence behind it.
+
+**A stopped runtime with an empty inbox is deliberately NOT a problem.** Retired
+session dirs outnumber live ones on a real box (`runs/` here holds 20 archived
+campaign stores and 5 intake sessions), and a health face that is permanently red
+is one nobody reads — which is precisely how all three incidents stayed invisible.
+The alarm is about **work that is stuck**, not about processes that are absent.

@@ -24,6 +24,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import time
 import urllib.request
@@ -428,6 +429,94 @@ def submit_brief(runs_dir: str | Path, raw: str, session: str = "session-main",
     return {"submitted": name, "inbox": str(inbox)}
 
 
+# --- runtime liveness --------------------------------------------------------
+#
+# ``runtime_status.json`` is a FILE, and a file outlives the process that wrote
+# it. Every one of the three intake incidents was that single fact: 2026-08-27 an
+# RSI brief sat 21h in a session whose runtime had died; 2026-08-28 the web
+# process was reaped and the runtimes lived on; 2026-08-29 session-robocasa's
+# runtime was long dead, its leftover status file made every face answer
+# "runtime alive", and a brief held queue position 1 forever.
+#
+# So liveness is asked of /proc, never of the status file. The file only names
+# the pid; whether that pid is STILL a harness_runtime serving THIS session dir
+# is the question, and the same pid-recycling guard _model_identity applies to
+# the model server applies here.
+
+#: How stale a heartbeat may get on an IDLE runtime before it reads as wedged.
+#: The poll loop stamps every 10s (harness_runtime.HEARTBEAT_S) but never DURING
+#: a brief -- "busy or dead" is the documented ambiguity, and an empty
+#: processing/ is what breaks the tie, so this threshold only ever judges an idle
+#: runtime (see health()).
+_HEARTBEAT_STALE_S = 60.0
+
+
+def _serves_session(pid: int, session_dir: Path) -> bool:
+    """True iff ``pid`` is live AND is a harness_runtime whose ``--session-dir``
+    IS this session. Both halves matter: a dead pid is the incident above, and a
+    recycled one (this box runs three runtimes) would otherwise vouch for the
+    wrong session. The session dir is compared RESOLVED, so a relative argv
+    (``--session-dir runs/session-main``, the canonical cockpit spawn form) is
+    joined against that process's own cwd -- never ours."""
+    try:
+        argv = [a.decode(errors="replace")
+                for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if a]
+    except (OSError, ValueError):
+        return False
+    if not any("harness_runtime" in a for a in argv):
+        return False
+    try:
+        served = Path(argv[argv.index("--session-dir") + 1])
+    except (ValueError, IndexError):
+        return False
+    if not served.is_absolute():
+        try:
+            served = Path(os.readlink(f"/proc/{pid}/cwd")) / served
+        except OSError:
+            return False
+    try:
+        return served.resolve() == Path(session_dir).resolve()
+    except OSError:
+        return False
+
+
+def runtime_liveness(session_dir: str | Path) -> dict:
+    """Is a resident runtime SERVING this session right now?
+
+    ``{alive, pid, mode, boot_ts, heartbeat_ts, heartbeat_age_s, reason}`` --
+    ``reason`` names why not when ``alive`` is False, and is ``None`` when it is
+    True. Same live-state family as read_runtime_status (no chain verify, never
+    raises), but it JUDGES where that one deliberately does not: the pid is
+    checked against /proc, because the whole class of intake incidents in this
+    repo is a status file that outlived its writer.
+
+    ``heartbeat_age_s`` is reported, never judged here: the poll loop does not
+    beat while a brief runs, so a stale beat on a BUSY runtime is normal. Only
+    health() (which can see processing/) turns age into a verdict.
+    """
+    session_dir = Path(session_dir)
+    status = read_runtime_status(session_dir)
+    if status is None:
+        return {"alive": False, "pid": None, "mode": None, "boot_ts": None,
+                "heartbeat_ts": None, "heartbeat_age_s": None,
+                "reason": "no runtime_status.json -- this session has never booted"}
+    beat = status.get("heartbeat_ts") or status.get("boot_ts")
+    out = {"pid": status.get("pid"), "mode": status.get("mode"),
+           "boot_ts": status.get("boot_ts"), "heartbeat_ts": beat,
+           "heartbeat_age_s": (round(max(time.time() - float(beat), 0.0), 1)
+                               if beat else None)}
+    try:
+        pid = int(status["pid"])
+    except (KeyError, TypeError, ValueError):
+        return {**out, "alive": False, "reason": "runtime_status.json names no pid"}
+    if not _serves_session(pid, session_dir):
+        return {**out, "alive": False,
+                "reason": f"pid {pid} is not a harness_runtime serving "
+                          f"{session_dir.name} (stale runtime_status.json -- the "
+                          "runtime died and left the file behind)"}
+    return {**out, "alive": True, "reason": None}
+
+
 # --- brief lifecycle: status + cancel ----------------------------------------
 #
 # A brief lives in exactly one of five sibling directories under the session,
@@ -569,22 +658,38 @@ def brief_status(session_dir: str | Path, brief_id: str,
     """Where one brief is and what it did -- the ONE call that answers "is my
     long task still running, and did it finish?".
 
-    ``{state, brief_id, session, task, events, [queue_position, ahead_running_s |
-    started_ts, running_s], [outcome]}`` where ``state`` is
-    queued|running|done|failed|cancelled|unknown, derived from which intake
-    directory holds the brief. ``events`` is the tail of the brief's own slice of
-    the operational feed; ``outcome`` appears once there is one.
+    ``{state, brief_id, session, task, runtime, events, [queue_position,
+    ahead_running_s | started_ts, running_s], [outcome]}`` where ``state`` is
+    queued|running|stalled|done|failed|cancelled|unknown, derived from which
+    intake directory holds the brief. ``events`` is the tail of the brief's own
+    slice of the operational feed; ``outcome`` appears once there is one.
+
+    ``stalled`` is the one state NOT read off a directory: an unfinished brief
+    (queued or running) in a session with NO live runtime. The directory answer
+    there is honest and useless -- "queued" for 21 hours reads as "be patient"
+    when the truth is "nobody will ever claim this". ``stalled_from`` keeps the
+    directory answer, ``runtime.reason`` says why, and both a queued brief nobody
+    will claim and a ``processing/`` orphan left by a crash surface the same way,
+    because they are the same problem. Wanted the raw directory state? It is
+    ``stalled_from``.
+
+    ``runtime`` is that session's liveness (runtime_liveness) -- carried on EVERY
+    reply, so a caller polling one brief can never again report progress about a
+    session whose runtime is gone.
 
     ``wait_ms`` long-polls exactly like read_runtime_frame: block up to that long
     (capped board-side) for the state to CHANGE, then answer with the current
     state. Waiting out the cap is not an error -- the reply says ``running`` and
-    the caller may wait again. A brief already in a terminal state never blocks.
+    the caller may wait again. A brief already in a terminal state never blocks,
+    and neither does a STALLED one: waiting 30s for a dead runtime to claim
+    something is the exact non-answer this face exists to stop giving.
 
     Live state, never sealed evidence: no chain verify, and it never raises.
     """
     session_dir = Path(session_dir)
     state, path = _brief_locate(session_dir, brief_id)
-    if wait_ms > 0 and state not in _BRIEF_TERMINAL:
+    runtime = runtime_liveness(session_dir)
+    if wait_ms > 0 and state not in _BRIEF_TERMINAL and runtime["alive"]:
         deadline = time.monotonic() + min(int(wait_ms), _BRIEF_WAIT_CAP_MS) / 1000.0
         while time.monotonic() < deadline:
             time.sleep(_BRIEF_WAIT_TICK_S)
@@ -595,7 +700,10 @@ def brief_status(session_dir: str | Path, brief_id: str,
     events = read_runtime_events(session_dir)["events"]
     seg = _brief_events(events, brief_id)
     out = {"state": state, "brief_id": brief_id, "session": session_dir.name,
-           "task": _brief_selector(path), "events": seg[-_BRIEF_EVENTS:]}
+           "task": _brief_selector(path), "runtime": runtime,
+           "events": seg[-_BRIEF_EVENTS:]}
+    if state in ("queued", "running") and not runtime["alive"]:
+        out["state"], out["stalled_from"] = "stalled", state
     if state == "queued":
         queue = _brief_queue(session_dir)
         if brief_id in queue:
@@ -1294,6 +1402,123 @@ def model_server(action: str = "status", runs_dir: str | Path = ".") -> dict:
             return {**_model_state(), "error": f"kill {pid} failed: {exc}"}
         pidfile.unlink(missing_ok=True)
     return _model_state()
+
+
+# --- system health: the ONE first command --------------------------------------
+#
+# Three incidents, one shape: a piece of the pipeline was dead and every face
+# still read normal, because no face was asked "is the SYSTEM up" -- only "what
+# does this file say". This is that question, answered in one call over the
+# pieces a brief actually travels through: a runtime per session (alive by /proc,
+# not by its own leftover file), what is stacked up in each inbox, orphans left
+# in processing/, the console the operator drives it from, and the model server.
+#
+# ``problems`` is the payload. An operator (or an agent) reads that list first
+# and nothing else; ``ok`` is just ``not problems``. Every entry names the
+# session and what to do about it, because a health line that says "degraded"
+# with no subject is how the last three incidents stayed invisible.
+
+#: The console's default port (cockpit's own default when .env sets none). The
+#: cockpit face passes the port it actually resolved; only a bare call guesses.
+_CONSOLE_PORT = 3080
+#: Console probe budget: a TCP connect, no HTTP -- a listening socket is the
+#: whole question and a wedged server must not stall the health read behind it.
+_CONSOLE_PROBE_S = 1.0
+
+
+def _serving(port: int) -> bool:
+    """True iff something accepts a TCP connection on 127.0.0.1:port."""
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), _CONSOLE_PROBE_S):
+            return True
+    except OSError:
+        return False
+
+
+def _count(d: Path) -> int:
+    try:
+        return sum(1 for _ in d.glob("*.json"))
+    except OSError:
+        return 0
+
+
+def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> dict:
+    """Is my system healthy RIGHT NOW -- one call, whole pipeline.
+
+    ``{ok, problems, sessions, console, model, ts}``.
+
+    * ``sessions`` -- every INTAKE session under runs/, i.e. every dir with an
+      ``inbox/``. That is the exact set a brief can be dropped into, including a
+      dir a submit created before any runtime booted; a campaign store also
+      carries a session-log but has no inbox, so ``is_session`` would drag 20
+      archived stores in here and bury the four that matter. Each is ``{name,
+      mode, alive, pid, heartbeat_age_s, queued, processing, done, failed,
+      reason}``.
+    * ``console`` -- ``{port, serving}``: is the UI the operator actually uses up?
+      The 2026-08-28 incident was live runtimes behind a dead console.
+    * ``model`` -- ``_model_state()`` verbatim (running/healthy/vram). Reported,
+      never flagged: stopping the model to hand ~19 GB back to the simulator is a
+      normal operator move, not a fault.
+
+    ``problems`` (the thing to read) flags exactly what needs a hand NOW:
+
+    * briefs waiting on a session with no live runtime -- ALL THREE incidents;
+    * a runtime that is alive but has not beaten while IDLE (busy-vs-dead is only
+      ambiguous while processing/ is non-empty, so an empty one turns a stale
+      beat into a verdict: a wedged poll loop, never an operator's choice);
+    * more than one brief in processing/ (a runtime claims serially, so the
+      extras are crash orphans);
+    * a console that is not serving.
+
+    A stopped runtime with an EMPTY inbox is NOT a problem -- it is reported
+    ``alive: false`` in ``sessions`` and left there. Retired sessions outnumber
+    live ones on a real box, and a health face that is permanently red is one
+    nobody reads, which is how the three incidents stayed invisible in the first
+    place.
+
+    Same live-state family as host_vitals: a plain sample of the box, never a
+    chain row, no verify -- and it never raises, because the command an operator
+    reaches for when things are broken must not be the next broken thing.
+    """
+    runs_dir = Path(runs_dir)
+    problems: list[str] = []
+    sessions = []
+    try:
+        entries = sorted(p for p in runs_dir.iterdir() if (p / "inbox").is_dir())
+    except OSError:
+        entries = []
+    for p in entries:
+        live = runtime_liveness(p)
+        queued, processing = _count(p / "inbox"), _count(p / "processing")
+        sessions.append({"name": p.name, "mode": live["mode"], "alive": live["alive"],
+                         "pid": live["pid"], "heartbeat_age_s": live["heartbeat_age_s"],
+                         "queued": queued, "processing": processing,
+                         "done": _count(p / "done"), "failed": _count(p / "failed"),
+                         "reason": live["reason"]})
+        if not live["alive"]:
+            if queued + processing:
+                problems.append(
+                    f"{p.name}: {queued} queued + {processing} claimed brief(s) and "
+                    f"NO RUNTIME -- {live['reason']}. Nothing will ever claim them; "
+                    "start it with scripts/cockpit")
+        elif processing == 0 and (live["heartbeat_age_s"] or 0) > _HEARTBEAT_STALE_S:
+            problems.append(
+                f"{p.name}: runtime pid {live['pid']} is alive but has not beaten "
+                f"for {live['heartbeat_age_s']}s while IDLE (poll loop wedged); "
+                f"{queued} brief(s) queued")
+        elif processing > 1:
+            problems.append(
+                f"{p.name}: {processing} briefs in processing/ but a runtime claims "
+                "one at a time -- the extras are crash orphans and re-queue on the "
+                "next boot")
+    serving = _serving(console_port)
+    if not serving:
+        problems.append(f"console: nothing serving on 127.0.0.1:{console_port} -- "
+                        "the runtimes may be fine and the UI still gone "
+                        "(2026-08-28); restart with scripts/cockpit")
+    return {"ok": not problems, "problems": problems, "sessions": sessions,
+            "console": {"port": int(console_port), "serving": serving},
+            "model": _model_state(), "ts": time.time()}
 
 
 # --- markdown feeds ---------------------------------------------------------

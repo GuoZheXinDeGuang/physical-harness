@@ -58,8 +58,11 @@ def _feed(session: Path, *events: dict) -> None:
 # --- brief_status: state, queue, outcome ------------------------------------
 
 
-def test_state_is_the_directory_that_holds_it(tmp_path):
+def test_state_is_the_directory_that_holds_it(tmp_path, live_runtime):
+    """...as long as a runtime is actually serving the session. Without one, an
+    unfinished brief reads ``stalled`` instead -- see tests/test_health.py."""
     session = _session(tmp_path)
+    live_runtime(session)
     for sub, state in (("inbox", "queued"), ("processing", "running"),
                        ("done", "done"), ("failed", "failed"),
                        ("cancelled", "cancelled")):
@@ -94,8 +97,10 @@ def test_queue_position_follows_the_runtime_claim_order(tmp_path):
     assert [bs.brief_status(session, n)["queue_position"] for n in order] == [1, 2, 3]
 
 
-def test_ahead_running_s_separates_just_started_from_three_hours_in(tmp_path):
+def test_ahead_running_s_separates_just_started_from_three_hours_in(
+        tmp_path, live_runtime):
     session = _session(tmp_path)
+    live_runtime(session)
     _drop(session / "inbox", "mine.json", {"task": "stack"})
     (session / "processing" / "ahead.json").write_text('{"task": "recycle_cans"}')
     # the claim ts is the clock, not the file (os.rename keeps the drop mtime)
@@ -152,10 +157,13 @@ def test_outcome_prefers_the_chain_row_that_names_the_brief(tmp_path):
     assert "unknown brief keys" in res["outcome"]["error"]
 
 
-def test_wait_ms_returns_the_current_state_not_a_timeout(tmp_path):
+def test_wait_ms_returns_the_current_state_not_a_timeout(tmp_path, live_runtime):
     """The whole point: waiting out the cap is an ANSWER ('still running'), the
-    failure mode that sent agents digging through runs/ by hand."""
+    failure mode that sent agents digging through runs/ by hand. It only blocks
+    while a runtime is alive to change the answer -- a stalled brief answers at
+    once (test_health.py)."""
     session = _session(tmp_path)
+    live_runtime(session)
     (session / "processing" / "slow.json").write_text('{"task": "recycle_cans"}')
 
     start = time.monotonic()

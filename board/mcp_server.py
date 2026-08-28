@@ -205,6 +205,28 @@ def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
 
 
 @mcp.tool()
+def health(console_port: int = 3080) -> dict:
+    """**Ask this FIRST when anything looks wrong.** Is the whole pipeline up?
+
+    ``{ok, problems, sessions, console, model, ts}`` in one call -- ``problems``
+    is the list to read and everything else is the evidence behind it. It covers
+    every piece a brief travels through: per session, whether a runtime is REALLY
+    serving it (checked against /proc, not against its own leftover
+    ``runtime_status.json``), that runtime's mode and heartbeat age, the inbox
+    backlog, and crash orphans in processing/; then whether the console is
+    serving and what the local model server is doing.
+
+    Three incidents this answers and no other tool did: an RSI brief that sat 21h
+    in a dead session's inbox; live runtimes behind a console that had been
+    reaped; and a session whose runtime was long dead while its stale status file
+    made every face report "runtime alive" and a brief held queue position 1
+    forever. Same face the operator's ``scripts/cockpit --status`` prints.
+
+    Live state, never sealed evidence, and it never raises."""
+    return bs.health(_Cfg.runs, console_port)
+
+
+@mcp.tool()
 def host_vitals() -> dict:
     """The machine's LIVE resource headroom: {gpu: [{index, name, used_mib,
     total_mib, procs:[{pid, name, used_mib}]}], ram: {used_gb, total_gb},

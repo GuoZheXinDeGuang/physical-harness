@@ -157,6 +157,22 @@ subprocess runs (killed by process group, so a worker pool leaves no orphans), a
 seals `runtime.task_cancelled` — an operator's stop and a crash must never be
 confusable in the evidence.
 
+**Liveness is asked of the kernel, never of a file.** A runtime writes
+`runtime_status.json` at boot and re-stamps it while it polls — but a file
+outlives the process that wrote it, and three separate incidents were exactly
+that leftover file reading as "alive" while a brief rotted in an inbox nobody
+watched. So `runtime_liveness` takes the pid out of that file and asks
+`/proc/<pid>/cmdline` whether it is still a `harness_runtime` serving **this**
+session. A brief queued (or claimed) in a session with no live runtime comes back
+from `brief_status` as **`stalled`**, not `queued` — honest and useless is still
+useless. Crash recovery re-queues a `processing/` orphan at most twice; a brief
+that keeps killing the runtime is filed as poison rather than looped forever.
+`health()` — `scripts/cockpit --status`, the `health` MCP tool, `storecli health`,
+one implementation — answers "is my system up" in one call: per-session liveness,
+mode, heartbeat age, inbox backlog, orphans, the console, the model server. It is
+the first command when anything looks wrong. Full failure-mode table:
+`docs/ph-station-design.md` §10.
+
 **The hard boundary between the two modes**: mode is a per-session property,
 default EXECUTION (fail-safe: real work can never trigger evolution). At boot, the
 mode + skill manifest + mount hash are sealed as row zero of the chain. An
@@ -376,6 +392,18 @@ CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏
 式的：board 只留一个标记，runtime 在认领处、节点边界、或 campaign 子进程运行时的探
 测点读到它（按进程组杀，worker 池不留孤儿），然后封 `runtime.task_cancelled`——操作
 员叫停与系统崩溃，在证据层面永远分得开。
+
+**活性问内核，不问文件。** runtime 启动时写 `runtime_status.json`，轮询时重盖时间
+戳——但文件会比写它的进程活得久，三次事故全是这份残留文件读成"运行时存活"，而 brief
+在没人盯的 inbox 里烂掉。所以 `runtime_liveness` 从文件里取 pid，再问
+`/proc/<pid>/cmdline`：它是否仍是一个服务**这个** session 的 `harness_runtime`。一个
+排在没有活 runtime 的 session 里（或已被认领后进程死掉）的 brief，`brief_status` 回
+**`stalled`** 而不是 `queued`——诚实但无用，仍然是无用。崩溃恢复最多把 `processing/`
+孤儿重排两次；反复弄死 runtime 的 brief 按毒丸归档，不再无限循环。`health()`——
+`scripts/cockpit --status`、`health` MCP tool、`storecli health`，同一个实现——一次调
+用回答"我的系统现在健康吗"：每个 session 的活性、mode、心跳年龄、inbox 积压、孤儿、
+控制台、模型端点。出问题时第一条就跑它。完整失败模式表见
+`docs/ph-station-design.md` §10。
 
 **两态的硬边界**：mode 是每 session 属性，默认 EXECUTION（fail-safe：真任务永不触发
 演化）。boot 时把 mode + 技能清单 + 挂载哈希封成链的第 0 行；执行态收到 campaign/rsi

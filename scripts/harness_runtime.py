@@ -27,7 +27,10 @@ Intake is a watched directory: an external writer drops ``inbox/<id>.json`` with
 runtime claims by ``os.rename`` into ``processing/`` (the loser of a race gets
 ``FileNotFoundError`` and moves on), runs it, then ``os.replace``s the file into
 ``done/``, ``failed/`` or ``cancelled/``. On boot any ``processing/*.json`` left
-by a crash is re-queued to ``inbox/`` (at-least-once).
+by a crash is re-queued to ``inbox/`` (at-least-once) -- at most ``_MAX_REQUEUES``
+times, after which the brief is poison and goes to ``failed/`` under its own
+``runtime.task_error`` row, because a brief that kills the process re-queues into
+the next boot and the only symptom is a runtime that will not stay up.
 
 Cancellation is COOPERATIVE and one-directional: ``board.store.cancel_brief``
 drops a marker in ``cancel/<brief-id>`` and stops. This runtime is the only
@@ -216,6 +219,54 @@ def _skills_manifest(skills_root: Path) -> list[str]:
     return sorted(f.stem for f in skills_root.glob("*.json"))
 
 
+#: How many times a crash may re-queue ONE brief before it is filed as poison.
+#: The crash-recovery re-queue is at-least-once and was unbounded: a brief that
+#: takes the whole process down -- a segfaulting sim, an OOM kill, anything the
+#: try/except in _process cannot catch because the interpreter never gets to run
+#: it -- came back on every boot and killed the runtime again, forever, and the
+#: only visible symptom was a session that would not stay up.
+#: 2 re-queues = 3 attempts. ponytail: the ceiling is per-brief and lifetime, so
+#: three OPERATOR restarts during one long brief also spend it; that is loud
+#: (failed/ + a chain row naming the count) and re-submittable, which beats an
+#: invisible boot loop. Make it a decaying window only if a real run trips it.
+_MAX_REQUEUES = 2
+#: Where the counts live. NOT in the brief: _BRIEF_KEYS rejects any key it does
+#: not know, so stamping an attempt counter inside the JSON would make every
+#: re-queued brief hard-fail as an injected key. Live state at the session root,
+#: same family as runtime_status.json, never a chain row.
+REQUEUE_FILE = "requeue.json"
+
+
+def _requeue(processing: Path, inbox: Path, failed: Path, session_dir: Path,
+             log: SessionLog) -> None:
+    """Crash recovery: re-queue every stranded ``processing/*.json``, but only
+    ``_MAX_REQUEUES`` times each; the next one is filed under ``failed/`` with a
+    ``runtime.task_error`` row so ``brief_status`` reports it as an outcome
+    instead of the brief silently reappearing at the head of the queue forever.
+
+    The counter map is rebuilt from what is stranded RIGHT NOW, so a brief that
+    crashed once and later finished drops out of it -- no reaper, no growth.
+    """
+    try:
+        counts = json.loads((session_dir / REQUEUE_FILE).read_text())
+    except (OSError, json.JSONDecodeError):
+        counts = {}
+    fresh: dict[str, int] = {}
+    for p in sorted(processing.glob("*.json")):
+        n = int(counts.get(p.name, 0)) + 1
+        if n > _MAX_REQUEUES:
+            log.append("runtime.task_error", {
+                "brief": p.name, "task": None,
+                "error": f"crash-loop: re-queued {_MAX_REQUEUES} times and the "
+                         "runtime died holding it again each time; filed as "
+                         "poison rather than re-queued once more"})
+            os.replace(p, failed / p.name)
+            continue
+        fresh[p.name] = n
+        os.replace(p, inbox / p.name)
+    drop(session_dir, REQUEUE_FILE, json.dumps(fresh))
+
+
 def _prepare_render(fps: float) -> None:
     """Sanity-check the GL env for a live MuJoCo window and arm the viewer overlay.
 
@@ -293,12 +344,12 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     log = (SessionLog.load(log_dir) if (log_dir / "rows.jsonl").exists()
            else SessionLog(log_dir))
 
-    # restart-resume: anything claimed but not finished goes back to inbox.
+    # restart-resume: anything claimed but not finished goes back to inbox,
+    # BOUNDED (a brief that kills the runtime would otherwise re-queue forever).
     # ponytail: at-least-once -- a task that crashed after its plan_complete note
     # re-runs and appends a second note; dedup by brief-id only if soak shows it
     # hurts.
-    for p in processing.glob("*.json"):
-        os.replace(p, inbox / p.name)
+    _requeue(processing, inbox, failed, session_dir, log)
 
     # boot seal: the immutability baseline comes from the SEALED row (catches a
     # skills-root mutation that happened between boots), not a fresh recompute.

@@ -8,6 +8,12 @@ renders the byte-identical dict the LLM gets -- no second statistics layer, no
 reinterpretation. The fork host bridge (packages/host/dsh-ph-board) execFiles
 this and JSON.parses stdout verbatim.
 
+``health [PORT]`` is the FIRST call when something is wrong: one dict covering
+every session's runtime liveness (asked of /proc, not of its own leftover status
+file), inbox backlogs, crash orphans, the console, and the model server. It is
+the same board.store.health the MCP face serves and ``scripts/cockpit --status``
+prints, so the operator's terminal and the agent read the identical answer.
+
 Three fns cover the brief LIFECYCLE, the same three board.store functions the
 MCP face exposes: ``submit_brief`` drops one, ``brief_status <brief-id>
 [--wait-ms N]`` says where it is and what it did (queued/running/done/failed/
@@ -102,6 +108,11 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         return bs.discover_sessions(runs)
     if fn == "host_vitals":
         return bs.host_vitals(runs)
+    if fn == "health":
+        # The console PORT rides the `name` slot (the model_server pattern) --
+        # scripts/cockpit --status passes the port it actually resolved from
+        # .env, and a bare call falls back to the board's own default.
+        return bs.health(runs, int(name) if name else bs._CONSOLE_PORT)
     if fn == "model_server":
         # The action rides the `name` slot; it is whitelisted board-side and
         # defaults to the read, so an omitted argument can never start or stop
@@ -194,8 +205,8 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
-    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, or the model_server action (status|start|stop, default status)")
+    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the model_server action (status|start|stop, default status), or the console port for health")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
     parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, and whose brief brief_status/cancel_brief names (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")

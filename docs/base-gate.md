@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-29, isolated, robosuite blocked)
 
 ```
-pass       : 734 passed
+pass       : 747 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -54,28 +54,21 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-The +6 over the fresh-clone-deploy snapshot (728 -> 734, skips unchanged at 32)
-is runtime LIFECYCLE — a status file must not be able to lie about being alive
-(`tests/test_read_session.py` +4, `tests/test_runtime_drain.py` +2). Three times
-running, an operator brief was submitted into an inbox no process was serving,
-and every face reported "runtime up" because `runtime_status.json` still named a
-pid that had exited days earlier. `read_runtime_status` now DERIVES two fields
-instead of passing the file through verbatim: `alive`, decided against `/proc`
-(argv[0] an existing `python*` file, a later arg naming `harness_runtime.py`,
-another resolving to THIS session dir -- structural, because a substring scan for
-`harness_runtime.py` matches the shell that is grepping for it, the same lesson
-`/proc/<pid>/exe` taught the model-server face), and `heartbeat_age_s`, the
-second axis. `discover_sessions` carries the bool as `runtime_alive` so the FIRST
-call an agent makes shows the dead inbox. The beat moved out of the poll loop
-into a daemon thread — the loop only came back around BETWEEN briefs, so a
-runtime an hour into an rsi chain and a runtime dead an hour produced the same
-stale badge; a node-boundary stamp would not have covered it either, because
-campaigns and rsi chains run in subprocesses the parent only waits on. What is
-pinned: a reaped pid reads dead, a live pid that is NOT this session's runtime
-reads dead, a never-stamped file ages as `null` and never as `0`, and a clean
-exit stamps `stopped_ts` (belt-and-braces; `kill -9` never writes it, which is
-why `alive` asks `/proc`). Sim-free (`_process` monkeypatched to a plain sleep),
-no seeds burned.
+The +19 over the deploy-profile snapshot (728 -> 747, skips unchanged at 32) is
+`tests/test_health.py`: the pipeline-liveness audit. Three incidents in three days
+were one disease -- a dead piece of the pipeline that every face still read as
+normal, because `runtime_status.json` is a FILE and a file outlives its writer.
+What is pinned: liveness is asked of `/proc` and neither a leftover status file
+nor a recycled pid may vouch for a session; a brief queued (or claimed) with no
+live runtime reads `stalled`, carries `stalled_from`, and never long-polls; a
+brief that keeps killing the runtime is filed as poison after `_MAX_REQUEUES`
+instead of re-queuing forever, and the re-queue counter forgets a brief that
+finished; and `health()` names the session whose briefs are rotting, stays quiet
+about a retired one, sees a dead console, skips campaign stores, and never raises
+on a missing runs dir -- through the board fn AND the CLI face. All sim-free and
+unmarked, so 19 add to both lanes and skip in neither. Nothing here touches runs/
+or spawns a runtime; the dead-pid cases use `pid_max + 1`. Sim-free, no seeds
+burned. Full failure-mode table: `docs/ph-station-design.md` §10.
 
 The +11 over the node-level-RSI snapshot (717 -> 728, skips unchanged at 32) is
 `tests/test_deploy_profile.py`: the fresh-clone deploy path. The console's
@@ -285,8 +278,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `759 passed, 29 skipped` (re-measured
-2026-08-29 with the deploy-profile tests; 728 base + 28 robosuite-marked
+Full-suite parity (card present): `778 passed, 29 skipped` (re-measured
+2026-08-29 with the pipeline-liveness tests; 747 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present).
 This line had gone stale at `709` -- the arithmetic was last done in the
 678-base era and the base count moved to 717 without it (the robocasa-marked
@@ -320,14 +313,14 @@ The snapshot above is defined on a checkout WITH the sealed `runs/` evidence
 - the two 30-秒上手 commands in README work as written: the `dev` extra carries
   everything collection needs (including `mcp` for the both-faces tests)
 
-A fresh clone that shows a FAILURE (not a skip) is a real regression -- no
-exceptions. There used to be one:
+A fresh clone that shows a FAILURE (not a skip) is a real regression, with ONE
+known exception, measured 2026-08-29 on a real fresh clone
+(`713 passed, 1 failed, 23 skipped, 51 deselected` on the both-marker lane):
 `test_runtime_campaign.py::test_burned_range_brief_is_rejected_without_spawning`
-asserted against a burned block in the operator's REAL `STATUS.md`, which is
-untracked -- so a clone had no ledger, nothing was burned, and the brief was
-(correctly, per the runtime's own rule) accepted. The test now writes a ledger of
-its own into `tmp_path` and points `harness_runtime.STATUS_MD` at it. A test that
-reads operator-local state is the bug, never the missing-ledger semantics.
+asserts against burned block 41000-41580 in the REAL seed ledger, and `STATUS.md`
+is untracked operator state -- a clone has no ledger, so nothing is burned and
+the brief is (correctly, per the runtime's own rule) accepted. Copying a
+`STATUS.md` in makes it pass. The test needs a ledger of its own, not the box's.
 
 ## repeat-offender: keep this snapshot + the two README counts in lockstep
 
