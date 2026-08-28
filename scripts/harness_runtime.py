@@ -74,6 +74,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 from dataclasses import dataclass, field
@@ -878,23 +879,55 @@ def _pending(rt: Runtime) -> list[Path]:
     return sorted(rt.inbox.glob("*.json"), key=lambda p: p.stat().st_mtime)
 
 
-#: Poll-loop heartbeat cadence for runtime_status.json (the UI liveness signal).
+#: Heartbeat cadence for runtime_status.json (the UI liveness signal).
 HEARTBEAT_S = 10.0
 
 
-def _heartbeat(session_dir: Path) -> None:
-    """Re-stamp ``heartbeat_ts`` in runtime_status.json (read-modify-write, so
-    every boot-written field rides through verbatim; atomic via the shared
+def _status_stamp(session_dir: Path, **fields) -> None:
+    """Merge ``fields`` into runtime_status.json: read-modify-write, so every
+    boot-written field rides through verbatim, and atomic via the shared
     brief_drop temp+replace, so board.store.read_runtime_status never sees a
-    half write). boot_ts alone cannot tell a live poll loop from a dead one --
-    this can: the board passes the field through and the UI reads its age.
-    Never raises: a broken status file loses the badge, never the loop."""
+    half write. Never raises: a broken status file loses the badge, never the
+    loop."""
     try:
         status = json.loads((session_dir / "runtime_status.json").read_text())
-        status["heartbeat_ts"] = time.time()
-        drop(session_dir, "runtime_status.json", json.dumps(status))
-    except (OSError, json.JSONDecodeError):
+        drop(session_dir, "runtime_status.json", json.dumps({**status, **fields}))
+    except (OSError, json.JSONDecodeError, TypeError):
+        # TypeError: valid JSON that is not an object. Swallowed with the rest --
+        # the beat runs in a thread, and an escape there would kill the beat
+        # silently, which is precisely the failure this whole change is about.
         pass
+
+
+def _heartbeat(session_dir: Path) -> None:
+    """One beat. boot_ts alone cannot tell a live runtime from a dead one; the
+    board passes ``heartbeat_ts`` through as an age, and the UI reads it."""
+    _status_stamp(session_dir, heartbeat_ts=time.time())
+
+
+def _beat_forever(session_dir: Path) -> threading.Thread:
+    """Beat from a DAEMON THREAD, started at boot and never joined.
+
+    It used to beat from the poll loop, which only comes back around BETWEEN
+    briefs: a runtime an hour into an rsi chain looked exactly like a corpse,
+    and "busy or dead" is the ambiguity that let three briefs rot in inboxes
+    nobody was serving. Stamping at node boundaries inside ``_process`` would
+    not have fixed it either -- campaigns and rsi chains run in SUBPROCESSES
+    the parent only waits on, and there is no node boundary to hook in a wait.
+    A thread beats through all of it: subprocess waits, sim steps, blocking IO.
+
+    Daemon, so it never holds the process open; each beat is an atomic,
+    exception-swallowing merge, so it can neither corrupt the file nor take the
+    run down with it. It is the ONLY concurrent writer of that file (boot writes
+    it before this starts), so the read-modify-write needs no lock.
+    """
+    def beat() -> None:
+        while True:
+            time.sleep(HEARTBEAT_S)   # sleep FIRST: boot just stamped
+            _heartbeat(session_dir)
+    thread = threading.Thread(target=beat, name="heartbeat", daemon=True)
+    thread.start()
+    return thread
 
 
 def main(session_dir: str | Path, inbox: str | Path | None = None, *,
@@ -904,25 +937,25 @@ def main(session_dir: str | Path, inbox: str | Path | None = None, *,
     """Boot, then drain the inbox once (``drain``) or poll it forever."""
     rt = boot(session_dir, inbox, mode=mode, render=render, render_fps=render_fps,
               frames=frames)
-    if drain:
-        while True:
-            pending = _pending(rt)
-            if not pending:
-                return rt
-            for p in pending:
-                _process(rt, p)
     session_dir = Path(session_dir)
-    last_beat = 0.0
-    while True:
-        for p in _pending(rt):
-            _process(rt, p)
-        # ponytail: no beat while a brief runs (an rsi chain runs for hours), so
-        # the badge reads "busy or dead"; stamp from inside _process if that
-        # ambiguity ever hurts.
-        if time.time() - last_beat >= HEARTBEAT_S:
-            _heartbeat(session_dir)
-            last_beat = time.time()
-        time.sleep(poll_interval)
+    _beat_forever(session_dir)
+    # A clean exit says so, so the leftover status file cannot pass for a live
+    # runtime. Belt-and-braces only: a kill -9 never gets here, which is why
+    # read_runtime_status checks the pid against /proc rather than trusting this.
+    try:
+        if drain:
+            while True:
+                pending = _pending(rt)
+                if not pending:
+                    return rt
+                for p in pending:
+                    _process(rt, p)
+        while True:
+            for p in _pending(rt):
+                _process(rt, p)
+            time.sleep(poll_interval)
+    finally:
+        _status_stamp(session_dir, stopped_ts=time.time())
 
 
 def _cli() -> int:
@@ -957,6 +990,11 @@ def _cli() -> int:
     # only way an operator sees the sim at all.
     frames = args.frames or (
         os.environ.get("MUJOCO_GL", "").lower() in ("egl", "osmesa"))
+    # SIGTERM's default action skips every finally, so `cockpit --stop` left the
+    # status file claiming a live runtime. Turn it into an ordinary exit so
+    # main()'s finally can mark it stopped. CLI only -- a library caller (tests,
+    # soak.py) keeps whatever signal semantics its own process chose.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     main(args.session_dir, args.inbox, drain=args.drain,
          poll_interval=args.poll_interval, mode=args.mode,
          render=args.render, render_fps=args.render_fps, frames=frames)

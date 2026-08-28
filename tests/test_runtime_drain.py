@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 from board import store as bs
@@ -101,12 +102,47 @@ def test_boot_requeues_processing_and_continues_chain(tmp_path, monkeypatch):
     assert SessionLog.load(session / "session-log").verify()
 
 
+def test_heartbeat_beats_while_a_brief_is_running(tmp_path, monkeypatch):
+    """The beat must survive a brief, not pause for it.
+
+    It used to be stamped by the poll loop, which only comes back around BETWEEN
+    briefs -- so a runtime an hour into an rsi chain and a runtime that had been
+    dead an hour produced the identical stale badge. The beat now runs in a
+    daemon thread, so this drives the REAL main() with a _process that just
+    takes its time (no sim needed: the point under test is the loop, not the
+    task) and asserts the stamp advanced WHILE that call was blocking."""
+    session = tmp_path / "session-main"
+    (session / "inbox").mkdir(parents=True)
+    _drop(session / "inbox", "slow.json", {"kind": "task", "task": "stack"})
+    monkeypatch.setattr(runtime, "HEARTBEAT_S", 0.05)
+
+    def slow(rt, path):          # stands in for a long brief: blocks the loop
+        path.unlink()
+        time.sleep(0.6)
+
+    monkeypatch.setattr(runtime, "_process", slow)
+    runtime.main(session, drain=True)
+    status = bs.read_runtime_status(session)
+    assert status["heartbeat_ts"] - status["boot_ts"] >= 0.4, \
+        "no beat landed during the brief -- the badge is back to 'busy or dead'"
+
+
+def test_clean_exit_marks_the_status_stopped(tmp_path):
+    """A runtime that returns normally says so, so its leftover status file
+    cannot pass for a live one. Belt-and-braces: a kill -9 never gets here,
+    which is why alive is decided against /proc rather than trusting this."""
+    session = tmp_path / "session-main"
+    runtime.main(session, drain=True)     # nothing pending -> returns at once
+    status = bs.read_runtime_status(session)
+    assert status["stopped_ts"] >= status["boot_ts"]
+    assert status["alive"] is False
+
+
 def test_boot_and_heartbeat_stamp_liveness(tmp_path):
-    """runtime_status.json carries heartbeat_ts from boot on, and the poll
-    loop's _heartbeat re-stamps ONLY that field (atomic rewrite; every other
-    boot-written field rides through verbatim). boot_ts alone cannot tell a
-    live runtime from a dead one -- the board face passes heartbeat_ts through
-    so the UI can show its age."""
+    """runtime_status.json carries heartbeat_ts from boot on, and _heartbeat
+    re-stamps ONLY that field (atomic rewrite; every other boot-written field
+    rides through verbatim). boot_ts alone cannot tell a live runtime from a
+    dead one -- the board face passes heartbeat_ts through as an age."""
     session = tmp_path / "session-main"
     runtime.main(session, drain=True)  # boot writes the status file
     status = bs.read_runtime_status(session)

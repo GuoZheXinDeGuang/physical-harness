@@ -121,7 +121,9 @@ def campaign_progress() -> list[dict]:
 
 @mcp.tool()
 def sessions() -> list[dict]:
-    """Every runtime session under runs/, newest first (with chain badges)."""
+    """Every runtime session under runs/, newest first (with chain badges).
+    ``runtime_alive`` is false when NOTHING is serving that session's inbox --
+    submitting there queues a brief no process will ever claim."""
     return bs.discover_sessions(_Cfg.runs)
 
 
@@ -147,7 +149,10 @@ def session_progress(name: str = _DEFAULT_SESSION) -> dict:
 def runtime_status(name: str = _DEFAULT_SESSION) -> dict | None:
     """One runtime session's LIVE status (pid/render/mode/boot_ts/display), or null
     when it has not booted since the file existed. Live state, not sealed evidence.
-    ``name`` defaults to session-main."""
+    ``alive`` is the verdict on that pid (it is checked against /proc -- a status
+    file outlives its process, so the pid alone means nothing); ``heartbeat_age_s``
+    is seconds since the runtime last stamped, so alive+small is idle-and-
+    listening, alive+large is wedged. ``name`` defaults to session-main."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.read_runtime_status(path) if path else {"error": "unknown session"}
 
@@ -290,30 +295,13 @@ def _session_python(session_dir: Path) -> str | None:
     """The interpreter the session's LIVE runtime runs under, or ``None``.
 
     The venv is what decides whether a sim's packages import at all, and the two
-    resident runtimes differ in exactly that. runtime_status.json (live state,
-    never a chain row) names the pid; ``/proc/<pid>/cmdline`` argv[0] names the
-    interpreter -- ``/proc/<pid>/exe`` is the venv's python3 symlink TARGET,
-    identical for both, so argv[0] is the only half that discriminates. Guarded
-    like store._model_identity: the cmdline must still be a harness runtime, so a
-    recycled pid reads as unknown rather than as some unrelated interpreter.
+    resident runtimes differ in exactly that -- which is the same question
+    ``board.store.runtime_python`` answers for the liveness badge (argv[0], never
+    ``/proc/<pid>/exe``: the venv's python symlink TARGET is identical for both).
+    So this IS that call: one /proc guard, not two that can drift apart.
     """
-    try:
-        pid = int(json.loads((session_dir / "runtime_status.json").read_text())["pid"])
-        argv = [a.decode(errors="replace")
-                for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if a]
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
-        return None
-    if not argv or not any("harness_runtime" in a for a in argv[1:]):
-        return None
-    exe = Path(argv[0])
-    if not exe.is_absolute():
-        # argv[0] is relative when the runtime was launched from the repo root
-        # (".venv/bin/python"); resolve it against THAT process's cwd, never ours.
-        try:
-            exe = Path(f"/proc/{pid}/cwd").readlink() / exe
-        except OSError:
-            return None
-    return str(exe) if exe.is_file() else None
+    status = bs.read_runtime_status(session_dir)
+    return bs.runtime_python(session_dir, status["pid"]) if status else None
 
 
 def _compat_warning(brief: dict, session: str, session_dir: Path) -> str | None:

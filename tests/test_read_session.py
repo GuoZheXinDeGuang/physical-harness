@@ -9,6 +9,9 @@ the runtime produces -- a chained rows.jsonl carrying note data inline.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import time
 from pathlib import Path
 
 from board import store as bs
@@ -78,9 +81,69 @@ def test_runtime_status_present_absent_and_partial(tmp_path):
     status = {"pid": 4321, "render": True, "mode": "execution",
               "boot_ts": 1.5, "display": ":1"}
     (sd / "runtime_status.json").write_text(json.dumps(status))
-    assert bs.read_runtime_status(sd) == status  # present -> parsed verbatim
+    # present -> every boot-written field verbatim, plus the two derived ones
+    assert bs.read_runtime_status(sd) == dict(
+        status, alive=False, heartbeat_age_s=None)
     (sd / "runtime_status.json").write_text('{"pid": 4321, "rend')  # mid-write
     assert bs.read_runtime_status(sd) is None  # partial -> null, next poll recovers
+
+
+def _status(sd: Path, **fields) -> None:
+    (sd / "runtime_status.json").write_text(json.dumps(
+        {"pid": os.getpid(), "mode": "execution", "boot_ts": 1.5, **fields}))
+
+
+def test_a_status_file_cannot_claim_a_dead_runtime(tmp_path):
+    """The incident, three times over: runtime_status.json named a pid that had
+    been gone for days and every reader reported "runtime up", so operator
+    briefs queued into an inbox nothing was serving. ``alive`` is now decided
+    against /proc, so the corpse reads dead."""
+    sd = _session(tmp_path)
+    _status(sd, pid=_dead_pid())
+    assert bs.read_runtime_status(sd)["alive"] is False
+    # ...and a session with no live runtime is visible in the FIRST call an
+    # agent makes, without drilling into runtime_status at all.
+    assert [s["runtime_alive"] for s in bs.discover_sessions(tmp_path)] == [False]
+
+
+def test_alive_needs_a_real_runtime_cmdline_not_a_substring(tmp_path):
+    """This process is alive and its pid is real, but it is pytest, not a
+    harness_runtime on this session -- the recycled-pid case, and the reason the
+    check is structural (argv[0] is a python FILE, a later arg names
+    harness_runtime.py, another resolves to THIS session dir). A grep whose
+    command line happens to carry both strings would pass a substring scan."""
+    sd = _session(tmp_path)
+    _status(sd)                                   # our own, very-much-alive pid
+    assert bs.read_runtime_status(sd)["alive"] is False
+    assert bs.runtime_python(sd, os.getpid()) is None
+    assert bs.runtime_python(sd, "not-a-pid") is None
+
+
+def test_heartbeat_age_is_the_second_axis(tmp_path):
+    """alive says the process exists; heartbeat_age_s says how long since it
+    last stamped. Absent (a file older than heartbeats) reads as null, never 0 --
+    'never beat' must not look like 'beat just now'."""
+    sd = _session(tmp_path)
+    _status(sd)
+    assert bs.read_runtime_status(sd)["heartbeat_age_s"] is None
+    _status(sd, heartbeat_ts=time.time() - 120)
+    assert 119 <= bs.read_runtime_status(sd)["heartbeat_age_s"] <= 130
+
+
+def test_a_runtime_that_announced_its_exit_is_not_alive(tmp_path):
+    """Clean shutdown stamps stopped_ts. It is belt-and-braces (a kill -9 never
+    writes it) but it must never be ignored when present."""
+    sd = _session(tmp_path)
+    _status(sd, stopped_ts=time.time())
+    assert bs.read_runtime_status(sd)["alive"] is False
+
+
+def _dead_pid() -> int:
+    """A pid that has certainly exited and been reaped -- a real corpse, not a
+    number picked out of the air."""
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    return proc.pid
 
 
 def test_partial_trailing_line_is_skipped(tmp_path):
