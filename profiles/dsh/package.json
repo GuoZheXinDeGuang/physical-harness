@@ -2,7 +2,7 @@
   "name": "dsh-profile-physical-harness",
   "private": true,
   "version": "0.0.0",
-  "description": "dsh cockpit profile for the physical-harness dev/rsi board. rung 0 wires one mcp-client echo row; rung 1 repoints it at board/mcp_server.py. see docs/dsh-cockpit-design.md.",
+  "description": "dsh cockpit profile for the physical-harness dev/rsi board. rung 0 wires one mcp-client echo row; rung 1 repoints it at board/mcp_server.py. see local-archive/docs/retired-from-public/dsh-cockpit-design.md (local only).",
   "dsh": {
     "profile": {
       "bundles": [

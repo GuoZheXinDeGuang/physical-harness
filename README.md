@@ -37,8 +37,9 @@ Charter: [GOAL.md](GOAL.md) · internals: [ARCHITECTURE.md](ARCHITECTURE.md) · 
 [CLAUDE.md](CLAUDE.md). These three files anchor the project's direction and
 rules — do not modify them lightly; GOAL.md in particular is fixed and changes
 only by the operator's decision.
-Bringing your own VLM planner, VLA policy, or recovery primitives:
-[docs/plug-in-your-model.md](docs/plug-in-your-model.md).
+Everything else — how to run it, the gates, adding a simulator, bringing your own VLM planner,
+VLA policy, or recovery primitives — is one file:
+[docs/project-documentation.md](docs/project-documentation.md) (Chinese; §6 is the model seams).
 
 ## Architecture
 
@@ -70,7 +71,7 @@ or a separate sim venv. Full manifest: [requirements.md](requirements.md).
 | robocasa | 1.0.1 @a07e365 | robocasa-venv | long-horizon kitchen missions (+23 GB assets) | MIT |
 | mujoco / numpy | 3.3.1 / 2.2.5 | robocasa-venv | RoboCasa hard-pins; numpy 2.x ABI is why it can't share .venv | Apache / BSD |
 | libero | master @8f1084e | libero-venv (py3.10) | VLA benchmark suite (assets bundled in-repo, ~405 MB) | MIT |
-| robosuite / mujoco / numpy | 1.4.0 / 2.3.2 / 1.22.4 | libero-venv | LIBERO's 2022-era pins; see docs/sim-adaptation.md §5 | MIT / Apache / BSD |
+| robosuite / mujoco / numpy | 1.4.0 / 2.3.2 / 1.22.4 | libero-venv | LIBERO's 2022-era pins; see docs/project-documentation.md §5.6 | MIT / Apache / BSD |
 
 The **operator UI companion** ([ph-station](https://github.com/Z-Robotics-Lab/ph-station)) is an
 MIT-licensed cockpit on a Node 22 + pnpm toolchain (dockview-react, tabler-icons). It is installed
@@ -94,8 +95,8 @@ ABIs (1.x vs 2.x) cannot coexist:
 Headless Linux needs `MUJOCO_GL=egl` (macOS must NOT set it).
 
 **RoboCasa card** (separate venv, py3.12, ~23 GB assets) — see
-[docs/sim-adaptation.md](docs/sim-adaptation.md) and [requirements.md](requirements.md) for the
-full recipe. Two traps to know up front:
+[docs/project-documentation.md](docs/project-documentation.md) §5 and
+[requirements.md](requirements.md) for the full recipe. Two traps to know up front:
 
 - robosuite master installs as a PEP-660 editable whose `__file__` is `None` and crashes robosuite
   itself — reinstall with
@@ -171,6 +172,7 @@ plugin/card model, and how to write a card all live in [ARCHITECTURE.md](ARCHITE
 
 Always use `python -m pytest` (not `bin/pytest`, which drops cwd from `sys.path` and yields
 spurious collection errors). The **base fast lane** is `pytest -m "not robosuite and not
-robocasa"`, run isolated with the sim cards absent: **755 passed, 32 skipped, 28 deselected**.
-The snapshot format and the isolation recipe are in [docs/base-gate.md](docs/base-gate.md); refresh
-that file and this line in the same commit whenever the count moves.
+robocasa"`, run isolated with the sim cards absent: **756 passed, 32 skipped, 28 deselected**.
+The snapshot format and the isolation recipe are in
+[docs/project-documentation.md](docs/project-documentation.md) §3; refresh that section and this
+line in the same commit whenever the count moves.

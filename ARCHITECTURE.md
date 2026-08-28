@@ -171,7 +171,7 @@ that keeps killing the runtime is filed as poison rather than looped forever.
 one implementation — answers "is my system up" in one call: per-session liveness,
 mode, heartbeat age, inbox backlog, orphans, the console, the model server. It is
 the first command when anything looks wrong. Full failure-mode table:
-`docs/ph-station-design.md` §10.
+`docs/project-documentation.md` §8.
 
 **The hard boundary between the two modes**: mode is a per-session property,
 default EXECUTION (fail-safe: real work can never trigger evolution). At boot, the
@@ -403,7 +403,7 @@ CLI（`storecli`）、MCP server（给 AI agent）。三脸必须同步改，漏
 `scripts/cockpit --status`、`health` MCP tool、`storecli health`，同一个实现——一次调
 用回答"我的系统现在健康吗"：每个 session 的活性、mode、心跳年龄、inbox 积压、孤儿、
 控制台、模型端点。出问题时第一条就跑它。完整失败模式表见
-`docs/ph-station-design.md` §10。
+`docs/project-documentation.md` §8。
 
 **两态的硬边界**：mode 是每 session 属性，默认 EXECUTION（fail-safe：真任务永不触发
 演化）。boot 时把 mode + 技能清单 + 挂载哈希封成链的第 0 行；执行态收到 campaign/rsi

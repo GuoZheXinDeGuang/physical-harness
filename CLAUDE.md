@@ -12,13 +12,18 @@ the board (query it), architecture in `ARCHITECTURE.md`.
 - **Simplest thing that works.** Prefer deletion over addition; no speculative
   abstractions; a task-name `if` branch in a generic path means the design is
   wrong — add a card instead.
-- **Docs stay true, and there are few of them.** When you change behavior,
+- **Docs stay true, and there is ONE of them.** When you change behavior,
   update the doc in the same commit; when a doc goes stale, delete or rewrite
-  it. A wrong doc is worse than no doc. `docs/` is a **closed allowlist**
-  (`docs/README.md`, enforced by `tests/test_docs_allowlist.py`): a file ships
-  only if a stranger cloning this repo would be worse off without it. Round
-  plans, scout reports, design drafts and acceptance write-ups go to
-  `local-archive/docs/` — never to `docs/`.
+  it. A wrong doc is worse than no doc. The public set is exactly
+  `docs/project-documentation.md` (plus `docs/design/`, diagram sources, not
+  prose). A second file in `docs/` fails `tests/test_docs_allowlist.py` — the
+  test is the gate, not your judgement. Everything else has a home:
+  **development docs** (current state, open campaign goals, round plans) go to
+  `docs-dev/` — git-ignored, local, never tracked (the test checks that too);
+  **retired design capital** (why we forked, scout reports, acceptance
+  write-ups, per-increment ledgers) goes to `local-archive/docs/`. Cite those
+  by their `docs-dev/…` / `local-archive/…` path so a reader can tell at a
+  glance that the reference does not ship.
 - **Evidence over demos.** A claim is worth exactly the sealed evidence behind
   it. An honest null and an honest NO-GO are deliverables, not failures.
 - **Never game a gate.** No tuning thresholds, swapping gates, or cherry-picking
@@ -44,7 +49,8 @@ chosen server-side from manifests, and any extra key is rejected.
 
 `kind:"rsi"` is the generic self-improvement chain (evolution mode only): the
 minimal form needs only a task name; the runtime runs allocate → calibrate →
-gates → prereg → dev → held-out → install by itself. See `docs/rsi-mechanism.md`.
+gates → prereg → dev → held-out → install by itself. See
+`docs/project-documentation.md` §4.
 Three things are never yours to pick:
 
 - **The target node comes from first-death attribution**, not from you
@@ -100,8 +106,8 @@ round; never edit the old one.
   spurious). cwd is always the repo root — anywhere that can see
   `sims/robocasa/`, the import silently resolves to a namespace package and
   374 kitchen envs never register.
-- Base-lane test counts changed ⇒ refresh `docs/base-gate.md` + `README.md`
-  **in the same commit**.
+- Base-lane test counts changed ⇒ refresh `docs/project-documentation.md` §3.2
+  + `README.md` + `README.zh.md` **in the same commit**.
 - `STATUS.md` and `progress.md` are the operator's local, untracked ledgers —
   never `git add` them; the runtime treats a missing ledger as nothing burned.
 

@@ -10,7 +10,7 @@ zero-arg and returns `pred(env) -> bool`, evaluated against the LIVE robocasa
 env. `robocasa` is imported lazily so this module stays base-importable.
 
 The six here cover exactly kitchen_thaw's per-node verifies (MicrowaveThawingFridge,
-docs/sim-adaptation.md §3): fridge open, food grasped, food inside the microwave,
+docs/project-documentation.md §5.4): fridge open, food grasped, food inside the microwave,
 microwave door closed, microwave turned on, gripper clear of the food (released).
 """
 

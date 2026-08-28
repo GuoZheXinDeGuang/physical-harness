@@ -39,8 +39,10 @@ Dependency groups from [`pyproject.toml`](pyproject.toml):
 
 Run the base lane isolated (a fresh process where `robosuite` is genuinely
 unimportable) — never as a subset of a full green run. Snapshot format and the
-two isolation methods are in [docs/base-gate.md](docs/base-gate.md); keep the
-pass/skip counts in `README.md` and `base-gate.md` synced **in one commit**.
+two isolation methods are in
+[docs/project-documentation.md](docs/project-documentation.md) §3; keep the
+pass/skip counts in `README.md`, `README.zh.md` and that snapshot synced **in one
+commit**.
 
 ## 2. robosuite sim card (same venv, optional extra)
 
@@ -139,7 +141,7 @@ states are bundled in-repo, ~405 MB, no separate download). Full install
 recipe, the pin deviations, and the three traps (empty PEP-660 editable →
 `.pth` workaround; the machine-global `~/.libero/config.yaml` singleton →
 `LIBERO_CONFIG_PATH`; the unpinned-mujoco 3.x resolution) live in
-[docs/sim-adaptation.md](docs/sim-adaptation.md) §5. Test lane: `-m libero`,
+[docs/project-documentation.md](docs/project-documentation.md) §5.6. Test lane: `-m libero`,
 only inside that venv.
 
 ## 5. UI companion — ph-station

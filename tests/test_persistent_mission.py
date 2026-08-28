@@ -7,7 +7,7 @@ stand in and ONLY the inner drive (``governed.governed_segment``) is monkeypatch
 so the REAL ``run()`` loop, the persistent ``EpisodeContext``, the segment wrapper
 (retarget, cursor, terminal), governance-per-segment and span sealing all run for
 real. Byte-identity of the EXTRACTED drive vs ``governed_rollout`` is a robosuite
-golden proved out-of-band (docs/base-gate.md), not this file.
+golden proved out-of-band (docs/project-documentation.md §3), not this file.
 """
 
 from __future__ import annotations

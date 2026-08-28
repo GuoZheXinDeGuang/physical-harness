@@ -21,7 +21,7 @@ needs_sim = true
 # `segment_specs` re-tasks each segment to its stage. `env` / `percept` name the
 # robocasa embodiment for THIS session only -- the robocasa card is enabled=false so
 # it is out of the base fold; harness_runtime._mount_plan overrides the base
-# robosuite mounts with these for the kitchen_thaw runtime (docs/sim-adaptation.md §1).
+# robosuite mounts with these for the kitchen_thaw runtime (docs/project-documentation.md §5.2).
 [task_bindings.kitchen_thaw]
 env = "plugins.embodiment_robocasa:provider"
 percept = "plugins.embodiment_robocasa.percept:provider"

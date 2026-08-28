@@ -382,7 +382,7 @@ def session_inbox(runs_dir: str | Path, session: str) -> Path | None:
 
     Three brief kinds land here -- ``task`` (run a mission once), ``campaign`` (a
     named hand-written campaign script) and ``rsi`` (the generic self-improvement
-    chain, minimal form ``{"kind":"rsi","task":"<task>"}``; docs/rsi-mechanism.md).
+    chain, minimal form ``{"kind":"rsi","task":"<task>"}``; docs/project-documentation.md §4).
     This function routes all three identically: the resident runtime's
     ``_BRIEF_KEYS`` stays the sole authority on what a brief may say."""
     path = safe_child(runs_dir, session, is_session)

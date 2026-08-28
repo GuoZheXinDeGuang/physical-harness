@@ -1,19 +1,19 @@
-"""Per-stage smoke for the kitchen_thaw scripted drivers (docs/sim-adaptation.md
-§2 "驱动", §4 phase 3). Each test drives ONE stage from a seeded reset -- using an
+"""Per-stage smoke for the kitchen_thaw scripted drivers (docs/project-documentation.md
+§5.3 "驱动", §5.5 phase 3). Each test drives ONE stage from a seeded reset -- using an
 upstream driver or a teleport scaffold where a prior stage is furniture- or
 carry-blocked -- and asserts THAT stage's own robocasa live-state predicate alone.
 
 Runs only in the robocasa venv (`pytest -m robocasa`, cwd=repo so the sys.path
 namespace trap never fires -- install report §1.5). In the harness .venv robocasa
 is unimportable and the conftest hook auto-skips every test here (the extra
-base-lane skips are captured in docs/base-gate.md).
+base-lane skips are captured in docs/project-documentation.md §3).
 
 GREEN = what the fixed fixed-base scripted drivers actually do (re-measured this
 venv, NOT trusted from the prior agent's notes). XFAIL(strict=False) = honest
 failure surfaces with the MEASURED cause in the reason string -- reach/furniture
 limits of a fixed-base OSC push, never faked green. Per-stage numbers, seeds and
 wall-clock live in local-archive/robocasa-adapt/phase3.md. Success RATE is not the
-milestone here (that is the RSI campaign's job, docs/sim-adaptation.md §3).
+milestone here (that is the RSI campaign's job, docs/project-documentation.md §5.4).
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def test_carry_transport_survives(seed):
 @pytest.mark.robocasa
 @pytest.mark.xfail(reason="nav fridge->microwave: the open side-by-side fridge "
                           "blocks the aisle at y~-3.99; the straight velocity servo "
-                          "(no path planning, docs/sim-adaptation.md §2) stalls "
+                          "(no path planning, docs/project-documentation.md §5.3) stalls "
                           "~0.70 m short of the microwave dock.",
                    strict=False)
 @pytest.mark.parametrize("seed", [7])

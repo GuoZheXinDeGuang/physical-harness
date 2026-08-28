@@ -3,7 +3,7 @@
 Runs only in the robocasa venv (`pytest -m robocasa`, cwd=repo so the sys.path
 namespace-package trap never fires -- install report §1.5). In the harness .venv
 robocasa is unimportable, so the conftest hook auto-skips every test here; the
-extra base-lane skips are captured in docs/base-gate.md.
+extra base-lane skips are captured in docs/project-documentation.md §3.
 """
 
 from __future__ import annotations

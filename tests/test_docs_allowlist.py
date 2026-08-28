@@ -1,34 +1,35 @@
-"""docs/ is a closed allowlist (docs/README.md states the rule).
+"""docs/ is a closed allowlist of ONE file (CLAUDE.md states the rule).
 
 A doc that ships is a doc someone has to keep true, and CLAUDE.md requires
 behaviour and its doc to move in the same commit. That promise is affordable for
-a handful of files and empty for thirty, so the set is closed by a test rather
-than by intent: adding a file here fails until a human edits the list and says
-why in the commit.
+one file and empty for thirty, so the set is closed by a test rather than by
+intent: adding a file here fails until a human edits the list and says why in
+the commit. Development docs go to `docs-dev/` (git-ignored, the operator's
+live worklog) and retired design capital to `local-archive/docs/`.
 
-The counterpart rule -- no PUBLIC link may point into the local archive -- is
-what keeps a retired doc honest. Citing `local-archive/...` from a docstring is
-fine and deliberate (it tells a reader the reference is not in the clone); a
-`docs/<retired>.md` link would claim something ships that does not.
+Two counterpart rules keep the arrangement honest:
+
+- No PUBLIC link may point into the local archive. Citing `local-archive/...`
+  from a docstring is fine and deliberate (it tells a reader the reference is
+  not in the clone); a `docs/<retired>.md` link would claim something ships
+  that does not.
+- `docs-dev/` is never tracked. The .gitignore entry carries no trailing slash
+  on purpose -- a pattern with one matches only a directory, and this repo has
+  already lost data to `runs/` failing that way -- so the rule is checked
+  against git itself, not against the ignore file.
 """
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
-DOCS = Path(__file__).resolve().parent.parent / "docs"
+REPO = Path(__file__).resolve().parent.parent
+DOCS = REPO / "docs"
 
 #: Every prose file the public repository carries. Edit deliberately.
 ALLOWED = {
-    "README.md",
     "project-documentation.md",
-    "rsi-mechanism.md",
-    "base-gate.md",
-    "sim-adaptation.md",
-    "plug-in-your-model.md",
-    "ph-station-design.md",
-    "fast-slow-brain-design.md",
-    "pi05-segment-goal.md",
 }
 
 
@@ -36,9 +37,10 @@ def test_docs_is_a_closed_set():
     present = {p.name for p in DOCS.glob("*.md")}
     extra = present - ALLOWED
     assert not extra, (
-        f"docs/ grew: {sorted(extra)}. Either the file belongs in "
-        f"local-archive/docs/ (the default -- see docs/README.md), or it earns a "
-        f"seat here and this list gains it in the same commit."
+        f"docs/ grew: {sorted(extra)}. A development doc belongs in `docs-dev/` "
+        f"and retired design capital in `local-archive/docs/` (the defaults -- "
+        f"see CLAUDE.md); shipping one instead means this list gains it in the "
+        f"same commit."
     )
     missing = ALLOWED - present
     assert not missing, (
@@ -57,3 +59,18 @@ def test_no_public_link_points_into_the_local_archive_as_if_it_shipped():
                 if name.endswith(".md") and "/" not in name and name not in ALLOWED:
                     broken.append(f"{doc.name}:{lineno} -> docs/{name}")
     assert not broken, f"public links to retired docs: {broken}"
+
+
+def test_docs_dev_is_never_tracked():
+    """The dev worklog is local state; git must not know about it."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "docs-dev"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split()
+    assert not tracked, (
+        f"docs-dev/ is tracked: {tracked}. It is the operator's local worklog -- "
+        f"`git rm --cached` it; the public set is docs/project-documentation.md."
+    )

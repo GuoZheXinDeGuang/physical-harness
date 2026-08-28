@@ -4,7 +4,7 @@ Runs only in the libero venv (`pytest -m libero`), where the LIBERO namespace
 package resolves via its venv-local .pth (see plugins/embodiment_libero/env.py
 docstring -- upstream's editable install maps nothing). In the harness .venv
 libero is unimportable, so the conftest hook auto-skips this -- the extra
-base-lane skip captured in docs/base-gate.md.
+base-lane skip captured in docs/project-documentation.md §3.
 """
 import os
 import sys

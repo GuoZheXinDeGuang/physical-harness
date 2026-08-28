@@ -1,7 +1,7 @@
 """A from-scratch ``harness.contracts.TaskPlanner`` for ``kitchen_thaw`` (M7 on
 RoboCasa) plus the card's PREDICATES -- the machine oracles its perceive/decide/
 verify nodes read off the ONE persistent MicrowaveThawingFridge episode's LIVE
-state (docs/sim-adaptation.md §3).
+state (docs/project-documentation.md §5.4).
 
 Sibling of ``plugins/clear_workspace/planner.py`` (the robosuite M7 card), one
 file, two halves:

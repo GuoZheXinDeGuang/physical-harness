@@ -7,8 +7,8 @@
 # percept.model, which plugins/embodiment_robosuite already owns, so discover()
 # keeps it OUT of the folded base plan (the base_profile sha is untouched) while
 # plugin_doctor still checks it at this path (card_mounts reads the file directly,
-# ignoring enabled). Its runtime activation is a session choice (docs/sim-adaptation.md
-# §1), not a base edit: the robocasa runtime mounts this card, session-main never does.
+# ignoring enabled). Its runtime activation is a session choice
+# (docs/project-documentation.md §5.2), not a base edit: the robocasa runtime mounts this card, session-main never does.
 enabled = false
 
 actuation = "sim"

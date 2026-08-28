@@ -390,7 +390,7 @@ def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
       verdict), ``cal``/``dev``/``heldout`` (``[lo,hi]``, pin a block instead of
       allocating), ``workers``, ``floor``. A NO-GO is a normal outcome -- the
       chain stops at the gate, names the missing capability, and burns no dev
-      seed. See docs/rsi-mechanism.md.
+      seed. See docs/project-documentation.md §4.
 
     This tool does NO brief
     validation and names NO provider: it is a passthrough into

@@ -9,7 +9,7 @@ probe script per task all encode the SAME chain with a different task welded in.
 This module is that chain with the task as an ARGUMENT. There is no ``if task ==``
 branch anywhere below, and adding a task is still installing a plugin dir.
 
-The chain, in order (docs/rsi-mechanism.md):
+The chain, in order (docs/project-documentation.md §4):
 
 a. **allocate** -- one contiguous 650-seed frontier off the STATUS.md ledger,
    split cal 150 / dev 300 / held-out 200. The caller may pin any of the three.
@@ -53,7 +53,7 @@ from board.store import parse_ledger
 from harness.spec_tabletop import STACK_PHASE_HEIGHT
 from scripts.alloc_seeds import next_block
 
-#: Block sizes, the shape every evidence plan in docs/ has used since M5.
+#: Block sizes, the shape every evidence plan has used since M5.
 CAL_N, DEV_N, HELDOUT_N = 150, 300, 200
 
 #: ``plugins/policies/drivers.py`` seeds numpy with ``spec.seed * 7919 + 11``,

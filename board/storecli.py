@@ -34,7 +34,7 @@ face's submit_brief tool uses, zero validation (the resident runtime's
 ``_BRIEF_KEYS`` re-validation on claim is the SOLE authority). Briefs take
 three kinds -- ``task``, ``campaign``, and ``rsi`` (the
 generic self-improvement chain, minimal form ``{"kind":"rsi","task":"<task>"}``;
-docs/rsi-mechanism.md). An rsi run heartbeats ``runs/<store>/progress.json`` with a
+docs/project-documentation.md §4). An rsi run heartbeats ``runs/<store>/progress.json`` with a
 ``stage`` field (calibrate / gate / dev / done) that ``campaign_progress`` below
 forwards verbatim, so the cockpit's 演进 panel shows where the chain is.
 

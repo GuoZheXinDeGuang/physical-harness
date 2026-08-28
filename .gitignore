@@ -3,7 +3,7 @@
 # .env.example. NO trailing slash -- a pattern with one matches only a
 # directory, and this repo has already lost data to `runs/` failing that way.
 .env
-# per-sim interpreters + third-party sim checkouts (docs/sim-adaptation.md);
+# per-sim interpreters + third-party sim checkouts (docs/project-documentation.md §5);
 # venvs and cloned sim repos never enter git
 sims/
 __pycache__/
@@ -22,5 +22,8 @@ progress.md
 
 # operator progress ledgers/worklogs: local-only, the public repo ships standard docs
 STATUS.md
-docs/overnight-goal-20260825.md
-docs/gap-paper-notes.md
+
+# development docs: current-state worklog + open campaign goals. The public set
+# is ONE file (docs/project-documentation.md); everything a stranger does not
+# need lives here or in local-archive/docs/. NO trailing slash -- see .env above.
+docs-dev

@@ -23,7 +23,7 @@ server below; the exported deliverable is a self-contained HTML report.
   resident runtime's inbox (the runtime re-validates `_BRIEF_KEYS` server-side —
   the tool never becomes the authority). Three brief kinds: `task`, `campaign`,
   and `rsi` — the generic self-improvement chain, minimal form
-  `{"kind":"rsi","task":"<task>"}` (`docs/rsi-mechanism.md`). The second write is
+  `{"kind":"rsi","task":"<task>"}` (`docs/project-documentation.md` §4). The second write is
   `model_server(action)` — `status` / `start` / `stop` for the local llama.cpp
   server on 127.0.0.1:30001, so the browser-only operator can hand its VRAM back
   to the simulator without a terminal. It switches the SERVICE PROCESS only;

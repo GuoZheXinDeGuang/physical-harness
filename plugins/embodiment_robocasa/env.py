@@ -21,7 +21,7 @@ from harness.spec import EpisodeSpec
 #: holding the target object's pose. kitchen_thaw's target is the frozen food
 #: MicrowaveThawingFridge names "meat" (its own _check_success reads that name),
 #: so its pose lands in obs under "meat_pos". Only the kitchen_thaw first-mission
-#: task is registered for phase 2 (docs/sim-adaptation.md §3).
+#: task is registered for phase 2 (docs/project-documentation.md §5.4).
 TASKS: dict[str, dict] = {
     "kitchen_thaw": {"env": "MicrowaveThawingFridge", "object_key": "meat_pos"},
     # Long-horizon composite missions (install report §3.2). object_key names the

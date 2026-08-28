@@ -2,7 +2,7 @@
 # embodiment.env seam the robosuite/robocasa cards own. It rides a third venv
 # (sims/libero-venv: py3.10, robosuite 1.4.0 + mujoco 2.3.2 + numpy 1.22.4 --
 # LIBERO's pins are 2022-era and cannot share either existing interpreter) and
-# will ride its own resident runtime, per docs/sim-adaptation.md (LIBERO §).
+# will ride its own resident runtime, per docs/project-documentation.md §5.6.
 #
 # enabled = false -> installed but INACTIVE, exactly the robocasa precedent: it
 # re-claims embodiment.env, so discover() keeps it out of the folded base plan

@@ -7,7 +7,7 @@ base-clean (test_boundaries parses it; the base lane never drags LIBERO in).
 Runs ONLY under sims/libero-venv (py3.10; robosuite 1.4.0 + mujoco 2.3.2 +
 numpy 1.22.4 -- a 2022-era stack, ABI-incompatible with both other interpreters).
 
-Known traps (verified during the 2026-08-27 install, docs/sim-adaptation.md):
+Known traps (verified during the 2026-08-27 install, docs/project-documentation.md §5.6):
 
 * **`pip install -e` of LIBERO maps NOTHING.** Upstream setup.py uses
   find_packages() but the repo's top-level `libero/` dir has no __init__.py, so

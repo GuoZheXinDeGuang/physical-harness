@@ -42,7 +42,8 @@
 #   (no launch-time string patching). it (1) sources nvm (node 22), (2) seeds the
 #   workspace user-data record, (3) serves the console from the built fork bin.
 #   (the pre-fork npx + profiles/dsh/rebrand.sh overlay retired once the fork
-#   reached parity -- see docs/ph-station-design.md §6.)
+#   reached parity -- see local-archive/docs/retired-from-public/ph-station-design.md
+#   §6, kept on the operator's box only.)
 #
 # the harness MCP integration is loaded from $DSH_HOME/cordis.patch.yml -- there
 # is NO `--patch` flag on `dsh web`. That file is RENDERED here on every start by
@@ -198,7 +199,7 @@ fi
 
 PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"
 # robocasa runtime interpreter: its venv is a SIBLING of the repo (see
-# docs/sim-adaptation.md §0 -- numpy 1/2 ABI forces a separate venv), overridable.
+# docs/project-documentation.md §5.1 -- numpy 1/2 ABI forces a separate venv).
 ROBOCASA_PYTHON="${ROBOCASA_PYTHON:-$REPO/../sims/robocasa-venv/bin/python}"
 PIDFILE="$REPO/$SESSION_DIR/cockpit.pids"
 RUNTIME_LOG="$REPO/$SESSION_DIR/runtime.log"
