@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-29, isolated, robosuite blocked)
 
 ```
-pass       : 747 passed
+pass       : 753 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
