@@ -717,18 +717,82 @@ def read_session(session_dir: str | Path) -> dict:
             "kinds": {k: len(v) for k, v in by_kind.items()}, "rows": by_kind}
 
 
+def runtime_python(session_dir: str | Path, pid) -> str | None:
+    """The interpreter path iff ``pid`` is RIGHT NOW the harness_runtime serving
+    ``session_dir``, else ``None``. The one liveness guard behind every face.
+
+    A status file is a leftover, not a promise: one named pid 4086108 for three
+    days after that process died, an agent read "runtime up", and an operator's
+    brief rotted in a dead inbox. So the pid is checked against /proc, and
+    checked STRUCTURALLY -- a substring scan for "harness_runtime.py" matches
+    the very shell that is grepping for it, which is why the model-server face
+    reads ``/proc/<pid>/exe`` instead:
+
+    * ``argv[0]`` must be an existing ``python*`` file -- kills a recycled pid
+      that landed on grep/ps/an editor. It is made absolute against THAT
+      process's cwd but never ``resolve()``d: the venv's ``bin/python`` symlink
+      is exactly what discriminates the robocasa runtime from the base one, and
+      its target is identical for both.
+    * some later arg must name ``harness_runtime.py`` -- kills an unrelated python.
+    * some later arg must resolve to THIS session dir -- so a sibling runtime
+      cannot answer for us, and ``session-robocasa`` never answers for
+      ``session-robocasa-rsi`` (the prefix collision cockpit's find_runtime hit).
+
+    Anything unreadable -- an exited pid, another user's process, a corrupt
+    status file -- reads as ``None``: this layer never claims a liveness it
+    cannot see.
+    """
+    try:
+        pid = int(pid)
+        argv = [a.decode(errors="replace")
+                for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if a]
+        cwd = Path(f"/proc/{pid}/cwd").readlink()
+    except (OSError, TypeError, ValueError):
+        return None
+    if not any(a.endswith("harness_runtime.py") for a in argv[1:]):
+        return None
+    target = Path(session_dir).resolve()
+    # `--session-dir X` and `--session-dir=X` both put X in one arg once the
+    # optional prefix is stripped; a relative one resolves against the RUNTIME's
+    # cwd, never ours.
+    if not any((cwd / a.removeprefix("--session-dir=")).resolve() == target
+               for a in argv[1:]):
+        return None
+    exe = cwd / argv[0]              # an absolute argv[0] absorbs the cwd (pathlib)
+    return str(exe) if exe.name.startswith("python") and exe.is_file() else None
+
+
 def read_runtime_status(session_dir: str | Path) -> dict | None:
     """The resident runtime's LIVE status for one session
     (``<session>/runtime_status.json``: pid/render/mode/boot_ts/display),
     overwritten each boot. ``None`` when absent (a session that has not booted
     since the file existed) or mid-write -- a plain read, not a chain row: this
-    is live operational state, not sealed evidence, so no chain verify. The pid
-    is reported, never judged: liveness is the reader's call, not this layer's."""
+    is live operational state, not sealed evidence, so no chain verify.
+
+    Two fields are DERIVED here, because the file on disk cannot know them and
+    every reader that judged the pid for itself judged it wrong:
+
+    * ``alive`` -- is that pid this session's harness_runtime right now
+      (``runtime_python``)? A runtime that announced its own exit
+      (``stopped_ts``) is dead too.
+    * ``heartbeat_age_s`` -- seconds since the last stamp, or ``None`` on a file
+      written before heartbeats existed. The second axis: ``alive`` says the
+      process exists, this says how long since it last stamped -- together they
+      separate "idle and listening" from "busy" from "wedged" from "dead".
+    """
     path = Path(session_dir) / "runtime_status.json"
     try:
-        return json.loads(path.read_text())
+        status = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(status, dict):
+        return None
+    beat = status.get("heartbeat_ts")
+    status["heartbeat_age_s"] = (round(time.time() - beat, 1)
+                                 if isinstance(beat, (int, float)) else None)
+    status["alive"] = (not status.get("stopped_ts")
+                       and runtime_python(session_dir, status.get("pid")) is not None)
+    return status
 
 
 #: Long-poll bounds for read_runtime_frame: the blocking wait is capped (a
@@ -963,13 +1027,22 @@ def session_progress(session_dir: str | Path) -> dict:
 
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
-    row payloads) for the sidebar. Sessions are tiny, so this reads each once."""
+    row payloads) for the sidebar. Sessions are tiny, so this reads each once.
+
+    ``runtime_alive`` rides along because this is the FIRST call anyone makes
+    ("Unsure? Call sessions()"): a session with no live runtime is an inbox
+    nothing will ever claim from, and finding that out only after the brief has
+    sat there for a day is how the last three incidents went. Deliberately the
+    bool and not the heartbeat age -- these rows are compared byte-for-byte
+    across the three faces, and an age would jitter between two calls."""
     runs_dir = Path(runs_dir)
     out = []
     for p in sorted(runs_dir.iterdir()):
         if p.is_dir() and is_session(p):
             s = read_session(p)
-            out.append({k: s[k] for k in ("name", "mtime", "chain_ok", "kinds", "skipped")})
+            status = read_runtime_status(p)
+            out.append({k: s[k] for k in ("name", "mtime", "chain_ok", "kinds", "skipped")}
+                       | {"runtime_alive": bool(status and status["alive"])})
     return sorted(out, key=lambda s: s["mtime"], reverse=True)
 
 

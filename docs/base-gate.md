@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-29, isolated, robosuite blocked)
 
 ```
-pass       : 728 passed
+pass       : 734 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,29 @@ wall time  : ~18.2s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +6 over the fresh-clone-deploy snapshot (728 -> 734, skips unchanged at 32)
+is runtime LIFECYCLE — a status file must not be able to lie about being alive
+(`tests/test_read_session.py` +4, `tests/test_runtime_drain.py` +2). Three times
+running, an operator brief was submitted into an inbox no process was serving,
+and every face reported "runtime up" because `runtime_status.json` still named a
+pid that had exited days earlier. `read_runtime_status` now DERIVES two fields
+instead of passing the file through verbatim: `alive`, decided against `/proc`
+(argv[0] an existing `python*` file, a later arg naming `harness_runtime.py`,
+another resolving to THIS session dir -- structural, because a substring scan for
+`harness_runtime.py` matches the shell that is grepping for it, the same lesson
+`/proc/<pid>/exe` taught the model-server face), and `heartbeat_age_s`, the
+second axis. `discover_sessions` carries the bool as `runtime_alive` so the FIRST
+call an agent makes shows the dead inbox. The beat moved out of the poll loop
+into a daemon thread — the loop only came back around BETWEEN briefs, so a
+runtime an hour into an rsi chain and a runtime dead an hour produced the same
+stale badge; a node-boundary stamp would not have covered it either, because
+campaigns and rsi chains run in subprocesses the parent only waits on. What is
+pinned: a reaped pid reads dead, a live pid that is NOT this session's runtime
+reads dead, a never-stamped file ages as `null` and never as `0`, and a clean
+exit stamps `stopped_ts` (belt-and-braces; `kill -9` never writes it, which is
+why `alive` asks `/proc`). Sim-free (`_process` monkeypatched to a plain sleep),
+no seeds burned.
 
 The +11 over the node-level-RSI snapshot (717 -> 728, skips unchanged at 32) is
 `tests/test_deploy_profile.py`: the fresh-clone deploy path. The console's
