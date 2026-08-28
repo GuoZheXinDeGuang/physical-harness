@@ -35,7 +35,12 @@ def _live_session(tmp_path: Path, name: str):
     _session(runs, name)
     fake = tmp_path / "harness_runtime.py"
     fake.write_text("import time; time.sleep(60)\n")
-    proc = subprocess.Popen([sys.executable, str(fake)],
+    # --session-dir rides the argv because board.store.runtime_liveness checks
+    # WHICH session a pid serves (this box runs three runtimes at once, so a
+    # recycled pid must not vouch for the wrong one) -- without it the session
+    # reads as dead and every brief here comes back `stalled`.
+    proc = subprocess.Popen([sys.executable, str(fake),
+                             "--session-dir", str(runs / name)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     (runs / name / "runtime_status.json").write_text(json.dumps({"pid": proc.pid}))
     return runs, proc

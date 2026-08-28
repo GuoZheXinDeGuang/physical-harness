@@ -1,4 +1,4 @@
-"""Base/plugin test split (R3, W6 双层测试).
+"""Base/plugin test split (R3, W6 双层测试) + the live-runtime stand-in.
 
 The `robosuite` marker gates every test that drives the embodiment_robosuite
 card's mujoco rollout. When robosuite is unimportable (the extra is not
@@ -7,7 +7,11 @@ fast lane on a card-absent machine, and `pytest -m robosuite` self-skips there
 instead of erroring. With the card present the marker is inert and every test
 runs, so full-suite parity is untouched.
 """
+import json
+import subprocess
+import sys
 from importlib.util import find_spec
+from pathlib import Path
 
 import pytest
 
@@ -37,6 +41,41 @@ def _auto_skip(items, pkg, marker, reason):
     for item in items:
         if marker in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture
+def live_runtime(tmp_path):
+    """Make a session dir look SERVED by a real resident runtime.
+
+    ``board.store.runtime_liveness`` reads ``/proc/<pid>/cmdline`` rather than
+    trusting ``runtime_status.json`` (a file outlives its writer -- the whole
+    2026-08-27/28/29 incident family), so a test that wants a live session must
+    supply a live process with a runtime's argv: ``harness_runtime.py
+    --session-dir <that session>``. Spawning one is cheaper than mocking the
+    /proc seam and it exercises the guard for real -- test_submit_advisory also
+    reads the interpreter back off argv[0] the same way.
+
+    Yields ``serve(session_dir) -> pid``; every process is reaped at teardown.
+    """
+    procs = []
+    fake = tmp_path / "harness_runtime.py"
+    fake.write_text("import time; time.sleep(120)\n")
+
+    def serve(session_dir) -> int:
+        session_dir = Path(session_dir)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        proc = subprocess.Popen(
+            [sys.executable, str(fake), "--session-dir", str(session_dir)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        procs.append(proc)
+        (session_dir / "runtime_status.json").write_text(
+            json.dumps({"pid": proc.pid, "mode": "execution"}))
+        return proc.pid
+
+    yield serve
+    for proc in procs:
+        proc.kill()
+        proc.wait()
 
 
 def pytest_collection_modifyitems(config, items):

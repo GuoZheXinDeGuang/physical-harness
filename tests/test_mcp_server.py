@@ -95,8 +95,9 @@ def _run_task_session(tmp_path: Path) -> Path:
     return session
 
 
-def test_run_task_returns_a_handle_without_waiting(tmp_path):
+def test_run_task_returns_a_handle_without_waiting(tmp_path, live_runtime):
     session = _run_task_session(tmp_path)
+    live_runtime(session)   # else the handle honestly comes back `stalled`
 
     res = ms.run_task("stack", 90000, max_replans=2)
 

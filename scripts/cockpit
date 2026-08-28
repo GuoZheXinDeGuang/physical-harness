@@ -2,6 +2,7 @@
 # physical-harness cockpit -- the SINGLE native entry for the lab console.
 #
 # operators run:  scripts/cockpit            (start EVERYTHING; leaves it running)
+#                 scripts/cockpit --status    (is my system healthy? FIRST command)
 #                 scripts/cockpit --stop      (stop what THIS cockpit started)
 # never:          npx @deepseek-ai/dsh web ...  /  a second terminal for the runtime
 #
@@ -43,6 +44,7 @@ set -o pipefail
 set -u
 
 DO_STOP=0
+DO_STATUS=0
 NO_RUNTIME=0
 NO_RENDER=0
 WITH_ROBOCASA=0                          # opt-in second runtime (design §1); OFF by default
@@ -55,9 +57,17 @@ usage() {
 physical-harness cockpit -- the single entry that starts EVERYTHING
 
 usage: cockpit [--port N] [--no-render] [--no-runtime]
+       cockpit --status
        cockpit --stop
        cockpit -h|--help
 
+  --status       print system health and exit, starting nothing. THE FIRST
+                 COMMAND when anything looks wrong: per session the runtime's
+                 real liveness (asked of /proc, never of its own leftover
+                 runtime_status.json) + heartbeat age + inbox backlog + crash
+                 orphans, then the console and the model server. Exit 0 when
+                 healthy, 1 when it found a problem. The console's health tool
+                 and 'python -m board.storecli health' print the same face.
   --port N       port to serve the console on (default: PH_CONSOLE_PORT from
                  the repo's .env, else 3080)
   --trusted-host H  also trust gateway requests arriving via host H (dsh binds
@@ -134,6 +144,7 @@ while [ $# -gt 0 ]; do
     --trusted-host)   TRUSTED_HOST="${2:?--trusted-host needs a value}"; shift 2;;
     --trusted-host=*) TRUSTED_HOST="${1#*=}"; shift;;
     --stop)   DO_STOP=1; shift;;
+    --status) DO_STATUS=1; shift;;
     --no-runtime) NO_RUNTIME=1; shift;;
     --no-render)  NO_RENDER=1; shift;;
     --with-robocasa) WITH_ROBOCASA=1; shift;;
@@ -141,6 +152,41 @@ while [ $# -gt 0 ]; do
     *) echo "cockpit: unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
 done
+
+# --- --status: the first command when something is wrong --------------------
+# Starts nothing, stops nothing, needs no node. It PRINTS board.store.health --
+# the same dict the console's health tool and `storecli health` return, so the
+# terminal and the UI can never disagree about whether the system is up. The
+# formatting is here (the human face) and the statistics stay in board/, which is
+# the same split every other panel follows.
+if [ "$DO_STATUS" -eq 1 ]; then
+  STATUS_PY="${PH_BOARD_PYTHON:-$REPO/.venv/bin/python}"
+  [ -x "$STATUS_PY" ] || STATUS_PY="$(command -v python3)"
+  PYTHONPATH="$REPO" "$STATUS_PY" - "$REPO/runs" "$PORT" <<'PYEOF'
+import sys
+from board.store import health
+
+h = health(sys.argv[1], int(sys.argv[2]))
+print("cockpit --status: " +
+      ("HEALTHY" if h["ok"] else f"{len(h['problems'])} PROBLEM(S)"))
+for p in h["problems"]:
+    print("  ! " + p)
+for s in h["sessions"]:
+    beat = "-" if s["heartbeat_age_s"] is None else f"{s['heartbeat_age_s']:.0f}s"
+    print(f"  session {s['name']:<22} {'UP  ' if s['alive'] else 'DOWN'}"
+          f"  pid={str(s['pid'] or '-'):<8} mode={str(s['mode'] or '-'):<10}"
+          f" beat={beat:<8} queued={s['queued']} processing={s['processing']}"
+          f" done={s['done']} failed={s['failed']}")
+c, m = h["console"], h["model"]
+print(f"  console 127.0.0.1:{c['port']:<11} "
+      f"{'SERVING' if c['serving'] else 'DOWN'}")
+print(f"  model   127.0.0.1:{m['port']:<11} "
+      f"{'HEALTHY' if m['healthy'] else ('LOADING' if m['running'] else 'STOPPED')}"
+      f"  pid={str(m['pid'] or '-'):<8} model={m['model']} vram_mib={m['vram_mib']}")
+sys.exit(0 if h["ok"] else 1)
+PYEOF
+  exit $?
+fi
 
 PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"
 # robocasa runtime interpreter: its venv is a SIBLING of the repo (see

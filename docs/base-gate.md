@@ -35,7 +35,7 @@ Two ways:
 ## current snapshot (2026-08-29, isolated, robosuite blocked)
 
 ```
-pass       : 728 passed
+pass       : 747 passed
 skips      : 32 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -53,6 +53,22 @@ wall time  : ~18.2s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
+
+The +19 over the deploy-profile snapshot (728 -> 747, skips unchanged at 32) is
+`tests/test_health.py`: the pipeline-liveness audit. Three incidents in three days
+were one disease -- a dead piece of the pipeline that every face still read as
+normal, because `runtime_status.json` is a FILE and a file outlives its writer.
+What is pinned: liveness is asked of `/proc` and neither a leftover status file
+nor a recycled pid may vouch for a session; a brief queued (or claimed) with no
+live runtime reads `stalled`, carries `stalled_from`, and never long-polls; a
+brief that keeps killing the runtime is filed as poison after `_MAX_REQUEUES`
+instead of re-queuing forever, and the re-queue counter forgets a brief that
+finished; and `health()` names the session whose briefs are rotting, stays quiet
+about a retired one, sees a dead console, skips campaign stores, and never raises
+on a missing runs dir -- through the board fn AND the CLI face. All sim-free and
+unmarked, so 19 add to both lanes and skip in neither. Nothing here touches runs/
+or spawns a runtime; the dead-pid cases use `pid_max + 1`. Sim-free, no seeds
+burned. Full failure-mode table: `docs/ph-station-design.md` §10.
 
 The +11 over the node-level-RSI snapshot (717 -> 728, skips unchanged at 32) is
 `tests/test_deploy_profile.py`: the fresh-clone deploy path. The console's
@@ -262,8 +278,8 @@ faces — default / whitelist / traversal) + `test_cockpit_stop.py` (6: per-sess
 --stop reaping by exact pid, adopted web/runtime left up). All are sim-free and
 unmarked, so they add to both lanes and skip in neither.
 
-Full-suite parity (card present): `759 passed, 29 skipped` (re-measured
-2026-08-29 with the deploy-profile tests; 728 base + 28 robosuite-marked
+Full-suite parity (card present): `778 passed, 29 skipped` (re-measured
+2026-08-29 with the pipeline-liveness tests; 747 base + 28 robosuite-marked
 + the 3 camera-env skips that convert to passes when the card is present).
 This line had gone stale at `709` -- the arithmetic was last done in the
 678-base era and the base count moved to 717 without it (the robocasa-marked

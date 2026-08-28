@@ -54,12 +54,21 @@ Three things are never yours to pick:
 
 **Submitting does not block.** `submit_brief`/`run_task` hand back a handle;
 `brief_status(brief_id, wait_ms=…)` is the ONE call that says where the brief is
-(queued/running/done/failed/cancelled, with queue position and how long the thing
-ahead has been running) and what it did. Waiting out `wait_ms` is not an error —
-it means "still running", so wait again. Never rebuild a brief's fate by hand
-from `runtime_events` + `session` + `session_progress`. `cancel_brief(brief_id)`
-stops one; it lands at a node boundary, seals as `runtime.task_cancelled`, and is
-never counted as a failure.
+(queued/running/**stalled**/done/failed/cancelled, with queue position and how
+long the thing ahead has been running) and what it did. Waiting out `wait_ms` is
+not an error — it means "still running", so wait again. **`stalled` means nobody
+will ever claim it**: that session has no live runtime, `runtime.reason` says
+why, and waiting is pointless — say so and stop polling. Never rebuild a brief's
+fate by hand from `runtime_events` + `session` + `session_progress`.
+`cancel_brief(brief_id)` stops one; it lands at a node boundary, seals as
+`runtime.task_cancelled`, and is never counted as a failure.
+
+**When anything looks wrong, call `health()` FIRST** — one dict covering every
+session's runtime liveness (asked of `/proc`, never of its own leftover
+`runtime_status.json`), mode, heartbeat age, inbox backlog and crash orphans,
+plus the console and the model server. Read its `problems` list. Never report
+"the runtime is alive" from `runtime_status()` — that file outlives the process
+that wrote it, and doing so is exactly how a brief sat queued for 21 hours.
 
 Read results through `runtime_events` / `session_progress` / `store` /
 `heldout` / `vault_node` — do not reassemble conclusions from raw files under
