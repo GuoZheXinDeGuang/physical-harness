@@ -420,4 +420,17 @@ echo "cockpit: serving physical-harness console (fork build) at http://127.0.0.1
 # cwd>/.env`, so without this the keys the console can see depend on which
 # directory the operator happened to type the command in.
 cd "$REPO" || { echo "cockpit: ERROR cannot cd to $REPO" >&2; exit 1; }
-exec node "$BIN" web --no-open --port "$PORT" ${TRUSTED_HOST:+--trusted-host "$TRUSTED_HOST"}
+# setsid + background, NOT exec: the console must outlive the terminal that
+# started it. The runtimes already do (runtime_up spawns them with setsid), so an
+# exec'd web server meant a closed terminal left the operator with live runtimes
+# and a dead UI -- the one surface they actually use. Logs go to a file because a
+# detached process has no terminal to write to.
+WEB_LOG="$REPO/$SESSION_DIR/web.log"
+setsid node "$BIN" web --no-open --port "$PORT" \
+  ${TRUSTED_HOST:+--trusted-host "$TRUSTED_HOST"} >>"$WEB_LOG" 2>&1 </dev/null &
+WEB_SPAWNED=$!
+# The pidfile above recorded $$ on the assumption that exec would replace this
+# shell with node. It no longer does, so correct the row to the pid that is
+# actually serving -- --stop kills by that exact pid (with a cmdline re-check).
+sed -i "s/^web_pid=.*/web_pid=$WEB_SPAWNED/" "$PIDFILE"
+echo "cockpit: console detached (pid $WEB_SPAWNED, log $WEB_LOG); this terminal is free" >&2
