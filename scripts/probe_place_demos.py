@@ -35,6 +35,14 @@ onset to the first frame the meat is inside. That interval is what a segment
 executor would be trained on, and printing its size is how "enough data?"
 stops being a guess.
 
+--replay additionally emits, per demo, the two things a scripted->learned
+HANDOVER has to be judged against: whether `fridge_is_open` holds at t=0 (the
+seeded eval envs all start open, so a demo that starts closed makes the policy
+out-of-distribution from frame 0), and :func:`handover_state` read at the demo
+frame where the scripted nav_micro leg's own arrival predicate would have fired.
+Handing `place` to a policy from a state outside that distribution measures the
+handover, not the policy, so the distribution is measured before the rate is.
+
 Read-only. Replays sealed states, seals nothing, burns no seed.
 
     scripts/probe_place_demos.py --controls
@@ -46,9 +54,12 @@ import argparse
 import gzip
 import json
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # `plugins` on path
 
 #: Content-addressed demonstration root. Data, not evidence -- it never enters
 #: the session-log chain; the training prereg references it by digest.
@@ -128,6 +139,51 @@ def _load(idx: int):
     return np.load(d / "states.npz")["states"], model, (d / "ep_meta.json").read_text()
 
 
+def micro_centre(env) -> np.ndarray:
+    """World centre of the microwave's interior region -- the seat the place
+    segment aims at. Absolute poses are scene-specific, so every state below is
+    expressed RELATIVE to this; that is what makes two kitchens comparable."""
+    p0, px, py, pz = (np.asarray(v) for v in
+                      next(iter(env.microwave.get_int_sites(relative=False).items()))[1])
+    return p0 + ((px - p0) + (py - p0) + (pz - p0)) / 2.0
+
+
+def handover_state(env, t=None) -> dict:
+    """The robot/object state at the nav->place boundary, ONE definition read on
+    both sides of the comparison.
+
+    A live rollout records it at the instant the scripted chain hands `place`
+    over; ``--replay`` records it at the demo frame where the SAME nav_micro
+    arrival predicate would have fired. Two separate readings of "the same
+    moment" would measure the readings, so there is one function and both
+    callers import it.
+    """
+    import robocasa.utils.object_utils as OU
+    from robocasa.utils.env_utils import compute_robot_base_placement_pose
+
+    from plugins.embodiment_robocasa import drivers as D
+
+    xy, psi = D._base_pose(env)
+    pos, ori = compute_robot_base_placement_pose(env, D._fixture(env, "microwave"))
+    dock, dock_yaw = np.asarray(pos[:2], float), float(ori[2])
+    centre, eef, meat = micro_centre(env), D._eef(env), D._obj_pos(env, FOOD)
+    return {
+        "t": t,
+        "base_xy": [round(float(v), 4) for v in xy],
+        "base_yaw": round(float(psi), 4),
+        "dock_dist": round(float(np.linalg.norm(dock - xy)), 4),
+        "dock_dyaw": round(float((dock_yaw - psi + np.pi) % (2 * np.pi) - np.pi), 4),
+        "eef_to_micro": [round(float(v), 4) for v in (centre - eef)],
+        "meat_to_micro": [round(float(v), 4) for v in (centre - meat)],
+        "meat_to_eef": [round(float(v), 4) for v in (meat - eef)],
+        "meat_z": round(float(meat[2]), 4),
+        "torso_q": round(D._torso_q(env), 4),
+        "grasped": bool(OU.check_obj_grasped(env, FOOD)),
+        "inside": bool(OU.obj_inside_of(env, FOOD, env.microwave)),
+        "fridge_open": bool(env.fridge.is_open(env)),
+    }
+
+
 def replay(n: int) -> bool:
     """Replay real demos through the predicate; derive the place segment."""
     from robocasa.scripts.dataset_scripts.playback_dataset import reset_to
@@ -139,12 +195,28 @@ def replay(n: int) -> bool:
         states, model, ep_meta = _load(idx)
         reset_to(env, {"model": model, "ep_meta": ep_meta, "states": states[0]})
 
-        grasped, inside = [], []
+        from robocasa.utils.env_utils import compute_robot_base_placement_pose
+
+        from plugins.embodiment_robocasa import drivers as D
+
+        dock = np.asarray(compute_robot_base_placement_pose(
+            env, D._fixture(env, "microwave"))[0][:2], float)
+
+        grasped, inside, fridge, handover = [], [], [], None
         for t in range(0, len(states), STRIDE):
             env.sim.set_state_from_flattened(states[t])
             env.sim.forward()
             grasped.append(bool(OU.check_obj_grasped(env, FOOD)))
             inside.append(bool(OU.obj_inside_of(env, FOOD, env.microwave)))
+            fridge.append(bool(env.fridge.is_open(env)))
+            # The corresponding moment: the first frame at which the scripted
+            # nav_micro leg's OWN arrival predicate would have fired while the
+            # meat is held -- i.e. exactly where a scripted chain hands `place`
+            # over. Read from the driver's constant, never a literal copy.
+            if (handover is None and grasped[-1] and not inside[-1]
+                    and np.linalg.norm(dock - D._base_pose(env)[0])
+                    <= D.NavigateDriver.CARRY_STOP):
+                handover = handover_state(env, t)
         g, i = np.array(grasped), np.array(inside)
 
         # Place runs from the LAST grasp onset before the meat is first inside:
@@ -158,17 +230,31 @@ def replay(n: int) -> bool:
             start = int(onsets[-1]) if len(onsets) else int(np.argmax(gg))
 
         length = (end - start) * STRIDE if 0 <= start < end else 0
+        meta = json.loads(ep_meta)
         rows.append({"episode": idx, "n_frames": int(len(states)),
                      "inside_at_t0": bool(i[0]), "inside_ever": bool(i.any()),
+                     "fridge_open_at_t0": bool(fridge[0]),
+                     "fridge_open_frac": round(float(np.mean(fridge)), 3),
+                     "init_robot_base_pos": meta["init_robot_base_pos"],
+                     "init_robot_base_ori": meta["init_robot_base_ori"],
+                     "layout_id": meta["layout_id"], "style_id": meta["style_id"],
                      "place_start": start * STRIDE if start >= 0 else -1,
                      "place_end": end * STRIDE if end >= 0 else -1,
-                     "place_len": int(length)})
+                     "place_len": int(length),
+                     "handover": handover})
         print(f"ep {idx:3d} n={len(states):5d}  inside t0={i[0]!s:5} ever={i.any()!s:5}"
+              f"  fridge_t0={fridge[0]!s:5}"
               f"  place=[{rows[-1]['place_start']},{rows[-1]['place_end']}]"
-              f" len={length}", flush=True)
+              f" len={length}  handover_t={None if handover is None else handover['t']}",
+              flush=True)
 
     ever = sum(r["inside_ever"] for r in rows)
     t0 = sum(r["inside_at_t0"] for r in rows)
+    print(f"fridge_open_at_t0 {sum(r['fridge_open_at_t0'] for r in rows)}/{len(rows)}"
+          "   (the eval envs all start OPEN -- a demo that starts CLOSED puts the "
+          "policy out of distribution from frame 0)")
+    print(f"handover moment found {sum(r['handover'] is not None for r in rows)}"
+          f"/{len(rows)}")
     lens = [r["place_len"] for r in rows if r["place_len"] > 0]
     print(f"\ninside_ever  {ever}/{len(rows)}   want all (every demo succeeds)")
     print(f"inside_at_t0 {t0}/{len(rows)}   want 0   (else the predicate is free)")
