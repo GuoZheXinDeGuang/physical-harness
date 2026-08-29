@@ -9,13 +9,16 @@ green on a card-absent machine.
 
 from __future__ import annotations
 
+import shutil
 import socket
 import threading
 
 import numpy as np
 import pytest
 
-from plugins.policy_vla_remote import RemoteChunkDriver, RemoteVlaPolicy, provider, reconcile
+from plugins.policy_vla_remote import (
+    RemoteChunkDriver, RemoteVlaPolicy, checkpoint_sha, provider, reconcile,
+)
 
 _METADATA = {
     "training_obs_image_size": [224, 224],
@@ -219,3 +222,52 @@ def test_live_socket_handshake_and_inference_round_trip():
                           **dict(_CONTRACT, image_size=[256, 256]))
     with pytest.raises(ValueError, match="handshake mismatch"):
         bad.connect()
+
+
+def _fake_checkpoint(root, *, weights=b"W", stats=b"S", opt=b"O"):
+    """An orbax-shaped checkpoint: served bytes, plus optimizer state beside them."""
+    (root / "params").mkdir(parents=True)
+    (root / "params" / "p.msgpack").write_bytes(weights)
+    (root / "assets" / "robocasa").mkdir(parents=True)
+    (root / "assets" / "robocasa" / "norm_stats.json").write_bytes(stats)
+    (root / "train_state").mkdir()
+    (root / "train_state" / "opt.msgpack").write_bytes(opt)
+    return root
+
+
+def test_checkpoint_sha_survives_reclaiming_disk(tmp_path):
+    """Deleting train_state/ must NOT move the identity.
+
+    Optimizer state decides the next training step, never a response, and it is
+    half a 9 GB checkpoint -- so it is the first thing pruned when the disk
+    fills. A digest that moved when it went would force every manifest that
+    declared it to be re-declared for weights nobody touched.
+    """
+    a = _fake_checkpoint(tmp_path / "a")
+    before = checkpoint_sha(a)
+    shutil.rmtree(a / "train_state")
+    assert checkpoint_sha(a) == before
+
+    # ... and it is not blind: different optimizer state, same served bytes,
+    # same digest -- but different SERVED bytes must differ.
+    b = _fake_checkpoint(tmp_path / "b", opt=b"different-optimizer-state")
+    assert checkpoint_sha(b) == before
+
+
+def test_checkpoint_sha_moves_when_norm_stats_move(tmp_path):
+    """Same weights, different norm stats, is a different policy.
+
+    Un-normalization runs on every response, so identical params against
+    different stats return different actions. Digesting params alone would call
+    those one checkpoint.
+    """
+    a = _fake_checkpoint(tmp_path / "a")
+    b = _fake_checkpoint(tmp_path / "b", stats=b"rescaled")
+    assert checkpoint_sha(a) != checkpoint_sha(b)
+
+
+def test_checkpoint_sha_refuses_an_empty_claim(tmp_path):
+    """A digest over nothing would be a stable, meaningless string that mounts."""
+    (tmp_path / "train_state").mkdir(parents=True)
+    with pytest.raises(ValueError, match="nothing servable"):
+        checkpoint_sha(tmp_path)

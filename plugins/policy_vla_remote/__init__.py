@@ -46,8 +46,10 @@ Tier-B probes the server port and SKIPs loudly when nothing is listening.
 
 from __future__ import annotations
 
+import hashlib
 import socket
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -75,6 +77,46 @@ _HANDSHAKE_KEYS = {
 #: string the server sends -- it does not verify the digest was computed that
 #: way, so the reduction above is the contract both sides must agree on.
 _IDENTITY_KEY = "checkpoint_sha"
+
+
+def checkpoint_sha(root: str | Path) -> str:
+    """THE digest both sides of the socket must agree on -- the executable form
+    of the :data:`_IDENTITY_KEY` contract above, so the gate and the echo cannot
+    drift apart into two implementations of one prose paragraph.
+
+    Serving wrappers call this to fill ``metadata["checkpoint_sha"]``; operators
+    call it to fill the manifest param. Stdlib-only, so the harness venv computes
+    it with zero deps and a model venv computes it with none of ours::
+
+        python -c "from plugins.policy_vla_remote import checkpoint_sha; \\
+                   print(checkpoint_sha('/path/to/checkpoints/run/199'))"
+
+    It digests **what determines the answer**, not the whole tree: the weights
+    and the normalization assets. An orbax ``train_state/`` is optimizer state
+    -- it decides the next training step, never a response -- and it is half the
+    bytes, so it is the first thing deleted to reclaim disk. Hashing it would
+    move the identity of weights that did not change, and this repo would rather
+    a digest survive housekeeping than record a training moment. ``assets/`` IS
+    hashed: it carries the norm stats, and identical weights un-normalized
+    against different stats return different actions, which is a different
+    policy by the only definition that matters here.
+    """
+    root = Path(root)
+    served = [d for d in (root / "params", root / "assets") if d.exists()]
+    if not served:
+        raise ValueError(
+            f"no params/ or assets/ under {root} -- nothing servable to digest, "
+            f"and an identity claim over an empty directory would be a lie")
+    files = sorted((p.relative_to(root).as_posix()
+                    for d in served for p in d.rglob("*") if p.is_file()))
+    h = hashlib.sha256()
+    for rel in files:
+        h.update(rel.encode())
+        h.update(b"\0")
+        with open(root / rel, "rb") as f:
+            while chunk := f.read(1 << 20):  # 9 GB checkpoints do not fit in RAM
+                h.update(chunk)
+    return h.hexdigest()
 
 
 def _norm(v: Any) -> Any:

@@ -383,8 +383,8 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 ### 3.2 当前快照（2026-08-29，隔离，robosuite 被挡）
 
 ```
-pass       : 761 passed
-skips      : 32 skipped
+pass       : 766 passed
+skips      : 30 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
              [1] test_reducers.py:171         cloned weights not present
@@ -395,24 +395,17 @@ skips      : 32 skipped
              [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
              [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
-             [2] test_policy_vla_remote.py     policy_remote extra not installed
+             (policy_remote extra now installed -- its 2 live-socket tests run)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
 wall time  : ~19.3s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-**全量对照（卡在场）**：`783 passed, 29 skipped`。这是算术值：最后一次实测是 2026-08-29
-的 `778 passed, 29 skipped`，此后新增的 `tests/test_docs_allowlist.py` 那条 `docs-dev/`
-未跟踪断言（+1）和 `tests/test_policy_vla_remote.py` 的握手身份闸四条（+4）都是 sim-free
-且无标记的，两条车道各 +5。robocasa 标记项在 harness
-`.venv` 里也跳过（那里同样没装 robocasa），1 个 libero 标记项只在 `sims/libero-venv`
-里跑；robocasa 那些只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑，结果是
-`13 passed, 5 xfailed`——那 5 个 xfail 是实测出来的驱动诚实失败面（nav-microwave 空载
-时冰箱挡住 seed-7 的过道 / 关门 / 从 standoff 放置 / seed 4 和 5 的假闭合抓取）。
-`base_profile` 的 sha 逐字节稳定在 `b905a5…`（折叠结果等于 `runs/round25-rerun` 里封存
-的那个值）——manifest 折叠复现了旧的硬编码 mounts，而未激活的 embodiment_robocasa 卡
-（`enabled = false`）不折出任何 mount。
+**全量对照（卡在场）**：`797 passed, 27 skipped`（2026-08-29 实测，非算术值）。
+隔离快照比它少 31 个 pass：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
+而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
+只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
 
 ### 3.3 fresh clone 的合法差异
 
@@ -992,18 +985,46 @@ checkpoint 的**摘要**，绝不存权重（GB 级）。
 
 ```
 harness (base venv)  ──websocket+msgpack──▶  policy venv (JAX/torch)
-   policy_vla_remote card                      serve_policy.py wrapper
+   policy_vla_remote card                    scripts/serve_vla_openpi.py
    handshake gate ────── checkpoint_sha ─────── 第一帧 metadata
 ```
 
 **摘要是什么。** `checkpoint_sha` 是 64 位小写 sha256 hexdigest，算的是**权重字节本身**：
-遍历 checkpoint 目录，按 POSIX 相对路径排序，把每个文件的
+遍历 checkpoint 下的 `params/` 和 `assets/`，按 POSIX 相对路径排序，把每个文件的
 `relpath.encode() + b"\0" + file_bytes` 依次喂进同一个 sha256。不哈希路径、不哈希 run
 名——那些能改名，而 SkillRecord 的身份主张必须扛得住改名。这是
 `plugins/policies/bc.py` 里 `MLPPolicy.sha()` 的同一招（那边哈希的是 numpy 权重数组的
-`tobytes()`）。权威定义在 `plugins/policy_vla_remote/__init__.py` 的 `_IDENTITY_KEY`
-注释里，**服务端包装器按那个算并回显**；闸只做字符串比对，不会去验证对面是不是真按这个
-规约算的——所以这条规约是两边必须共同遵守的契约。
+`tobytes()`）。闸只做字符串比对，不会去验证对面是不是真按这个规约算的——所以这条规约是
+两边必须共同遵守的契约，而一条两边各写一遍的契约会漂。所以它只有**一份实现**：
+`plugins/policy_vla_remote/__init__.py` 的 `checkpoint_sha()`（stdlib-only，1 MiB 分块读，
+9 GB 的 checkpoint 约 6 秒），闸这边和回显那边调的是同一个函数，填 manifest 的算式也是它。
+
+**为什么只哈希 `params/` 和 `assets/`，不哈希整棵树。** 摘要覆盖的是**决定应答的东西**。
+orbax 的 `train_state/` 是优化器状态——它决定下一个训练步，永远不决定一次应答——而且它占
+9 GB 里的 3.1 GB，是磁盘紧张时第一个被删的东西。把它算进去，等于删一次没人动过的权重就要
+换一次身份，逼着每份声明过它的 manifest 重新声明。`assets/` **要**算：里面是 norm stats，
+同样的权重配不同的统计量，反归一化出来的动作就不一样——按这里唯一算数的定义，那是**另一个
+策略**。
+
+**服务端怎么回显。** `scripts/serve_vla_openpi.py` 是给 openpi checkpoint 的包装器：它
+**不 fork 也不 vendor** openpi 的 server，只是把 `create_trained_policy` 建出来的 policy
+和一份带 `checkpoint_sha` 的 metadata 交给 openpi 自己的 `WebsocketPolicyServer`。它跑在
+**openpi 的解释器**下（`PYTHONPATH=<harness> <openpi>/.venv/bin/python
+<harness>/scripts/serve_vla_openpi.py --checkpoint-dir … --config …`），这正是 §6.2 那条缝：
+模型栈留在自己的 venv 里，harness 这边只要 websockets+msgpack+numpy。它在 `scripts/` 而
+不在卡里，因为 `plugins/` 只能 import 自己 manifest 声明的东西（`tests/test_boundaries.py`
+是闸），而 openpi 恰恰**不是**这张卡的依赖——卡的全部意义就是模型栈在 socket 那头。
+`training_obs_image_size` / `action_chunk_size` / `default_unnorm_key` 一律从解析出来的
+`TrainConfig` 读，不在包装器里重写一遍；`camera_views` **不回显**——slot 顺序在 config 的
+input transform 里（RoboCasa 是 `RoboCasaInputs`），没有可问的接口，手抄一份就是那种会
+悄悄过期的第二份拷贝，所以它照旧留在 `handshake["unverified"]`。
+`--print-sha` 只算摘要不碰 GPU。
+
+**这条路已经端到端验过**（`scripts/probe_vla_handshake.py`，对着真 server 真 socket，不是
+对着 `reconcile()` 的 dict）：摘要相符 → MOUNTED；摘要差一个字符 → REFUSED（`handshake
+mismatch`）；manifest 声明了摘要而**原样的** openpi `serve_policy.py` 发 `{}` → REFUSED
+（`handshake gap`）——注意最后这一条里两个 server 加载的是**同一份权重**，被拒的理由不是
+权重错了，而是**证不出来**。
 
 **闸怎么判。** manifest 声明了 `checkpoint_sha` 时：服务端回显同一个摘要才 mount；回显
 了不同的摘要**抛**；**一个字都不回显也抛**（错误信息是 `handshake gap`，不是
