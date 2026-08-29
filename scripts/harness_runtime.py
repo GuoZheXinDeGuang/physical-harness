@@ -94,6 +94,7 @@ from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
 from harness.manifest import discover
+from harness.skill_record import skill_index
 from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
 from profiles import base_profile
@@ -368,6 +369,12 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     else:
         baseline = tuple(boot_row["data"]["skills_manifest"])
 
+    # ONE read of the skills root, feeding both consumers below. Both modes now:
+    # the index has to describe the live library in evolution too, and a corrupt
+    # record raising at boot rather than at the first task's graph.skill mount is
+    # the direction this file already prefers (loud and early).
+    records = InMemorySkillGraph(root=str(skills_root)).skills()
+
     # Boot-time refusal of a record that cannot be assembled into the governance
     # bundle it would steer under. Corrupt JSON already raised in
     # InMemorySkillGraph(...) at mount; this second layer catches valid-JSON-but-
@@ -380,9 +387,16 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     # Execution only: evolution's records are campaign-produced (well-formed by
     # construction) and inert until a later execution boot validates them.
     if mode == "execution":
-        records = InMemorySkillGraph(root=str(skills_root)).skills()
         for task in sorted({r.get("task") for r in records if r.get("task") is not None}):
             workload.assemble_bundle(records, task)
+
+    # The planner's one-read view of the skill library, DERIVED from the records
+    # this boot just mounted -- same read that fed the manifest seal above, so it
+    # cannot describe a library other than the one in force. Live-state family
+    # (session root, overwritten every boot, never a chain row): a SEALED index
+    # would be a second copy of the truth, free to drift while nothing notices.
+    drop(session_dir, "skill_index.json",
+         json.dumps(skill_index(records), sort_keys=True, indent=1))
 
     # Live operational status: overwritten on EVERY boot (fresh and resumed).
     # NOT a chain row -- render is live runtime state, not sealed evidence, so it

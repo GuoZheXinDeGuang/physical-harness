@@ -380,10 +380,10 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 `PYTHONPATH=. .venv/bin/python -m pytest -m "not robosuite and not robocasa"`。
 它比隔离快照多 3 个 pass（那 3 个 camera-env 跳过项在卡在场时变成通过）。
 
-### 3.2 当前快照（2026-08-29，隔离，robosuite 被挡）
+### 3.2 当前快照（2026-08-30，隔离，robosuite 被挡）
 
 ```
-pass       : 766 passed
+pass       : 798 passed
 skips      : 30 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -397,13 +397,14 @@ skips      : 30 skipped
              [1] test_libero_marker.py:15     libero unimportable (libero venv only)
              (policy_remote extra now installed -- its 2 live-socket tests run)
              [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~19.3s
+wall time  : ~18.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-**全量对照（卡在场）**：`797 passed, 27 skipped`（2026-08-29 实测，非算术值）。
-隔离快照比它少 31 个 pass：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
+**全量对照（卡在场）**：`829 passed, 27 skipped`（= 2026-08-29 实测的 797 + 本轮
+`test_capability_record.py` 的 32 个无标记项；本轮不跑仿真，所以没有重测这一行，
+两条实测车道 766→798 和 769→801 都正好 +32）。隔离快照比它少 31 个 pass：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
 而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
 只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
 
@@ -1083,6 +1084,77 @@ metadata——所以服务端在一条活连接上热重载了不同权重，这
 - **checkpoint 是 GB 级的。** 摘要进 SkillRecord 和链，权重按摘要寻址放在旁边。
 - **时钟换了单位。** 分钟变成小时，所以 dev 的代数会缩水——先把**一代**端到端跑通，
   再谈多代。
+
+### 7.7 技能库怎么说话：capability 记录
+
+到 §7.6 为止，技能库只会说一句话：**"这条 RSI 恢复规则晋级了"**（`plugins/rsi/workload.py`
+写的那种记录）。VLM 规划器要把一个 mission 拆成若干 segment、再给每一段挑一个执行器，
+需要的是另一句话：**"这个执行器能做这个 skill，在这些前提下，是这么测出来的。"**
+这就是 **capability 记录**——同一个 store、同一扇 `publish()` 门，靠 `kind` 字段区分。
+
+```
+{"kind": "capability",
+ "skill": "place",                     # 规划器可以选的 CATALOGUE 名字
+ "task":  "kitchen_thaw",              # mission 上下文
+ "binding": {"ref": "plugins.policy_vla_remote:provider",
+             "checkpoint_sha": "<64 位小写 hex>"},        # 谁来执行
+ "preconditions": ["plugins.embodiment_robocasa.predicates:obj_grasped"],
+ "effects":       ["plugins.embodiment_robocasa.predicates:obj_in_microwave"],
+ "measured": {"predicate": "plugins.embodiment_robocasa.predicates:obj_in_microwave",
+              "successes": 12, "n": 20}}
+```
+
+**前提和验收是同一种东西。** `preconditions` / `effects` 用的是 mission 卡的
+verify 表（`plugins/embodiment_robocasa/predicates.py` 的 `PREDICATES`）**一模一样**的
+`"module:factory"` 引用形式，由 `harness.registry.load_provider` 解析成
+`pred(env) -> bool`：一个查入口，一个查出口。**散文不收**——整个设计的要点就是派发器能
+把它们**对着活状态求值**，前提不成立就跳过这个 skill。所以组合是谓词级的、现场的：
+B 的前提在 A 真正留下的状态上成立，才把 A 接到 B。
+
+**已知边界，故意不加字段。** 谓词名字对上并不保证 B 的实测率能迁移过来——A 交接过来的
+状态可能落在 B 被测量的分布之外，而两边谓词都读 True。**有一次交接测量正在跑**，用来
+回答这件事在实践中咬不咬人；要加字段等有证据说需要，不是提前加。
+
+**三种执行器共用一个 `binding`。** 脚本驱动是进程内的一个 ref，π0.5 是一张走 socket 的
+卡，外部包是和 π0.5 一样的形状——卡片边界本身就是那层抽象，不需要再发明一层传输抽象。
+`checkpoint_sha` **有权重的时候才有**：脚本驱动没有权重可以摘要，逼它交一个只会造出这套
+schema 存在的目的所要挡的那种假话。身份闸在**权重那一侧**（§7.4 的
+`policy_vla_remote.reconcile`：声明了摘要而服务端不回显，就拒绝挂载）。
+
+**六条校验，每条挡一种真实的失败**（`harness/skill_record.py`，在 `publish()` 里执行，
+不合格**直接抛**，不是警告后照写）：
+
+| 规则 | 挡住的失败 |
+|---|---|
+| 每个谓词引用形如 `"module:attr"` | 散文条件派发器没法求值，只能靠人读 |
+| `measured.predicate ∈ effects` | 声称一件事、测的是另一件——这套 schema 就是为它存在的 |
+| `0 <= successes <= n`，`n > 0` | 无分母的率 |
+| `split` 只能是 `train` / `test`（RoboCasa：layout 11-60 / 1-10） | 分不清是能力还是泛化 |
+| `checkpoint_sha` 出现时必须是 64 位小写 hex | 记不住是哪份权重拿到的这个数 |
+| **未知顶层键一律拒绝** | 打错的字段名把证据静默丢掉，记录 claim 得就比测的多 |
+
+`preconditions` / `effects` **不许为空**：空不是"没有入口条件"，而是"永远适用"这个最宽的
+主张，并且和"这一格没人填"完全不可区分。真的无条件适用，就写一条这么说的谓词——那是
+可以 grep 的。没有 `kind` 的记录（和 `kind` 是别的值的记录）走的还是原来的路，
+**逐字节不变，摘要不动**——恢复记录不带 `heldout_judgement_established` 以外的东西进
+`assemble_bundle`，capability 记录因此对治理装配天然是惰性的。
+
+**规划器一次读完：`skill_index`。** `skills()` 交出来的是 N 条按摘要寻址的记录；VLM 要
+的是**一份**能塞进 context 的文档。`harness.skill_record.skill_index(records)` 就是那份
+文档，**每次现算，永不存第二份真相**（存下来的索引会跟记录漂，而且没人会发现）：
+
+```
+skills: skill 名 -> [{digest, binding, preconditions, effects, measured{successes,n}}]
+edges:  [{from: A, to: B, via: [共享的谓词引用]}]        # B 的前提 ⊆ A 的效果
+```
+
+`edges` 是纯集合包含，没有推断、没有模型调用、没有启发式。挂点在 `scripts/harness_runtime.py`
+的 boot：和封 `skills_manifest` 用的是**同一次读**，落成 `<session>/skill_index.json`——
+和 `runtime_status.json` 同一类的 live state，每次 boot 覆写，永远不进封存链。
+
+**下一步（还没做）：给脚本执行器也写 capability 记录。** 它们的实测率已经有了
+（kitchen_thaw：`nav` 150/150、`grasp` ~49%、`place` 0/22）。写进去，索引第一天就有用，
+而且 π0.5 变成表里普通的一行，而不是一个特例。
 
 ---
 
