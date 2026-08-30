@@ -1228,9 +1228,19 @@ edges:  [{from: A, to: B, via: [共享的谓词引用]}]        # B 的前提 �
 的 boot：和封 `skills_manifest` 用的是**同一次读**，落成 `<session>/skill_index.json`——
 和 `runtime_status.json` 同一类的 live state，每次 boot 覆写，永远不进封存链。
 
-**下一步（还没做）：给脚本执行器也写 capability 记录。** 它们的实测率已经有了
-（kitchen_thaw：`nav` 150/150、`grasp` ~49%、`place` 0/22）。写进去，索引第一天就有用，
-而且 π0.5 变成表里普通的一行，而不是一个特例。
+**脚本执行器的记录已经发布**（`scripts/publish_pi05_capabilities.py`）：五条记录——
+脚本的 navigate / grasp / carry / place 加 π0.5 的 place binding（checkpoint
+`ea09cb15…`）——数字**只从封存的 episode 文件里读**（secure 抓取尺子），不接受手填。
+π0.5 因此是表里普通的一行，不是特例。这张索引照出的组合图（同一批 10 个 seeds 上）：
+
+```
+navigate 10/10 → grasp 6/10 → carry 3/10 → place {scripted 0/10, π0.5 0/10}
+```
+
+这正是这套 schema 存在的意义：mission 的失败不再是一个数，而是一条能指认哪一格在
+耗散的链——这一轮指认的是 grasp 和 carry（脚本侧），不是 place。记录本身封存在
+`runs/pi05-campaign/round99_skills/`（证据，不进 git）；发布器进 git，随时可以对着
+新一批封存证据重发。
 
 ---
 
