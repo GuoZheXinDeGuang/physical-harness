@@ -33,6 +33,9 @@
 #   runtime.log) and records its PID so --stop can kill it. --render is passed IFF
 #   $DISPLAY is set (the runtime hard-refuses --render headless); headless spawns
 #   get MUJOCO_GL=egl for offscreen sim. Opt out with --no-runtime / --no-render.
+#   Every spawn also gets NUMBA_CACHE_DIR under its session dir, and $REPO/
+#   .robocasa-fix ahead of $REPO on PYTHONPATH when that (untracked, host-local)
+#   directory exists -- see runtime_up() for why a boot dies without them.
 #
 # --stop kills BOTH the web server and any runtime cockpit SPAWNED, by the exact
 #   PIDs recorded in the pidfile (never pkill-by-pattern -- that would match
@@ -197,7 +200,11 @@ PYEOF
   exit $?
 fi
 
-PH_STATION="${PH_STATION:-$HOME/Desktop/ph-station}"
+# ph-station fork checkout: a SIBLING of the repo, same convention as the sim
+# venvs below. (Was $HOME/Desktop/ph-station -- a path that exists on no machine
+# we run on, so a cold start could only ever serve when a web server happened to
+# already be up on $PORT and got adopted before the build check.) Overridable.
+PH_STATION="${PH_STATION:-$REPO/../ph-station}"
 # robocasa runtime interpreter: its venv is a SIBLING of the repo (see
 # docs/project-documentation.md §5.1 -- numpy 1/2 ABI forces a separate venv).
 ROBOCASA_PYTHON="${ROBOCASA_PYTHON:-$REPO/../sims/robocasa-venv/bin/python}"
@@ -256,7 +263,19 @@ runtime_up() {
     echo "cockpit: adopting resident runtime on $session (pid $RT_PID); not restarting" >&2
     return
   fi
-  local -a spawn_env=(PYTHONPATH="$REPO")
+  # Read-only-host adaptations. Both are proven by a boot that died without them
+  # (session-robocasa session-log row 64):
+  #   - $REPO/.robocasa-fix FIRST on PYTHONPATH: its sitecustomize redirects
+  #     robocasa's assets_root to a writable mirror. Untracked and host-local, so
+  #     it joins only when present; it self-disables in any interpreter that has
+  #     no robocasa, which is why session-main can carry it harmlessly.
+  #   - NUMBA_CACHE_DIR under the session dir: numba otherwise caches BESIDE the
+  #     source file, read-only for a sandboxed runtime -- that is the
+  #     RuntimeError("cannot cache function 'mat2quat'") that killed a boot.
+  local pypath="$REPO"
+  [ -d "$REPO/.robocasa-fix" ] && pypath="$REPO/.robocasa-fix:$REPO"
+  mkdir -p "$REPO/$session/numba-cache"
+  local -a spawn_env=(PYTHONPATH="$pypath" NUMBA_CACHE_DIR="$REPO/$session/numba-cache")
   local -a render_flag=()
   if [ "$allow_render" -eq 1 ] && [ "$NO_RENDER" -eq 0 ] && [ -n "${DISPLAY:-}" ]; then
     render_flag=(--render)
