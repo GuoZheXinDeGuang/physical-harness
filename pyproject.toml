@@ -28,8 +28,10 @@ embodiment_robosuite = ["mujoco==3.3.7", "robosuite==1.5.2"]
 # policy_remote: the policy_vla_remote card's transport surface (vendored
 # StarVLA websocket+msgpack protocol layer, MIT). The VLA model itself lives in
 # a separate venv behind the socket; base deps stay numpy-only, and the card's
-# tests skip when this extra is absent.
-policy_remote = ["websockets>=12", "msgpack>=1.0"]
+# tests skip when this extra is absent. websockets>=15: the sync client only
+# accepts ping_interval/ping_timeout from 15.0 (the vendored client passes both);
+# on 12/13/14 they TypeError out of socket.create_connection.
+policy_remote = ["websockets>=15", "msgpack>=1.0"]
 
 [project.scripts]
 governor = "governor.cli:main"
