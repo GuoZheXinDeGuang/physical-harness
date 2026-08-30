@@ -148,10 +148,14 @@ def test_carry_transport_survives(seed):
     with the meat still IN HAND, where the old direct base servo stripped the
     cargo within ~10 steps. Held is asserted RELATIONALLY (meat still travels
     with the eef) -- check_obj_grasped is the known false-positive latch.
-    Seed 100007 measured: grasp attempt 0 (~148 steps), transport ~152 steps,
-    end gap 0.03 m (capability-r1). Seed 11's carry no longer survives under
-    the final recipe (measured drop) -- the eval-block rate is the honest
-    surface: 14/27 grasped seeds arrive held (52%)."""
+
+    One seed is a smoke, not a rate. Re-measured on 30 scratch seeds that reach
+    a REAL grasp on --split train (tuning 430001-430040, held-out 431001-431040,
+    disjoint), same criterion as the assert below -- leg done AND meat still
+    with the eef: 10/30 = 33% before the VCAP / back-out / CARRY_Z rework,
+    12/30 = 40% after, with the held-out half unchanged at 6/16. capability-r1's
+    52% was measured on an UNDECLARED scene split and does not reproduce on
+    train. Most non-arrivals are jams, not timeouts (see NavigateDriver)."""
     env = _env(seed)
     try:
         env.reset()
