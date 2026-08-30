@@ -16,6 +16,10 @@ microwave door closed, microwave turned on, gripper clear of the food (released)
 
 from __future__ import annotations
 
+# Same-package import (never a sibling plugin): the secure-grasp margin has ONE
+# home, GraspDriver.SECURE_DZ, and this module reads it there.
+from plugins.embodiment_robocasa.drivers import GraspDriver
+
 #: The graspable food kitchen_thaw transports. MicrowaveThawingFridge registers it
 #: under the name "meat" and its own _check_success reads that name, so the free
 #: oracle and this card agree on the target with no second source of truth.
@@ -34,8 +38,45 @@ def fridge_is_open():
 
 
 def obj_grasped():
+    """The bare LATCH: robocasa's ``check_obj_grasped`` == gripper-object contact
+    AND both finger joints under 0.035. No lift, no force, no displacement -- so
+    it cannot tell HOLDING from TOUCHING, and a gripper closed around an object
+    still resting on the shelf reads True. Audited, not asserted:
+    ``scripts/probe_grasp_predicate.py`` reads it True on 7 of 7 constructible
+    synthetic controls where the closed gripper sits at the meat's RESTING pose
+    with the meat still on its support -- a 100% false-positive rate on the one
+    case a grasp verify exists to reject.
+
+    It stays exported because it is a real component -- a precondition ref and
+    the first conjunct of the honest check -- but a VERIFY must use
+    :func:`obj_grasped_secure` instead (the mission cards all do).
+    """
     def pred(env) -> bool:
         return bool(_ou().check_obj_grasped(env, FOOD))
+    return pred
+
+
+def obj_grasped_secure(name: str = FOOD):
+    """HOLDING, not touching: the latch AND the object risen off the resting z
+    the caller surveyed.
+
+    The margin is ``GraspDriver.SECURE_DZ``, imported rather than copied: this
+    card already owns a stricter definition of "the grasp is real" -- the grasp
+    segment's own ``done()`` has been SECURE_DZ-gated since the carry probe
+    measured that a latch fired while the fingers closed on air -- and a verify
+    that disagreed with the driver's own success criterion would be a second
+    ruler for one event. 0.08 m is not a threshold chosen here; it is that one,
+    reused (0.04 was measured too low: the meat cleared the latch but not the
+    shelf lip).
+
+    ``z0`` is an EVALUATION argument, not a factory param: the resting z belongs
+    to the episode (kitchen_thaw's survey node seals it as ``meat_pos``), while
+    the factory is resolved at mount time, before any env exists.
+    """
+    def pred(env, z0: float) -> bool:
+        return bool(_ou().check_obj_grasped(env, name)
+                    and float(env.sim.data.body_xpos[env.obj_body_id[name]][2])
+                    > float(z0) + GraspDriver.SECURE_DZ)
     return pred
 
 

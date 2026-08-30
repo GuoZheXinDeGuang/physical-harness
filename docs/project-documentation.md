@@ -380,10 +380,10 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 `PYTHONPATH=. .venv/bin/python -m pytest -m "not robosuite and not robocasa"`。
 它比隔离快照多 3 个 pass（那 3 个 camera-env 跳过项在卡在场时变成通过）。
 
-### 3.2 当前快照（2026-08-30，隔离，robosuite 被挡）
+### 3.2 当前快照（2026-08-31，隔离，robosuite 被挡）
 
 ```
-pass       : 798 passed
+pass       : 806 passed
 skips      : 30 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -402,9 +402,12 @@ AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-**全量对照（卡在场）**：`829 passed, 27 skipped`（= 2026-08-29 实测的 797 + 本轮
-`test_capability_record.py` 的 32 个无标记项；本轮不跑仿真，所以没有重测这一行，
-两条实测车道 766→798 和 769→801 都正好 +32）。隔离快照比它少 31 个 pass：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
+798 → 806 是快照写下之后攒的 8 个底座项（7 个来自其间的提交，+1 是 grasp 谓词审计
+这一轮的 `test_mission_kitchen_thaw.py::test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch`）。
+
+**全量对照（卡在场）**：上次实测 `829 passed, 27 skipped`（2026-08-29 的 797 + 那一轮
+`test_capability_record.py` 的 32 个无标记项）。**这一行自那以后没有重测**——要 sim venv
+才跑得动——所以它和上面的 806 不构成同一轮的算术，别拿两者相减。隔离快照少掉的 pass 是：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
 而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
 只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
 
@@ -611,6 +614,17 @@ robocasa = embodiment 泄漏）。
   谓词表；时序 flag（"水开着时菜必须在槽里"）抄 MultistepSteaming 的累积模式，
   每步采样、wrapper 持有，不动 robocasa 源码。**按仓库纪律，把任何 sim 自带谓词当
   gate 用之前，先审计它的区分度**——这里有过一个近乎恒真的抓取检查。
+  **那条抓取检查现在审完了**（`scripts/probe_grasp_predicate.py`，合成对照 +
+  100 条人类 demo 重放，与 place 谓词同一套方法）：`check_obj_grasped` = 夹爪-物体
+  接触 AND 两个手指关节 < 0.035，**没有升起项**，所以"握住"和"碰到"它分不开。把闭合
+  的夹爪摆到肉的静止位姿上（肉仍搁在托盘上），7/7 条可构造的对照全读 True；100 条
+  demo 的 25261 帧里，它读 True 的 9583 帧中 20.3% 肉根本没升起（<20 mm），2.0%
+  既没升起又仍被支撑。所以 grasped 类 verify 一律用 `obj_grasped_secure` = latch
+  AND 肉的 live z 比 survey 封存的静止 z 高出 `GraspDriver.SECURE_DZ`——0.08 m 不是
+  这里新挑的阈值，是 grasp segment 自己 `done()` 的那一把尺，直接 import 复用，两边
+  不会漂开；裸 latch 只作组件用。同一次重放里修好的谓词在 **94/100** 条 demo 上仍
+  读 True，漏掉的 5 条全是高层架（rest_z 1.37-1.48）上人类横向抽出、整程没升够
+  80 mm 的抓取——诚实的假阴性面，不是"严到永远说 False"。
 * **驱动**：PandaOmron 12 维（arm OSC 6 + gripper 1 + torso 1 + base vx/vy/wyaw 3 +
   base_mode 1）。两类脚本化 driver，均为冻结策略、可被治理：
   - `navigate`：privileged fixture 位姿做目标的速度闭环（base_mode=+1），无路径
@@ -1139,6 +1153,14 @@ B 的前提在 A 真正留下的状态上成立，才把 A 接到 B。
 **已知边界，故意不加字段。** 谓词名字对上并不保证 B 的实测率能迁移过来——A 交接过来的
 状态可能落在 B 被测量的分布之外，而两边谓词都读 True。**有一次交接测量正在跑**，用来
 回答这件事在实践中咬不咬人；要加字段等有证据说需要，不是提前加。
+
+**还有一条边界，是谓词形状本身。** 上面例子里 `preconditions` 写的 `obj_grasped` 就是
+那条裸 latch。前提/效果这一面只认 `pred(env) -> bool`，而"真握住"需要第二个参数——它
+静止时的 z（`obj_grasped_secure(env, z0)`），episode 才知道的东西。所以**能挡住假阳性
+的那一版谓词，写不进 capability 记录的前提栏**；今天由 mission 卡的 verify 承担这件事
+（`plugins/mission_kitchen_thaw/planner.py:_secure_grasp_verify`，参考 survey 封存的
+`meat_pos`）。派发器真开始按前提跳过 skill 的那一天，这条要先补上，否则前提会重演一遍
+同一个谎。
 
 **三种执行器共用一个 `binding`。** 脚本驱动是进程内的一个 ref，π0.5 是一张走 socket 的
 卡，外部包是和 π0.5 一样的形状——卡片边界本身就是那层抽象，不需要再发明一层传输抽象。

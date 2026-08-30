@@ -226,13 +226,46 @@ def v_at_fridge():
     return _wrap("plugins.embodiment_robocasa.predicates:fridge_is_open")
 
 
+def _secure_grasp_verify():
+    """A grasp verify that means HOLDING, not touching.
+
+    ``obj_grasped`` alone is robocasa's contact+fingers latch: audited in
+    ``scripts/probe_grasp_predicate.py``, it reads True on every synthetic
+    control where the hand is closed around meat that never left the shelf. So
+    the verify is SECURE_DZ-shaped, like every sibling card's
+    (mission_recycle_cans / pack_lunch / steam_prep): the latch AND the meat's
+    live z risen above the z survey sealed. The margin is not named here -- the
+    predicate reads it off ``GraspDriver.SECURE_DZ``, so the verify and the
+    driver's own ``done()`` cannot drift apart.
+
+    The alternative z-evidence (``or`` the grasp segment's own sealed success)
+    is the siblings' measured fix for a stale reference: a failed first attempt
+    can knock the meat to a LOWER shelf, and the in-episode retry then grasps it
+    from there -- truthfully, but never back above the surveyed z. That branch
+    still requires the latch to hold NOW.
+    """
+    latch = load_provider("plugins.embodiment_robocasa.predicates:obj_grasped")
+    secure = load_provider("plugins.embodiment_robocasa.predicates:obj_grasped_secure")
+
+    def pred(node: Mapping, ctx) -> dict:
+        env = _episode(ctx).env
+        pos0 = ((ctx.nodes_out.get("survey") or {}).get("facts") or {}).get(_POS_KEY)
+        if not pos0:
+            return {"success": False}  # unsurveyed: no reference, no claim
+        seg_secure = bool((ctx.nodes_out.get("grasp") or {}).get("success"))
+        return {"success": bool(secure(env, float(pos0[2]))
+                                or (seg_secure and latch(env)))}
+
+    return pred
+
+
 def v_grasped():
-    return _wrap("plugins.embodiment_robocasa.predicates:obj_grasped")
+    return _secure_grasp_verify()
 
 
 def v_carry():
     # after nav-micro: still holding the meat after the transport leg (a drop fails).
-    return _wrap("plugins.embodiment_robocasa.predicates:obj_grasped")
+    return _secure_grasp_verify()
 
 
 def v_inside():
@@ -302,8 +335,10 @@ def plan_ready():
 
 
 #: The live checks the report reads directly (name -> robocasa primitive ref).
+#: "grasped" is NOT here: it needs the surveyed resting z, so report() reads it
+#: through the same _secure_grasp_verify the gate uses -- one ruler for the
+#: cross-check and for the verify it cross-checks.
 _LIVE_CHECKS: dict[str, str] = {
-    "grasped": "plugins.embodiment_robocasa.predicates:obj_grasped",
     "in_microwave": "plugins.embodiment_robocasa.predicates:obj_in_microwave",
     "microwave_closed": "plugins.embodiment_robocasa.predicates:microwave_closed",
     "microwave_on": "plugins.embodiment_robocasa.predicates:microwave_on",
@@ -328,7 +363,12 @@ def report():
             except Exception:  # noqa: BLE001 -- an unreadable check breaks the report
                 live[name] = None
                 ok = False
-        segments = {sid: bool((out.get(sid) or {}).get("success")) for sid in _SEG_IDS}
+        try:
+            live["grasped"] = bool(_secure_grasp_verify()({}, ctx)["success"])
+        except Exception:  # noqa: BLE001 -- same rule: unreadable breaks the report
+            live["grasped"] = None
+            ok = False
+        segments ={sid: bool((out.get(sid) or {}).get("success")) for sid in _SEG_IDS}
         decision = {"live": live, "segments": segments,
                     "thawed": bool(live.get("microwave_on"))}
         return {"success": bool(ok), "decision": decision}

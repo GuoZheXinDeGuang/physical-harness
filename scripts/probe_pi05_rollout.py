@@ -193,12 +193,23 @@ def assert_in_split(env, split: str) -> int:
     return layout
 
 
-def load_predicates() -> dict:
+def load_predicates(env) -> dict:
     from harness.registry import load_provider
     # load_provider resolves the ref AND calls the zero-arg factory (the way
     # mission_kitchen_thaw.planner._wrap uses it), handing back pred(env)->bool.
-    return {n: load_provider(f"plugins.embodiment_robocasa.predicates:{n}")
-            for n in PREDICATES}
+    preds = {n: load_provider(f"plugins.embodiment_robocasa.predicates:{n}")
+             for n in PREDICATES}
+    # obj_grasped is the bare contact+fingers LATCH: it reads True with the hand
+    # merely closed around meat that never left the shelf -- 7/7 of the synthetic
+    # controls in scripts/probe_grasp_predicate.py. Every "grasp x/10" this probe
+    # has printed was that latch, over rollouts whose grasps mostly FAILED, which
+    # is exactly the regime the missing lift term hides. Bind the SECURE_DZ-shaped
+    # predicate to the meat's resting z HERE, at episode open, before the arm has
+    # moved it -- the same reference the mission's survey node seals.
+    secure = load_provider("plugins.embodiment_robocasa.predicates:obj_grasped_secure")
+    z0 = float(np.asarray(env.sim.data.body_xpos[env.obj_body_id["meat"]])[2])
+    preds["obj_grasped"] = lambda e, _f=secure, _z=z0: _f(e, _z)
+    return preds
 
 
 # ── the two arms ─────────────────────────────────────────────────────────────
@@ -292,8 +303,14 @@ def handover_stepper(args, env, obs, prompt):
     """EXPERIMENT B: scripted nav+grasp, then pi0.5 drives `place` onward.
 
     The whole-episode rollout could never measure pi0.5's place capability --
-    it was bottlenecked by pi0.5's own 3/10 grasp. The scripted arm reaches
-    grasp 8/10, so this gives the policy roughly 8 attempts instead of 3.
+    it was bottlenecked by pi0.5's own grasp. The scripted arm grasps far more
+    often, so this gives the policy several times the attempts.
+
+    (The 3/10 and 8/10 this paragraph used to quote were ``obj_grasped``
+    readings, i.e. the bare contact+fingers LATCH -- since audited and found to
+    fire on a hand merely closed around meat still on the shelf. They are not
+    grasp rates and both numbers are void; ``load_predicates`` now binds the
+    SECURE_DZ-shaped predicate, so a re-run produces a comparable one.)
 
     Three handover details that silently corrupt the number if missed, all
     handled here: the policy is connected, identity-gated and JIT-warmed BEFORE
@@ -400,7 +417,7 @@ def run_episode(args) -> dict:
     layout_id = assert_in_split(env, args.split)
     meta = env.get_ep_meta()
     prompt = str(meta.get("lang") or ENV_NAME)
-    preds = load_predicates()
+    preds = load_predicates(env)
 
     rec: dict = {
         "arm": args.arm, "seed": seed, "prompt": prompt,
