@@ -856,6 +856,31 @@ WebsocketPolicyServer(
 norm stats 永不跨边界，它们跟 checkpoint 一起留在服务端。驱动每个 chunk 推理一次，
 每步弹出一个动作。
 
+**chunk 怎么执行，是三个 opt-in 的 serving 参数**（跟 `host`/`port` 并列，不进被
+reconcile 的契约——服务端对它们没有意见可验；它们封在 `handshake["execution"]` 里，
+所以一份记录仍然说得出自己是在哪种执行策略下跑出来的）。三个都不写时行为跟以前**逐字
+节相同**：一次推理喂满 10 步，其中 9 步开环。
+
+| param | 作用 | 不写时 |
+|---|---|---|
+| `replan_every = k` | 只执行 chunk 的前 k 个动作就重新推理（`k=1` 是每步闭环） | 抽干整个 chunk |
+| `ensemble = m` | k < chunk 时多个 chunk 预测同一个 timestep，按 `exp(-m*age)` 加权平均（越新权重越大） | 不做 ensembling |
+| `discrete_dims = [i, ...]` | ensembling **不许**平均的维度，取最新 chunk 的原值 | 空——所有维度都平均 |
+
+`ensemble` 不带 `replan_every` 会**抛**：没有重叠就没有东西可平均，一个读起来像开着
+实际什么都不做的旋钮比没有这个旋钮更糟。
+
+`discrete_dims` 是给 `control_mode`、`gripper` 这类**两值决策**用的：+1 和 -1 的平均是 0，
+controller 会把它读成第三件事——既不是新 chunk 的意思，也不是旧 chunk 的意思。把平均值
+按符号 snap 回去也不行，那是拿过时的预测做多数投票，而它恰好会审查掉少数派决定（本仓库
+实测的 π0.5 checkpoint 只在 8.1% 的步上命令 base mode）。所以这些维度直接取最新 chunk 的
+值，其余维度才平均。
+
+代价是线性的：实测单次推理 **155 ms**（π0.5 LoRA，RTX 4090，warm），控制环 20 fps
+= 50 ms/步，所以 `k=1` 跑不动实时（3.1×超时），`k>=4` 才摊得进预算。ensembling 本身几乎
+免费（10 个 chunk 的加权平均 < 0.1 ms）。`scripts/probe_pi05_rollout.py --replan-every /
+--ensemble` 每个 episode 记 `inference_calls` 和 `base_mode_share`，先测再声明。
+
 这张卡 ships `enabled = false`，因为 `plugins/policies` 拥有 `policy.driver`
 （一条缝一张卡）；某条车道要上线时把它打开、把在位的那张关掉。
 

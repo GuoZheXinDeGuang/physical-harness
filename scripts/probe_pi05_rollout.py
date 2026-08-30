@@ -61,6 +61,11 @@ touches STATUS.md.
     # the discriminator: the SAME policy, from the DEMOS' own initial states
     ... scripts/probe_pi05_rollout.py --arm pi05 --split train --demos 0:10 \
       --steps 2400 --timeout 900 --out runs/gate2_diag
+
+    # the serving path as a suspect: re-query every step instead of draining the
+    # chunk, optionally ensembling the overlap (both OFF unless asked for)
+    ... scripts/probe_pi05_rollout.py --arm pi05 --split train --seeds 420101:420111 \
+      --steps 2400 --replan-every 1 --ensemble 0.25 --out runs/round98_k1_ens
 """
 from __future__ import annotations
 
@@ -198,6 +203,13 @@ def load_predicates() -> dict:
 
 # ── the two arms ─────────────────────────────────────────────────────────────
 
+#: The action dimensions temporal ensembling must not average, in the SERVER's
+#: (modality.json) order: control_mode 4 and gripper 11 are two-valued
+#: decisions, and the mean of two chunks that disagree is a value neither of
+#: them asked for. See RemoteChunkDriver's docstring.
+DISCRETE_DIMS = (4, 11)
+
+
 def pi05_stepper(args, env, obs, prompt):
     """A ``step(obs) -> env_action`` closure over the remote executor, warmed."""
     from plugins.policy_vla_remote import RemoteVlaPolicy
@@ -205,19 +217,24 @@ def pi05_stepper(args, env, obs, prompt):
     contract = dict(CONTRACT)
     if args.sha:
         contract["checkpoint_sha"] = args.sha
-    factory = RemoteVlaPolicy(host=args.host, port=args.port, **contract)
+    factory = RemoteVlaPolicy(host=args.host, port=args.port,
+                              replan_every=args.replan_every,
+                              ensemble=args.ensemble,
+                              discrete_dims=DISCRETE_DIMS, **contract)
     driver = factory.make_driver(spec=None)
 
     t0 = time.perf_counter()
     driver.act(build_obs(obs, prompt))     # throwaway: the first call JITs (~10 s)
     warm_ms = (time.perf_counter() - t0) * 1000
-    driver._chunk = []                     # discard it; the episode starts clean
+    driver.reset()                         # discard it; the episode starts clean
+    driver.calls = 0                       # ...and so does the inference count
 
     def step(o, _t):
         return lerobot_to_env(driver.act(build_obs(o, prompt)))
 
     step.driver = driver                   # the handover arm empties its chunk
-    return step, {"handshake": driver.handshake, "warmup_ms": round(warm_ms, 1)}
+    return step, {"handshake": driver.handshake, "warmup_ms": round(warm_ms, 1),
+                  "replan_every": args.replan_every, "ensemble": args.ensemble}
 
 
 #: The segment the scripted->pi05 handover happens at: everything before it is
@@ -296,7 +313,7 @@ def handover_stepper(args, env, obs, prompt):
                 return sc_step(o, t)
             except StopIteration:
                 switched["at"] = t
-                pi_step.driver._chunk = []
+                pi_step.driver.reset()
         return pi_step(o, t)
 
     return step, dict(sc_extra, **pi_extra, handover_segment=HANDOVER_SEGMENT)
@@ -395,6 +412,12 @@ def run_episode(args) -> dict:
         "init_robot_base_pos": meta.get("init_robot_base_pos"),
         "init_robot_base_ori": meta.get("init_robot_base_ori"),
         "steps_requested": args.steps, "steps_run": 0,
+        # THE mechanism metric. The demos command base mode on 20.09% of steps
+        # (all 100 of them use it; min 7.5%), and this policy reaches, grasps,
+        # then stalls without transporting. Counted over EVERY step, not the
+        # action_trace subsample, so a share is not a sampling artifact.
+        "base_mode_steps": 0, "base_mode_share": None,
+        "inference_calls": None,
         "stage_first_t": {p: None for p in PREDICATES},
         "stage_reached": {p: False for p in PREDICATES},
         "stage_final": {p: False for p in PREDICATES},
@@ -442,6 +465,7 @@ def run_episode(args) -> dict:
             except StopIteration as e:
                 rec["ended_early"] = str(e)
                 break
+            rec["base_mode_steps"] += int(action[11] > 0)  # env order: mode at 11
             if t % args.trace_every == 0:
                 # diagnostic only: what the arm actually COMMANDS in the live
                 # world, in env order (arm 0:6, gripper 6, base 7:11, mode 11).
@@ -469,6 +493,11 @@ def run_episode(args) -> dict:
             rec["oracle_error"] = repr(e)
         rec["seconds"] = round(time.perf_counter() - t_start, 2)
         rec["steps_per_second"] = round(rec["steps_run"] / max(rec["seconds"], 1e-9), 2)
+        rec["base_mode_share"] = round(rec["base_mode_steps"]
+                                       / max(rec["steps_run"], 1), 4)
+        drv = getattr(step_fn, "driver", None)
+        if drv is not None:
+            rec["inference_calls"] = drv.calls
         writer.close()
         _flush()
         try:
@@ -515,6 +544,10 @@ def run_campaign(args) -> int:
                "--port", str(args.port), "--video-stride", str(args.video_stride),
                "--video-fps", str(args.video_fps),
                "--flush-every", str(args.flush_every)]
+        if args.replan_every is not None:
+            cmd += ["--replan-every", str(args.replan_every)]
+        if args.ensemble is not None:
+            cmd += ["--ensemble", str(args.ensemble)]
         if demo is not None:
             cmd += ["--demo", str(demo)]
         if args.sha:
@@ -587,6 +620,10 @@ def summarize(out_dir: Path) -> int:
                            for p in PREDICATES},
                 "video": r.get("video"),
                 "wall_seconds": r.get("wall_seconds"),
+                "base_mode_share": r.get("base_mode_share"),
+                "inference_calls": r.get("inference_calls"),
+                "replan_every": r.get("replan_every"),
+                "ensemble": r.get("ensemble"),
                 "segments": r.get("segments"),
                 "handover": r.get("handover") or None,
                 }
@@ -669,6 +706,15 @@ def summarize(out_dir: Path) -> int:
             "crashed": sum(bool(r.get("crashed")) for r in rows),
             "mean_episode_length": (round(sum(r.get("steps_run") or 0
                                               for r in rows) / n, 1) if n else None),
+            # pooled over steps, not a mean of per-episode shares: episodes that
+            # ran longer commanded more steps and should weigh more
+            "base_mode_share": round(sum(r.get("base_mode_steps") or 0 for r in rows)
+                                     / max(sum(r.get("steps_run") or 0
+                                               for r in rows), 1), 4),
+            "inference_calls": sum(r.get("inference_calls") or 0 for r in rows),
+            # more than one entry = this folder mixes execution policies
+            "execution": sorted({(r.get("replan_every"), r.get("ensemble"))
+                                 for r in rows}, key=str),
         }
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=1, sort_keys=True, default=str))
@@ -692,6 +738,17 @@ def main(argv=None) -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--sha", default=None, help="gate the served checkpoint identity")
+    # Serving-side execution knobs, both OFF unless given -- the default is the
+    # drain-the-whole-chunk driver every earlier number here was produced by.
+    ap.add_argument("--replan-every", type=int, default=None,
+                    help="execute only the first K actions of each chunk, then "
+                         "re-infer (K=1 is closed loop; default: drain all 10, "
+                         "9 of them open loop)")
+    ap.add_argument("--ensemble", type=float, default=None,
+                    help="temporal ensembling decay M: average the overlapping "
+                         "chunks' predictions for a timestep, weight "
+                         "exp(-M*age). Needs --replan-every. control_mode and "
+                         "gripper are never averaged (see DISCRETE_DIMS)")
     ap.add_argument("--demo", type=int, default=None,
                     help="reset to this LeRobot demo's sealed initial state "
                          "(demo_replay also replays its actions from there)")

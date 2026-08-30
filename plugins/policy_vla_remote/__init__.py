@@ -184,20 +184,68 @@ def reconcile(contract: Mapping, metadata: Mapping) -> dict:
 
 
 class RemoteChunkDriver:
-    """The frozen driver an episode runs under: one inference per chunk,
-    pop one action per ``act``. ``handshake`` rides along for the evidence log.
+    """The frozen driver an episode runs under: infer a chunk, pop one action
+    per ``act``. ``handshake`` rides along for the evidence log.
 
-    ponytail: no action ensembling / sticky gripper / retarget-on-task-change
-    yet -- add in this file when a real checkpoint's eval needs them.
+    **Default: drain the whole chunk** (one inference per ``chunk`` steps, the
+    rest open loop) -- unchanged, so numbers sealed before these knobs existed
+    keep meaning what they said. The two knobs below are opt-in, both off unless
+    a manifest sets them:
+
+    ``replan_every=k``
+        execute only the first ``k`` actions of a chunk, then re-infer from the
+        observation that actually resulted. ``k=1`` is closed loop every step.
+        Cost is linear in inference calls, and the control loop has a deadline
+        -- measure before choosing (``scripts/probe_pi05_rollout.py`` records
+        ``inference_calls`` and wall seconds per episode).
+
+    ``ensemble=m``
+        chunks overlap once ``k < chunk``, so several inferences predict the
+        same timestep; average them, weight ``exp(-m * age_in_inferences)``
+        toward the newest (``m=0`` is a flat mean). Variance reduction over the
+        server's sampling noise -- openpi draws a fresh noise key per request,
+        so two chunks over the same timestep are two samples, not one answer.
+        Requires ``replan_every``: without overlap there is nothing to average,
+        and silently averaging one chunk with itself would be a knob that reads
+        as enabled and does nothing.
+
+    ``discrete_dims=(i, ...)``
+        the action dimensions ensembling must NOT average. A mode switch or a
+        gripper command is a decision between two values, not a quantity: the
+        mean of a chunk saying +1 and a chunk saying -1 is 0, which is neither
+        chunk's intent and which the controller reads as a third thing. Snapping
+        the mean back to a sign would be no better -- that is a majority vote
+        over stale predictions, and it censors exactly the rare minority
+        decision (this checkpoint commands base mode on ~8% of steps) that the
+        newest observation is best placed to make. So these dimensions take the
+        freshest chunk's value verbatim while the continuous ones are averaged.
     """
 
-    def __init__(self, client: Any, handshake: dict, task: str | None = None) -> None:
+    def __init__(self, client: Any, handshake: dict, task: str | None = None, *,
+                 replan_every: int | None = None, ensemble: float | None = None,
+                 discrete_dims: Any = ()) -> None:
+        if ensemble is not None and replan_every is None:
+            raise ValueError(
+                "policy_vla_remote: ensemble needs replan_every < chunk to have "
+                "anything to ensemble -- draining a chunk before re-inferring "
+                "leaves no timestep predicted twice")
         self._client = client
         self.handshake = handshake
         self._task = task
-        self._chunk: list = []
+        self._k = replan_every
+        self._m = ensemble
+        self._discrete = tuple(int(d) for d in discrete_dims)
+        self._chunks: list[list] = []   # live chunks, oldest first, heads aligned
+        self._since = 0                 # steps executed since the last inference
+        self.calls = 0                  # inferences this driver has made
+
+    def reset(self) -> None:
+        """Drop every buffered action. A chunk was computed for a situation; at
+        a hand-off (see the probe's handover arm) that situation is gone."""
+        self._chunks, self._since = [], 0
 
     def _infer(self, obs: Mapping) -> list:
+        self.calls += 1
         reply = self._client.predict_action(dict(obs))
         if isinstance(reply, Mapping) and reply.get("ok") is False:
             raise RuntimeError(f"policy server error: {reply.get('error')!r}")
@@ -209,10 +257,24 @@ class RemoteChunkDriver:
             actions = actions[0]
         return [np.asarray(a) for a in actions]
 
+    def _blend(self, heads: list) -> Any:
+        """``heads`` are every live chunk's prediction for THIS timestep, oldest
+        first, so ``heads[-1]`` is the freshest."""
+        w = np.exp(-self._m * np.arange(len(heads) - 1, -1, -1.0))
+        out = (w / w.sum()) @ np.stack(heads)
+        for d in self._discrete:
+            out[d] = heads[-1][d]
+        return out
+
     def act(self, obs: Mapping) -> Any:
-        if not self._chunk:
-            self._chunk = self._infer(obs)
-        return self._chunk.pop(0)
+        if not self._chunks or (self._k is not None and self._since >= self._k):
+            fresh = self._infer(obs)
+            self._chunks = [*self._chunks, fresh] if self._m is not None else [fresh]
+            self._since = 0
+        self._since += 1
+        heads = [c.pop(0) for c in self._chunks]
+        self._chunks = [c for c in self._chunks if c]
+        return heads[-1] if len(heads) == 1 else self._blend(heads)
 
 
 class RemoteVlaPolicy:
@@ -224,8 +286,18 @@ class RemoteVlaPolicy:
     """
 
     def __init__(self, *, host: str = "127.0.0.1", port: int = 8000,
-                 api_key: str | None = None, **contract: Any) -> None:
+                 api_key: str | None = None, replan_every: int | None = None,
+                 ensemble: float | None = None, discrete_dims: Any = (),
+                 **contract: Any) -> None:
         self._host, self._port, self._api_key = host, port, api_key
+        # Named, not swept into **contract: how often the driver re-queries is a
+        # SERVING choice, and the contract is the TRAINING observation the
+        # handshake gate reconciles. A serving knob in there would be reported
+        # as an "unverified" contract key -- a server has no opinion about it to
+        # verify. It is sealed beside the contract instead (see connect()), so a
+        # record still says which execution policy produced its numbers.
+        self.execution = {"replan_every": replan_every, "ensemble": ensemble,
+                          "discrete_dims": list(discrete_dims)}
         self.contract = contract
         self._client: Any = None
         self.handshake: dict | None = None
@@ -249,7 +321,9 @@ class RemoteVlaPolicy:
             client = WebsocketClientPolicy(host=self._host, port=self._port,
                                            api_key=self._api_key)
             try:
-                self.handshake = reconcile(self.contract, client.get_server_metadata())
+                self.handshake = dict(
+                    reconcile(self.contract, client.get_server_metadata()),
+                    execution=dict(self.execution))
             except Exception:
                 client.close()
                 raise
@@ -260,7 +334,7 @@ class RemoteVlaPolicy:
     def make_driver(self, spec: Any) -> RemoteChunkDriver:
         self.connect()
         return RemoteChunkDriver(self._client, self.handshake,
-                                 task=getattr(spec, "task", None))
+                                 task=getattr(spec, "task", None), **self.execution)
 
 
 def provider(**params: Any) -> RemoteVlaPolicy:

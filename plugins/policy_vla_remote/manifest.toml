@@ -37,4 +37,24 @@ ref = "plugins.policy_vla_remote:provider"
 # placeholder digest is a false identity claim, and a stock openpi server
 # echoes {} so it could never match one. Add it when the mount's numbers are
 # meant to be attributable to a specific checkpoint.
+#
+# Three more params are HOW the chunk is executed rather than what was trained
+# on, so they sit beside host/port, not in the reconciled contract, and every
+# one is OFF unless declared (the default is the drain-the-whole-chunk driver
+# every sealed number so far was produced by):
+#
+#   replan_every = 2      execute 2 actions of each chunk, then re-infer.
+#                         Absent = drain all `chunk` of them, 9 of 10 open loop.
+#                         Linear in inference calls against the control loop's
+#                         deadline -- measure the wall cost before declaring it.
+#   ensemble = 0.25       average the overlapping chunks' predictions for the
+#                         same timestep, weight exp(-0.25 * age). Needs
+#                         replan_every (no overlap, nothing to average -> it
+#                         raises rather than mount as a no-op).
+#   discrete_dims = [4, 11]   dimensions ensembling must not average, in the
+#                         SERVER's action order (for this RoboCasa checkpoint:
+#                         control_mode 4, gripper 11). They take the newest
+#                         chunk's value; see the driver docstring for why a mean
+#                         -- or a majority vote -- is the wrong operation on a
+#                         two-valued decision.
 params = { image_size = [224, 224], views = ["base_0_rgb", "left_wrist_0_rgb"], chunk = 10, unnorm_key = "libero_spatial_no_noops" }

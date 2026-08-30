@@ -140,6 +140,103 @@ def test_driver_one_inference_per_chunk():
     assert client.calls == 2  # chunk exhausted -> re-infer
 
 
+class _SeqClient:
+    """Answers a different chunk per call, so which inference an action came
+    from is readable off the value."""
+
+    def __init__(self, chunks):
+        self.chunks, self.calls = [np.asarray(c) for c in chunks], 0
+
+    def predict_action(self, query):
+        c = self.chunks[min(self.calls, len(self.chunks) - 1)]
+        self.calls += 1
+        return {"actions": c}
+
+
+def test_replan_every_re_infers_mid_chunk_and_drops_the_rest():
+    """k=2 of a 4-long chunk: two actions from each inference, the stale tail
+    thrown away. The whole point is that step 2 is computed from the world step
+    1 produced, not predicted before it happened."""
+    a = np.array([[0.0], [1.0], [2.0], [3.0]])
+    b = np.array([[10.0], [11.0], [12.0], [13.0]])
+    client = _SeqClient([a, b])
+    driver = RemoteChunkDriver(client, handshake={}, replan_every=2)
+    got = [float(driver.act({})[0]) for _ in range(4)]
+    assert got == [0.0, 1.0, 10.0, 11.0]  # a[2:], b[2:] never executed
+    assert client.calls == 2 == driver.calls
+
+
+def test_default_driver_is_untouched_by_the_new_knobs():
+    """Off by default: no re-query, no ensembling, one inference per chunk --
+    the behaviour every number sealed before these knobs existed was produced
+    under."""
+    client = _SeqClient([np.arange(4.0).reshape(4, 1),
+                         np.arange(10.0, 14.0).reshape(4, 1)])
+    driver = RemoteChunkDriver(client, handshake={})
+    got = [float(driver.act({})[0]) for _ in range(5)]
+    assert got == [0.0, 1.0, 2.0, 3.0, 10.0]
+    assert client.calls == 2
+
+
+def test_ensemble_averages_continuous_dims_toward_the_newest():
+    two = np.zeros((2, 2))
+    two[:, 0] = [0.0, 0.0]
+    four = np.full((2, 2), 4.0)
+    driver = RemoteChunkDriver(_SeqClient([two, four]), handshake={},
+                               replan_every=1, ensemble=0.0)  # flat mean
+    assert driver.act({})[0] == 0.0        # only one chunk live yet
+    assert driver.act({})[0] == 2.0        # mean(0, 4)
+    driver = RemoteChunkDriver(_SeqClient([two, four]), handshake={},
+                               replan_every=1, ensemble=10.0)  # newest only
+    driver.act({})
+    assert driver.act({})[0] == pytest.approx(4.0, abs=1e-3)
+
+
+def test_ensemble_never_averages_a_discrete_dimension():
+    """The dimension the diagnosis blames is a two-valued switch. Averaging a
+    chunk that says "drive the base" with one that says "move the arm" invents a
+    value neither asked for; a majority vote invents a different one, and it
+    censors the minority decision. Dim 1 here is that switch: it must come out
+    +1 (the freshest chunk's answer), never 0."""
+    minus = np.array([[1.0, -1.0], [1.0, -1.0]])
+    plus = np.array([[3.0, +1.0], [3.0, +1.0]])
+    driver = RemoteChunkDriver(_SeqClient([minus, plus]), handshake={},
+                               replan_every=1, ensemble=0.0, discrete_dims=[1])
+    driver.act({})
+    out = driver.act({})
+    assert out[0] == 2.0    # continuous dim: averaged
+    assert out[1] == 1.0    # discrete dim: the newest chunk's decision, intact
+
+    naive = RemoteChunkDriver(_SeqClient([minus, plus]), handshake={},
+                              replan_every=1, ensemble=0.0)
+    naive.act({})
+    assert naive.act({})[1] == 0.0  # ...which is what NOT declaring it costs
+
+
+def test_ensemble_without_replan_refuses_to_mount_as_a_no_op():
+    with pytest.raises(ValueError, match="anything to ensemble"):
+        RemoteChunkDriver(_SeqClient([np.zeros((2, 2))]), handshake={}, ensemble=0.5)
+
+
+def test_reset_drops_buffered_actions_at_a_handover():
+    client = _SeqClient([np.arange(4.0).reshape(4, 1),
+                         np.arange(10.0, 14.0).reshape(4, 1)])
+    driver = RemoteChunkDriver(client, handshake={})
+    driver.act({})
+    driver.reset()
+    assert float(driver.act({})[0]) == 10.0  # re-inferred, not the stale tail
+
+
+def test_execution_knobs_are_sealed_beside_the_contract_not_inside_it():
+    """A record has to say which execution policy produced its numbers -- but
+    not by pretending the server verified one."""
+    prov = provider(port=1, replan_every=2, ensemble=0.25, discrete_dims=[4, 11],
+                    **_CONTRACT)
+    assert "replan_every" not in prov.contract  # not a training-contract key
+    assert prov.execution == {"replan_every": 2, "ensemble": 0.25,
+                              "discrete_dims": [4, 11]}
+
+
 def test_driver_accepts_bare_openpi_reply():
     driver = RemoteChunkDriver(_StubClient(np.ones((2, 7)), bare=True), handshake={})
     assert driver.act({}).shape == (7,)
