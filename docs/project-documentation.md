@@ -895,6 +895,35 @@ controller 会把它读成第三件事——既不是新 chunk 的意思，也�
 免费（10 个 chunk 的加权平均 < 0.1 ms）。`scripts/probe_pi05_rollout.py --replan-every /
 --ensemble` 每个 episode 记 `inference_calls` 和 `base_mode_share`，先测再声明。
 
+**测了，是个 null。** 这三个旋钮是为一个具体怀疑造出来的：π0.5 LoRA（100 条 RoboCasa
+place demo）单步模仿接近天花板、闭环接近零，而 serving 路径把 10 个动作的 chunk 抽干，
+每 10 步有 9 步开环——闭环失败有多少是这个？配对实验（同一 checkpoint `ea09cb15…`、同
+一批 scratch 种子、`--split train`，只有执行策略变），`scripts/compare_serving_arms.py`
+折出的表在 `runs/pi05-campaign/round98_serving_ablation/`：
+
+| arm | n | place `obj_in_microwave` | base mode 占比 | inference/episode | s/episode |
+|---|---|---|---|---|---|
+| sealed baseline（抽干 chunk） | 10 | 1/10 | 8.1%* | 240 | 111 |
+| control 重跑（抽干 chunk） | 20 | 0/20 | 5.2% | 240 | 106 |
+| `replan_every=1` | 20 | 2/20 | 7.3% | 2400 | 359 |
+| `replan_every=1, ensemble=0.25` | 10 | 0/10 | 3.2% | 2400 | 273 |
+
+（*baseline 早于 per-step 计数器，只有 `action_trace` 的子采样估计。demo 是 20.09%。）
+
+`k=1` 对 control 是 2/20 vs 0/20，Fisher p=0.49、配对 McNemar p=0.50；对 sealed
+baseline 是 2/10 vs 1/10，p=1.0。**2/10 不是 1/10 的改进**——先看噪声地板：baseline 和
+control 执行策略逐字节相同、种子相同，place 仍然 1/10 vs 0/10，grasp 有 3/10 的种子翻面
+（openpi 每次请求抽新的 noise key，这个策略是随机的）。所有臂之间的差都在这条地板以内。
+
+机制指标说得更直接：每步重新推理**没有**把 base mode 占比拉回 demo 的 20.09%——四个臂
+落在 3.2–7.3%，而同一个执行策略跑两次就能从 5.2% 走到 8.1%。所以 chunk 被开环抽干不是
+闭环失败的主因，剩下的要到策略自己身上找。`k=1` 是**诊断臂，不是可上线配置**：2400 次
+推理 × 155 ms 已经把 episode 变成推理绑定（359 s），仍然 3.1× 超 20 fps 预算。
+
+（这张表的 grasp 列被刻意省掉了：`obj_grasped` 的 latch 在这轮跑到一半时被 845b57a 换
+成了 `obj_grasped_secure`，同一条 k=1 臂上 latch 读 9/12、secure 读 2/8——两把尺子的
+数不能并排放，`compare_serving_arms.py` 遇到混合尺子直接拒绝比较而不是悄悄平均。）
+
 这张卡 ships `enabled = false`，因为 `plugins/policies` 拥有 `policy.driver`
 （一条缝一张卡）；某条车道要上线时把它打开、把在位的那张关掉。
 
