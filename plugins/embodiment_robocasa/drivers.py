@@ -166,29 +166,62 @@ class NavigateDriver:
     STOWS -- a gentle, command-capped arm retract toward a body-hugging carry
     pose -- then (2) ARC-drives with base velocity and yaw-rate capped while the
     arm channels actively counter-sweep the eef back to the carry pose each
-    step, and (3) stops at a STANDOFF instead of docking. This recipe carried
-    seed 11 the whole fridge->microwave leg, grasped at arrival (295 steps).
+    step, and (3) stops at a STANDOFF instead of docking.
     Mode-flip itself is safe: HybridMobileBase sets the arm OSC to
     goal_update_mode="desired" in base mode, so the arm HOLDS its last desired
     goal under translation (measured: 60 zero-velocity base steps drift the eef
     <2 cm) -- but that goal is world-anchored under ROTATION, hence the
     counter-sweep.
+
+    Known ceiling, measured (14 real grasps, train split): with no path planner
+    the drive is a straight velocity servo into whatever furniture lies on the
+    line, and ~40% of legs jam short of the standoff with the base saturated and
+    moving <2 mm/step. Raising VCAP does not touch that class; a planner does.
     """
 
-    #: carry calibration knobs (probe-measured on seed 11; re-tune if the
-    #: arm/base geometry changes, not per scene).
+    #: carry calibration knobs. These are ACTUATOR and DISTRIBUTION numbers, not
+    #: scene numbers: VCAP/WARC come from the base joints' own measured
+    #: command->motion curve and CARRY_Z from the demos' hand-off band, so
+    #: re-measure them if the base model or the demo set changes, never per scene.
     CARRY_FWD = 0.40   # stow target this far in front of base centre
     CARRY_LAT = -0.15  # ... on the arm's mount side
-    CARRY_Z = 1.00     # carry height: the arm cannot pull inside ~0.7 m at shelf
+    CARRY_Z = 1.25     # carry height: the arm cannot pull inside ~0.7 m at shelf
                        # height (stalls, meat leads the base into the target
                        # fixture and strips) but reaches ~0.36 m once lowered --
-                       # above counter tops, below the shelf lips
+                       # above counter tops, below the shelf lips.
+                       # 1.00 was chosen for that retraction authority alone and
+                       # sat BELOW the whole band the demos hand `place` over in
+                       # (meat_z 1.341 +- 0.100, range [1.120, 1.520], n=29,
+                       # runs/pi05-campaign/gate2_diag/demo_place_windows.json): no correctly
+                       # stowed episode could be in distribution on that axis.
+                       # 1.25 is inside the band and retraction still converges
+                       # (tuning block: meat_z in the demo range at hand-off
+                       # 5/14 -> 9/14, held 9/14 unchanged).
     STOW_TOL = 0.06
     STOW_STEPS = 80    # stow is best-effort: converge or spend this, then drive
     ARM_CAP = 0.3      # per-step arm command cap while stowing (gentle)
-    VCAP = 0.35        # base velocity cap while loaded
+    VCAP = 0.60        # base velocity cap while loaded. The base's three drive
+                       # joints carry frictionloss=250 (omron_mobile_base.xml),
+                       # so command->motion has a hard DEAD ZONE. Measured
+                       # in-scene, 60 steps per point: cmd 0.12 -> 0.12 mm/step,
+                       # 0.20 -> 0.20, 0.35 -> 3.5, 0.50 -> 12.2, 0.75 -> 24.4.
+                       # 0.35 sat on the knee, and cost twice over: it bought
+                       # only ~1.1 m of travel out of the 450-step budget (legs
+                       # measured 0.7-2.9 m from the dock), AND stick-slip at
+                       # the knee stripped the cargo on exactly the runs that
+                       # did reach the dock -- all three baseline arrivals had
+                       # the meat on the floor. Above the knee the leg is both
+                       # faster and gentler. TRANSLATION is safe to raise this
+                       # way; rotation is not -- see WARC.
     WARC = 0.12        # loaded yaw-rate cap: turn only as a slow ARC while
-                       # translating (wheels moving -> no stiction dead-zone)
+                       # translating. Unlike the drive joints the yaw hinge has
+                       # NO dead zone (measured linear from cmd 0.05: 1.8 ->
+                       # 4.3 -> 15.6 -> 27.1 mrad/step at 0.05/0.12/0.35/0.50),
+                       # so this cap is pure cargo protection and raising it
+                       # only strips: 0.12 -> 0.30 on the tuning block took the
+                       # meat from held-at-hand-off 9/13 down to 5/13 while
+                       # buying nothing the higher VCAP had not already bought.
+                       # Yaw is the lever that sweeps the eef; translation is not.
     CARRY_STOP = 0.65  # loaded standoff from the dock: driving the last ~0.4 m
                        # rams the carried object into the target appliance's
                        # face (measured drop at dist~0.39); the place stage's
@@ -207,8 +240,6 @@ class NavigateDriver:
         self.carry = carry          # hold the gripper closed to keep a grasped object
         self._goal = None
         self._stow_left = self.STOW_STEPS if carry else 0
-        self._start_xy = None       # base pose at carry entry (back-out reference)
-        self._back_ticks = 0
         self._dist_hist: list = []  # loaded-leg progress window (stall-arrival)
 
     def _target(self, env):
@@ -261,41 +292,32 @@ class NavigateDriver:
         # arm's held goal is world-anchored under ROTATION -- translation
         # carries the eef along (rel-base pose steady), but yaw sweeps the eef
         # laterally on the ~0.7 m lever and levers the object out of the
-        # fingers. No passive yaw rate works (0.5 whips it off in ~30 steps,
-        # 0.25 still sweeps ~0.5 m over the slow turn, 0.12 is under the
-        # wheels' stiction) and the non-holonomic base cannot strafe to a dock
-        # 90 degrees off its heading with yaw locked (stalls 1.2 m short). So:
-        # stow first, then a slow ARC (translation keeps the wheels out of the
-        # stiction dead-zone) with an ACTIVE arm counter-sweep each step.
-        if self._start_xy is None:
-            self._start_xy = _base_pose(env)[0].copy()
+        # fingers. That asymmetry is the whole recipe: drive HARD (VCAP, above
+        # the joints' friction dead zone) and turn SOFT (WARC), as a slow arc,
+        # with an ACTIVE arm counter-sweep each step. The base is holonomic --
+        # three independent forward/side/yaw joints (omron_mobile_base.xml) --
+        # so the arc is not a kinematic necessity, only a way to keep the eef
+        # pointing where the place stage will need it.
         stow = self._stow_action(env)
         if stow is not None:
             return stow
         xy, psi = _base_pose(env)
-        cleared = (np.linalg.norm(xy - self._start_xy) > 0.45
-                   or self._back_ticks > 60)
-        if not cleared:
-            # back STRAIGHT out of the fridge face first: arcing/turning right
-            # at the open fridge sweeps the carried slab into the door frame
-            # (measured: most transport drops clustered in the first ~100
-            # steps, before the base was clear)
-            self._back_ticks += 1
-            a = _zero()
-            a[7] = -0.25
-            a[GRIP] = GRIP_CLOSE
-            a[MODE] = GRIP_CLOSE
-        else:
-            vec = np.asarray(gxy, float) - xy
-            heading = float(np.arctan2(vec[1], vec[0]))
-            a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
-            a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
-            a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
-            self._dist_hist.append(float(np.linalg.norm(vec)))
-            # NO z easing while moving: all height changes happen in the
-            # stationary stow -- easing the eef down mid-drive was measured to
-            # strip the cargo (drops at steps 144-332 on seeds that survived
-            # with the height held through the drive).
+        # A straight BACK-OUT off the fridge face used to run here (a[7]=-0.25
+        # until the base had moved 0.45 m or 60 ticks were spent). Deleted: at
+        # -0.25 the drive command is BELOW the joints' friction dead zone (see
+        # VCAP), so it moved the base 10-15 mm and always exited on the tick
+        # count -- 61 of the leg's 450 steps for a centimetre. It never cleared
+        # anything; the drive below leaves the fridge face just as well.
+        vec = np.asarray(gxy, float) - xy
+        heading = float(np.arctan2(vec[1], vec[0]))
+        a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
+        a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
+        a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
+        self._dist_hist.append(float(np.linalg.norm(vec)))
+        # NO z easing while moving: all height changes happen in the
+        # stationary stow -- easing the eef down mid-drive was measured to
+        # strip the cargo (drops at steps 144-332 on seeds that survived
+        # with the height held through the drive).
         # active counter-sweep: in base mode the arm channels still ADD deltas
         # to the held (base-frame) goal, so pull the swept eef back toward the
         # carry pose WHILE driving -- the poor-man's whole-body coordination.

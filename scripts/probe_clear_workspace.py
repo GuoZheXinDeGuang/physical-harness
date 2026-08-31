@@ -22,7 +22,7 @@ per-sub-goal first-death histogram (by object AND by stage), horizon-exhaust
 rate, replan stats, wall-clock.
 
     MUJOCO_GL=egl PYTHONPATH=. .venv/bin/python scripts/probe_clear_workspace.py \
-        --seeds 51500:51650 --out runs/clear-workspace-cal/calibration.json
+        --seeds 51500:51650 --out runs/scripted-calibration/clear-workspace-cal/calibration.json
 """
 
 from __future__ import annotations

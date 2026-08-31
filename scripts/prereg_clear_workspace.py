@@ -26,7 +26,7 @@ triple is stamped from the card's own mount so the sealed sha is the one a real
 clear_workspace run would seal.
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/prereg_clear_workspace.py \
-        --out runs/clear-workspace-cal
+        --out runs/scripted-calibration/clear-workspace-cal
 """
 
 from __future__ import annotations
@@ -207,7 +207,7 @@ def _chain_battery_plan(prereg_sha: str, cal: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=REPO / "runs/clear-workspace-cal")
+    ap.add_argument("--out", type=Path, default=REPO / "runs/scripted-calibration/clear-workspace-cal")
     ap.add_argument("--calibration", type=Path, default=None,
                     help="calibration.json from probe_clear_workspace.py (default <out>/calibration.json)")
     args = ap.parse_args()

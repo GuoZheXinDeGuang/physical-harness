@@ -14,7 +14,7 @@ with three ``--skills-root`` values:
   * evolved   -- + any rule a Phase-2 dev campaign promotes (not built here)
 
     MUJOCO_GL=egl PYTHONPATH=. .venv/bin/python scripts/chain_battery.py \
-        --seeds 40000 --skills-root runs/clear-build-gov/skills
+        --seeds 40000 --skills-root runs/scripted-calibration/clear-build-gov/skills
 
 This is measurement over existing pieces (base_profile + the card's binding +
 workload.run); it seals nothing. It composes, it does not extend -- the one real
@@ -38,7 +38,6 @@ from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
 from harness.manifest import discover
-from harness.registry import load_provider
 from plugins.task import workload
 from profiles import base_profile
 

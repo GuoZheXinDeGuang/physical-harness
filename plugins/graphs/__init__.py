@@ -1,7 +1,10 @@
 """Reference implementations of the layer-2 graph contracts.
 
 InMemorySkillGraph is content-addressed the same way campaign artifacts are, so
-a published skill's identity is its measurements, not a serial number.
+a published skill's identity is its measurements, not a serial number. The store
+is schema-free except for one record ``kind``: ``"capability"`` records are
+validated at publish time against ``harness/skill_record.py`` (the shape a
+planner selects an executor by), and everything else is stored as handed over.
 
 Two scene-graph providers share one snapshot schema
 (frame/t/nodes[id,label,kind,pos,conf,stale]/relations[from,to,rel]):
@@ -29,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.config import sha_json
+from harness.skill_record import CAPABILITY, validate_capability
 
 
 class InMemorySkillGraph:
@@ -50,6 +54,13 @@ class InMemorySkillGraph:
 
     def publish(self, record: Mapping) -> str:
         payload = dict(record)
+        # Schema by `kind`, so the recovery records (no kind, or kind
+        # "grasp_recovery") that already live in this store pass through
+        # byte-identically and their digests never move. A malformed capability
+        # record is NOT storable: raise here rather than warn and write a row a
+        # planner would later read as a measured claim.
+        if payload.get("kind") == CAPABILITY:
+            validate_capability(payload)
         digest = sha_json(payload)
         self._skills[digest] = payload
         if self._root is not None:

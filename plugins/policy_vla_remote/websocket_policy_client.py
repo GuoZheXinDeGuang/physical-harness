@@ -4,9 +4,11 @@
 #
 # Vendored from starVLA@0ed0aad2c83f587714f6167ef60cf7218b786590
 # (deployment/model_server/tools/websocket_policy_client.py). Local changes:
-# absolute import of the sibling msgpack_numpy (repo plugin-boundary rule), and
+# absolute import of the sibling msgpack_numpy (repo plugin-boundary rule),
 # typing_extensions.override dropped (no base class here; keeps the transport
-# surface at websockets+msgpack+numpy exactly).
+# surface at websockets+msgpack+numpy exactly), and the connect() call in
+# _wait_for_server entered as a context manager (websockets>=17.1 deprecates the
+# bare form; see the comment there).
 
 import logging
 import os
@@ -108,6 +110,13 @@ class WebsocketClientPolicy:
 
             try:
                 headers = {"Authorization": f"Api-Key {self._api_key}"} if self._api_key else None
+                # websockets>=17.1 deprecates using connect() without a `with`
+                # block, but this connection has to outlive the call, so entering
+                # it by hand is the fix. This form is version-agnostic: today
+                # connect() returns the ClientConnection and __enter__ returns
+                # self; once the legacy behavior is removed it returns the
+                # context manager and __enter__ returns the connection. close()
+                # below is the matching exit (that is all __exit__ does).
                 conn = websockets.sync.client.connect(
                     self._uri,
                     compression=None,
@@ -116,7 +125,7 @@ class WebsocketClientPolicy:
                     open_timeout=150,
                     ping_interval=None,
                     ping_timeout=60,
-                )
+                ).__enter__()
                 metadata = msgpack_numpy.unpackb(conn.recv())
                 return conn, metadata
             except ConnectionRefusedError:

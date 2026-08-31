@@ -81,3 +81,52 @@ def test_every_ref_resolves_base_clean():
     # every kindful predicate factory resolves to a (node, ctx) callable
     for ref in P.PREDICATES.values():
         assert callable(load_provider(ref))
+
+
+def test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch(monkeypatch):
+    """The `grasped`/`at-micro` verifies must mean HOLDING, not touching.
+
+    robocasa's ``check_obj_grasped`` is contact + fingers closed with no lift
+    term, so it reads True with the hand shut around meat still resting on the
+    shelf -- 7 of 7 constructible synthetic controls in
+    scripts/probe_grasp_predicate.py. The branch logic that fixes it is scored
+    here on fakes; the live reading needs the sim.
+    """
+    calls: dict = {}
+
+    def fake_load(ref, params=None):
+        if ref.endswith("obj_grasped"):
+            return lambda env: env["latch"]
+        if ref.endswith("obj_grasped_secure"):
+            def secure(env, z0):
+                calls["z0"] = z0
+                return env["latch"] and env["z"] > z0 + 0.08
+            return secure
+        raise AssertionError(ref)
+
+    monkeypatch.setattr(P, "load_provider", fake_load)
+
+    class _Ctx:
+        def __init__(self, env, out):
+            self.episode = type("E", (), {"env": env})()
+            self.nodes_out = out
+
+    surveyed = {"survey": {"facts": {"meat_pos": [0.0, 0.0, 1.00]}}}
+
+    def score(env, out):
+        return P._secure_grasp_verify()({}, _Ctx(env, out))["success"]
+
+    # closed around it, never lifted -> the latch says yes, the verify says no
+    assert score({"latch": True, "z": 1.00}, surveyed) is False
+    assert calls["z0"] == 1.00  # the SURVEYED resting z is the reference
+    # risen a full SECURE_DZ off the surveyed z -> a real hold
+    assert score({"latch": True, "z": 1.09}, surveyed) is True
+    # risen but no longer latched -> not held
+    assert score({"latch": False, "z": 1.30}, surveyed) is False
+    # knocked to a LOWER shelf and regrasped there: the segment's own sealed
+    # SECURE_DZ success is the alternative z-evidence, latch still required now
+    lower = dict(surveyed, grasp={"success": True})
+    assert score({"latch": True, "z": 0.80}, lower) is True
+    assert score({"latch": False, "z": 0.80}, lower) is False
+    # unsurveyed -> no reference, no claim (never a free True)
+    assert score({"latch": True, "z": 9.99}, {}) is False

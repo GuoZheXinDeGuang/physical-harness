@@ -14,7 +14,7 @@ work before the fork, each worker builds its own kernel + env. Composes
 workload.run over the card's binding -- seals nothing, measures everything.
 
     MUJOCO_GL=egl PYTHONPATH=. .venv/bin/python scripts/probe_clear_build.py \
-        --seeds 48900:49050 --out runs/clear-build-cal/calibration.json
+        --seeds 48900:49050 --out runs/scripted-calibration/clear-build-cal/calibration.json
 """
 
 from __future__ import annotations

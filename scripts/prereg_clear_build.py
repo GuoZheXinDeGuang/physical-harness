@@ -21,7 +21,7 @@ triple is stamped from a place-style mount so the sealed sha is the one a real
 run would seal (place_campaign._stamped_sha pattern).
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/prereg_clear_build.py \
-        --out runs/clear-build-cal
+        --out runs/scripted-calibration/clear-build-cal
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def _chain_battery_plan(prereg_sha: str) -> dict:
     """The 3-arm battery, preregistered alongside the prereg (design §3a/§4)."""
     return {
         "preregistration_sha": prereg_sha,
-        "revision": "v2 (stack-first reorder): v1 (stack-last, runs/clear-build-cal) "
+        "revision": "v2 (stack-first reorder): v1 (stack-last, runs/scripted-calibration/clear-build-cal) "
             "tripped §4.3 (52 ungoverned deaths at grasp-cube vs 31 at the governed "
             "stack node) -> proceed=false. The §1/§4.1 node-order lever orders the "
             "governed build-stack node first; the v2 calibration (71 governed vs 12 "
@@ -136,7 +136,7 @@ def _chain_battery_plan(prereg_sha: str) -> dict:
         },
         "arms": {
             "baseline": {"skills_root": None, "n4": "ungoverned"},
-            "governed": {"skills_root": "runs/clear-build-cal/skills",
+            "governed": {"skills_root": "runs/scripted-calibration/clear-build-cal/skills",
                          "n4": "stack-g1 regrasp + place-g2 replace x2 (both families)",
                          "skill_records": [{"digest": p.name[:-5], "source": src, "recovery": rec}
                                            for p, src, rec in GOVERNED_SKILLS]},
@@ -167,7 +167,7 @@ def _chain_battery_plan(prereg_sha: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=REPO / "runs/clear-build-cal")
+    ap.add_argument("--out", type=Path, default=REPO / "runs/scripted-calibration/clear-build-cal")
     ap.add_argument("--calibration", type=Path, default=None,
                     help="calibration.json from probe_clear_build.py (default <out>/calibration.json)")
     args = ap.parse_args()

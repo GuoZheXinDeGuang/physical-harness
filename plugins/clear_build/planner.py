@@ -16,7 +16,7 @@ regardless of predicate name, so no workload change is needed.
 
 Node order puts the GOVERNED stack node FIRST (the design §1/§4.1 lever, taken on
 the calibration number not on taste). The v1 clear-then-build order ran stack
-LAST; its calibration (runs/clear-build-cal) tripped the §4.3 gate -- chains died
+LAST; its calibration (runs/scripted-calibration/clear-build-cal) tripped the §4.3 gate -- chains died
 mostly at the ungoverned grasp-cube first node (52 ungoverned deaths vs 31 at the
 governed stack node), so stack governance could not touch the headline. Ordering
 stack first makes every chain reach it (no ``q_pre`` dilution on the governed

@@ -27,7 +27,7 @@ Usage (robocasa venv, cwd = this repo, EGL headless):
     cd /home/yusenzlabpc/Desktop/physical-harness && MUJOCO_GL=egl PYTHONPATH=. \
       /home/yusenzlabpc/Desktop/sims/robocasa-venv/bin/python \
       scripts/probe_kitchen_thaw.py --seeds 52150:52300 --workers 6 \
-      --out runs/kitchen-thaw-cal/calibration.json
+      --out runs/scripted-calibration/kitchen-thaw-cal/calibration.json
 """
 
 from __future__ import annotations

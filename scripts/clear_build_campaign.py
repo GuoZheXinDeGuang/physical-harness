@@ -4,19 +4,19 @@
 The preregistration is ``clear_build_prereg()`` from scripts/prereg_clear_build.py
 -- place-g2's stack campaign fields on the clear_build dev block (49050-49349),
 seeded from place-g2's both-families bundle (parent_final_sha b026831c). It runs
-only after the v2 calibration cleared the §4 go/no-go (runs/clear-build-cal-v2,
+only after the v2 calibration cleared the §4 go/no-go (runs/scripted-calibration/clear-build-cal-v2,
 proceed=true; the stack-first reorder made the governed node the one every chain
 reaches and dies at).
 
 PHASED: this runs the DEV generations only. Held-out (49350-49549) is deferred to
 the next phase, so the run overrides ``heldout=()`` and run_campaign scores no
 held-out block (paired_gate over zero seeds burns nothing). The full-held-out plan
-stays sealed in runs/clear-build-cal-v2 (prereg 0f3de2e95e12) for that phase to
+stays sealed in runs/scripted-calibration/clear-build-cal-v2 (prereg 0f3de2e95e12) for that phase to
 score on this campaign's frozen final bundle. Mount pattern mirrors
 place_campaign._mount verbatim; nothing here is new machinery.
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/clear_build_campaign.py \
-        --out runs/clear-build-g1
+        --out runs/scripted-calibration/clear-build-g1
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def _stamped_sha(prereg, kernel: Kernel) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=Path("runs/clear-build-g1"))
+    ap.add_argument("--out", type=Path, default=Path("runs/scripted-calibration/clear-build-g1"))
     ap.add_argument("--workers", type=int, default=10)
     args = ap.parse_args()
 

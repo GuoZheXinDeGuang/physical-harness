@@ -27,7 +27,7 @@ triple is stamped from a stack-scripted mount so the sealed sha is the one a rea
 governed run would seal (place_campaign._stamped_sha pattern).
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/prereg_inventory_build.py \
-        --out runs/inventory-build-cal
+        --out runs/scripted-calibration/inventory-build-cal
 """
 
 from __future__ import annotations
@@ -192,7 +192,7 @@ def _chain_battery_plan(prereg_sha: str, cal: dict) -> dict:
         },
         "arms": {
             "baseline": {"skills_root": None, "build-stack": "ungoverned"},
-            "governed": {"skills_root": "runs/inventory-build-gov/skills (assembled at battery time)",
+            "governed": {"skills_root": "runs/scripted-calibration/inventory-build-gov/skills (assembled at battery time)",
                          "build-stack": "stack-g1 regrasp + place-g2 replace x2 (both families)",
                          "skill_records": [{"digest": Path(p).name[:-5], "source": p, "recovery": rec}
                                            for p, _src, rec in GOVERNED_SKILLS]},
@@ -217,7 +217,7 @@ def _chain_battery_plan(prereg_sha: str, cal: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=REPO / "runs/inventory-build-cal")
+    ap.add_argument("--out", type=Path, default=REPO / "runs/scripted-calibration/inventory-build-cal")
     ap.add_argument("--calibration", type=Path, default=None,
                     help="calibration.json from probe_inventory_build.py (default <out>/calibration.json)")
     args = ap.parse_args()

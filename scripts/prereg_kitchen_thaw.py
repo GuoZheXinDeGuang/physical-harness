@@ -24,10 +24,10 @@ same store afterwards (``--seal-calibration``; CampaignStore is append-only).
     finishes, stamped with the prereg sha.
 
     cd $REPO && PYTHONPATH=. .venv/bin/python scripts/prereg_kitchen_thaw.py \
-        --out runs/kitchen-thaw-cal                 # pre-burn seal
-    ... run probe_kitchen_thaw.py --out runs/kitchen-thaw-cal/calibration.json ...
+        --out runs/scripted-calibration/kitchen-thaw-cal                 # pre-burn seal
+    ... run probe_kitchen_thaw.py --out runs/scripted-calibration/kitchen-thaw-cal/calibration.json ...
     PYTHONPATH=. .venv/bin/python scripts/prereg_kitchen_thaw.py \
-        --out runs/kitchen-thaw-cal --seal-calibration   # post-burn append
+        --out runs/scripted-calibration/kitchen-thaw-cal --seal-calibration   # post-burn append
 """
 
 from __future__ import annotations
@@ -195,7 +195,7 @@ def _chain_battery_plan(prereg_sha: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=REPO / "runs/kitchen-thaw-cal")
+    ap.add_argument("--out", type=Path, default=REPO / "runs/scripted-calibration/kitchen-thaw-cal")
     ap.add_argument("--seal-calibration", action="store_true",
                     help="append a calibration record to the already-sealed store")
     ap.add_argument("--calibration", type=Path, default=None,

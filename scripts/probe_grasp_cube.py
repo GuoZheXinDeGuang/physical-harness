@@ -19,7 +19,7 @@ calibration and the campaign build episodes from ONE definition. Calibration
 blocks NEVER gate (STATUS ledger); this only MEASURES.
 
     MUJOCO_GL=egl PYTHONPATH=. .venv/bin/python scripts/probe_grasp_cube.py \
-        --seeds 50850:51000 --out runs/grasp-cube-cal/calibration.json
+        --seeds 50850:51000 --out runs/scripted-calibration/grasp-cube-cal/calibration.json
 """
 
 from __future__ import annotations

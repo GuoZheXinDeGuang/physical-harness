@@ -58,7 +58,7 @@ Sealed artifacts (mirrors prereg_inventory_build.py):
 Sealing only; burns no dev/held-out (calibration never gates).
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/prereg_grasp_cube.py \
-        --out runs/grasp-cube-cal
+        --out runs/scripted-calibration/grasp-cube-cal
 """
 
 from __future__ import annotations
@@ -197,7 +197,7 @@ def _campaign_plan(prereg_sha: str, cal: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=REPO / "runs/grasp-cube-cal")
+    ap.add_argument("--out", type=Path, default=REPO / "runs/scripted-calibration/grasp-cube-cal")
     ap.add_argument("--calibration", type=Path, default=None,
                     help="calibration.json from probe_grasp_cube.py (default <out>/calibration.json)")
     args = ap.parse_args()

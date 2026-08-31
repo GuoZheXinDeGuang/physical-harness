@@ -380,32 +380,36 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 `PYTHONPATH=. .venv/bin/python -m pytest -m "not robosuite and not robocasa"`。
 它比隔离快照多 3 个 pass（那 3 个 camera-env 跳过项在卡在场时变成通过）。
 
-### 3.2 当前快照（2026-08-30，隔离，robosuite 被挡）
+### 3.2 当前快照（2026-08-31，隔离，robosuite 被挡）
 
 ```
-pass       : 765 passed
-skips      : 42 skipped
-             [3] camera env unavailable because robosuite is blocked
-             [23] robocasa tests (robocasa venv only)
-             [1] libero test (libero venv only)
-             [2] policy_remote extra not installed
-             [1] cloned weights not present
-             [12] optional sealed runs/ evidence absent in this checkout
-wall time  : 19.85s
+pass       : 806 passed
+skips      : 30 skipped
+             [2] test_grasp_geometric.py:141  camera env unavailable
+             [1] test_grasp_geometry.py:231   camera env unavailable
+             [1] test_reducers.py:171         cloned weights not present
+             [1] test_plugin_doctor.py:307    robocasa unimportable (robocasa venv only)
+             [4] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
+             [12] test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
+             [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
+             [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
+             [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
+             [1] test_libero_marker.py:15     libero unimportable (libero venv only)
+             (policy_remote extra now installed -- its 2 live-socket tests run)
+             [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
+wall time  : ~18.8s
 AST green  : 17 passed (test_boundaries + test_kernel)
 deselected : 28 robosuite-marked items
 ```
 
-**全量对照（卡在场）**：`795 passed, 40 skipped`（2026-08-30；在实测快照上加入
-3 个纯逻辑 stack skill-library 测试）；日常双 marker 排除车道是
-`768 passed, 16 skipped, 51 deselected`。robocasa 标记项在 harness
-`.venv` 里也跳过（那里同样没装 robocasa），1 个 libero 标记项只在 `sims/libero-venv`
-里跑；robocasa 那些只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑，结果是
-`13 passed, 5 xfailed`——那 5 个 xfail 是实测出来的驱动诚实失败面（nav-microwave 空载
-时冰箱挡住 seed-7 的过道 / 关门 / 从 standoff 放置 / seed 4 和 5 的假闭合抓取）。
-`base_profile` 的 sha 逐字节稳定在 `b905a5…`（折叠结果等于 `runs/round25-rerun` 里封存
-的那个值）——manifest 折叠复现了旧的硬编码 mounts，而未激活的 embodiment_robocasa 卡
-（`enabled = false`）不折出任何 mount。
+798 → 806 是快照写下之后攒的 8 个底座项（7 个来自其间的提交，+1 是 grasp 谓词审计
+这一轮的 `test_mission_kitchen_thaw.py::test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch`）。
+
+**全量对照（卡在场）**：上次实测 `829 passed, 27 skipped`（2026-08-29 的 797 + 那一轮
+`test_capability_record.py` 的 32 个无标记项）。**这一行自那以后没有重测**——要 sim venv
+才跑得动——所以它和上面的 806 不构成同一轮的算术，别拿两者相减。隔离快照少掉的 pass 是：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
+而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
+只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
 
 ### 3.3 fresh clone 的合法差异
 
@@ -610,6 +614,17 @@ robocasa = embodiment 泄漏）。
   谓词表；时序 flag（"水开着时菜必须在槽里"）抄 MultistepSteaming 的累积模式，
   每步采样、wrapper 持有，不动 robocasa 源码。**按仓库纪律，把任何 sim 自带谓词当
   gate 用之前，先审计它的区分度**——这里有过一个近乎恒真的抓取检查。
+  **那条抓取检查现在审完了**（`scripts/probe_grasp_predicate.py`，合成对照 +
+  100 条人类 demo 重放，与 place 谓词同一套方法）：`check_obj_grasped` = 夹爪-物体
+  接触 AND 两个手指关节 < 0.035，**没有升起项**，所以"握住"和"碰到"它分不开。把闭合
+  的夹爪摆到肉的静止位姿上（肉仍搁在托盘上），7/7 条可构造的对照全读 True；100 条
+  demo 的 25261 帧里，它读 True 的 9583 帧中 20.3% 肉根本没升起（<20 mm），2.0%
+  既没升起又仍被支撑。所以 grasped 类 verify 一律用 `obj_grasped_secure` = latch
+  AND 肉的 live z 比 survey 封存的静止 z 高出 `GraspDriver.SECURE_DZ`——0.08 m 不是
+  这里新挑的阈值，是 grasp segment 自己 `done()` 的那一把尺，直接 import 复用，两边
+  不会漂开；裸 latch 只作组件用。同一次重放里修好的谓词在 **94/100** 条 demo 上仍
+  读 True，漏掉的 5 条全是高层架（rest_z 1.37-1.48）上人类横向抽出、整程没升够
+  80 mm 的抓取——诚实的假阴性面，不是"严到永远说 False"。
 * **驱动**：PandaOmron 12 维（arm OSC 6 + gripper 1 + torso 1 + base vx/vy/wyaw 3 +
   base_mode 1）。两类脚本化 driver，均为冻结策略、可被治理：
   - `navigate`：privileged fixture 位姿做目标的速度闭环（base_mode=+1），无路径
@@ -864,17 +879,25 @@ provider 的默认值 —— `host="127.0.0.1", port=8000`）。
 **握手就是契约检查。** 卡的 manifest params 声明**训练时的观测契约**；连接时
 `reconcile()` 拿它跟服务端第一帧 metadata 对：
 
-| manifest param | 服务端回显的握手键 |
-|---|---|
-| `image_size` | `training_obs_image_size` |
-| `views` | `camera_views`（StarVLA 从不回显 —— 落进 `unverified`） |
-| `chunk` | `action_chunk_size` |
-| `unnorm_key` | `default_unnorm_key`（列在 `available_unnorm_keys` 里也算） |
+| manifest param | 服务端回显的握手键 | 没回显时 |
+|---|---|---|
+| `image_size` | `training_obs_image_size` | 落进 `unverified` |
+| `views` | `camera_views`（StarVLA 从不回显） | 落进 `unverified` |
+| `chunk` | `action_chunk_size` | 落进 `unverified` |
+| `unnorm_key` | `default_unnorm_key`（列在 `available_unnorm_keys` 里也算） | 落进 `unverified` |
+| `checkpoint_sha`（可选） | `checkpoint_sha` | **抛** |
 
 任何被回显的键不匹配就**在 mount 时抛**——train/test 漂移响亮地失败，绝不表现为悄悄
-变低的成功率。服务端没回显的键落进 `handshake["unverified"]`（openpi 服务端常发空
+变低的成功率。前四个键服务端没回显就落进 `handshake["unverified"]`（openpi 服务端常发空
 metadata —— 合法，但那样这道闸什么也验不了），整份握手记录随驱动进入 episode 证据。
 提交在 manifest 里的值是 openpi LIBERO π0.5 约定的模板——按你的 checkpoint 设。
+
+**第五个键 `checkpoint_sha` 是另一类东西，规则也不一样**（§7.4）。前四个说的是"在什么
+观测契约下训练的"，同一个任务的两次 π0.5 训练按构造共享这四个值——它们分不出**是哪份权重
+在应答**。`checkpoint_sha` 分得出，所以它**失败朝闭**：manifest 声明了它而服务端不回显，
+就跟服务端回显了一个不同的摘要一样**抛**，不进 `unverified`。理由是"没人回答"和"错的权重
+回答了"在证据上无法区分。它同时是**可选的**：manifest 不写，就完全不验这一项（见 §7.4
+末尾为什么这个 opt-in 是诚实的）。
 
 **包你自己的模型**：在你的模型 venv 里复用 vendored 的 server（它只 import
 websockets + msgpack + numpy）：
@@ -893,6 +916,60 @@ WebsocketPolicyServer(
 `actions` 必须是 `[T, D]`（或 `[B, T, D]`，取第一个 batch 元素）且**已经反归一化**——
 norm stats 永不跨边界，它们跟 checkpoint 一起留在服务端。驱动每个 chunk 推理一次，
 每步弹出一个动作。
+
+**chunk 怎么执行，是三个 opt-in 的 serving 参数**（跟 `host`/`port` 并列，不进被
+reconcile 的契约——服务端对它们没有意见可验；它们封在 `handshake["execution"]` 里，
+所以一份记录仍然说得出自己是在哪种执行策略下跑出来的）。三个都不写时行为跟以前**逐字
+节相同**：一次推理喂满 10 步，其中 9 步开环。
+
+| param | 作用 | 不写时 |
+|---|---|---|
+| `replan_every = k` | 只执行 chunk 的前 k 个动作就重新推理（`k=1` 是每步闭环） | 抽干整个 chunk |
+| `ensemble = m` | k < chunk 时多个 chunk 预测同一个 timestep，按 `exp(-m*age)` 加权平均（越新权重越大） | 不做 ensembling |
+| `discrete_dims = [i, ...]` | ensembling **不许**平均的维度，取最新 chunk 的原值 | 空——所有维度都平均 |
+
+`ensemble` 不带 `replan_every` 会**抛**：没有重叠就没有东西可平均，一个读起来像开着
+实际什么都不做的旋钮比没有这个旋钮更糟。
+
+`discrete_dims` 是给 `control_mode`、`gripper` 这类**两值决策**用的：+1 和 -1 的平均是 0，
+controller 会把它读成第三件事——既不是新 chunk 的意思，也不是旧 chunk 的意思。把平均值
+按符号 snap 回去也不行，那是拿过时的预测做多数投票，而它恰好会审查掉少数派决定（本仓库
+实测的 π0.5 checkpoint 只在 8.1% 的步上命令 base mode）。所以这些维度直接取最新 chunk 的
+值，其余维度才平均。
+
+代价是线性的：实测单次推理 **155 ms**（π0.5 LoRA，RTX 4090，warm），控制环 20 fps
+= 50 ms/步，所以 `k=1` 跑不动实时（3.1×超时），`k>=4` 才摊得进预算。ensembling 本身几乎
+免费（10 个 chunk 的加权平均 < 0.1 ms）。`scripts/probe_pi05_rollout.py --replan-every /
+--ensemble` 每个 episode 记 `inference_calls` 和 `base_mode_share`，先测再声明。
+
+**测了，是个 null。** 这三个旋钮是为一个具体怀疑造出来的：π0.5 LoRA（100 条 RoboCasa
+place demo）单步模仿接近天花板、闭环接近零，而 serving 路径把 10 个动作的 chunk 抽干，
+每 10 步有 9 步开环——闭环失败有多少是这个？配对实验（同一 checkpoint `ea09cb15…`、同
+一批 scratch 种子、`--split train`，只有执行策略变），`scripts/compare_serving_arms.py`
+折出的表在 `runs/pi05-campaign/round98_serving_ablation/`：
+
+| arm | n | place `obj_in_microwave` | base mode 占比 | inference/episode | s/episode |
+|---|---|---|---|---|---|
+| sealed baseline（抽干 chunk） | 10 | 1/10 | 8.1%* | 240 | 111 |
+| control 重跑（抽干 chunk） | 20 | 0/20 | 5.2% | 240 | 106 |
+| `replan_every=1` | 20 | 2/20 | 7.3% | 2400 | 359 |
+| `replan_every=1, ensemble=0.25` | 10 | 0/10 | 3.2% | 2400 | 273 |
+
+（*baseline 早于 per-step 计数器，只有 `action_trace` 的子采样估计。demo 是 20.09%。）
+
+`k=1` 对 control 是 2/20 vs 0/20，Fisher p=0.49、配对 McNemar p=0.50；对 sealed
+baseline 是 2/10 vs 1/10，p=1.0。**2/10 不是 1/10 的改进**——先看噪声地板：baseline 和
+control 执行策略逐字节相同、种子相同，place 仍然 1/10 vs 0/10，grasp 有 3/10 的种子翻面
+（openpi 每次请求抽新的 noise key，这个策略是随机的）。所有臂之间的差都在这条地板以内。
+
+机制指标说得更直接：每步重新推理**没有**把 base mode 占比拉回 demo 的 20.09%——四个臂
+落在 3.2–7.3%，而同一个执行策略跑两次就能从 5.2% 走到 8.1%。所以 chunk 被开环抽干不是
+闭环失败的主因，剩下的要到策略自己身上找。`k=1` 是**诊断臂，不是可上线配置**：2400 次
+推理 × 155 ms 已经把 episode 变成推理绑定（359 s），仍然 3.1× 超 20 fps 预算。
+
+（这张表的 grasp 列被刻意省掉了：`obj_grasped` 的 latch 在这轮跑到一半时被 845b57a 换
+成了 `obj_grasped_secure`，同一条 k=1 臂上 latch 读 9/12、secure 读 2/8——两把尺子的
+数不能并排放，`compare_serving_arms.py` 遇到混合尺子直接拒绝比较而不是悄悄平均。）
 
 这张卡 ships `enabled = false`，因为 `plugins/policies` 拥有 `policy.driver`
 （一条缝一张卡）；某条车道要上线时把它打开、把在位的那张关掉。
@@ -1020,15 +1097,69 @@ ref = "plugins.policy_vla_remote:provider"
 ### 7.4 冻结机制就是握手
 
 `plugins/policy_vla_remote/` 的握手校验（§6.2）**同时也是冻结机制**：SkillRecord 存
-checkpoint 的**摘要**，绝不存权重（GB 级）。执行时握手证明服务端正在服务**那个**
-checkpoint；换一个 checkpoint 就 mount 失败——和冻结 SkillRecord 规则给脚本策略的保证
-完全一样。
+checkpoint 的**摘要**，绝不存权重（GB 级）。
 
 ```
 harness (base venv)  ──websocket+msgpack──▶  policy venv (JAX/torch)
-   policy_vla_remote card                      serve_policy.py
-   handshake gate ────── checkpoint digest ───── /v1 metadata
+   policy_vla_remote card                    scripts/serve_vla_openpi.py
+   handshake gate ────── checkpoint_sha ─────── 第一帧 metadata
 ```
+
+**摘要是什么。** `checkpoint_sha` 是 64 位小写 sha256 hexdigest，算的是**权重字节本身**：
+遍历 checkpoint 下的 `params/` 和 `assets/`，按 POSIX 相对路径排序，把每个文件的
+`relpath.encode() + b"\0" + file_bytes` 依次喂进同一个 sha256。不哈希路径、不哈希 run
+名——那些能改名，而 SkillRecord 的身份主张必须扛得住改名。这是
+`plugins/policies/bc.py` 里 `MLPPolicy.sha()` 的同一招（那边哈希的是 numpy 权重数组的
+`tobytes()`）。闸只做字符串比对，不会去验证对面是不是真按这个规约算的——所以这条规约是
+两边必须共同遵守的契约，而一条两边各写一遍的契约会漂。所以它只有**一份实现**：
+`plugins/policy_vla_remote/__init__.py` 的 `checkpoint_sha()`（stdlib-only，1 MiB 分块读，
+9 GB 的 checkpoint 约 6 秒），闸这边和回显那边调的是同一个函数，填 manifest 的算式也是它。
+
+**为什么只哈希 `params/` 和 `assets/`，不哈希整棵树。** 摘要覆盖的是**决定应答的东西**。
+orbax 的 `train_state/` 是优化器状态——它决定下一个训练步，永远不决定一次应答——而且它占
+9 GB 里的 3.1 GB，是磁盘紧张时第一个被删的东西。把它算进去，等于删一次没人动过的权重就要
+换一次身份，逼着每份声明过它的 manifest 重新声明。`assets/` **要**算：里面是 norm stats，
+同样的权重配不同的统计量，反归一化出来的动作就不一样——按这里唯一算数的定义，那是**另一个
+策略**。
+
+**服务端怎么回显。** `scripts/serve_vla_openpi.py` 是给 openpi checkpoint 的包装器：它
+**不 fork 也不 vendor** openpi 的 server，只是把 `create_trained_policy` 建出来的 policy
+和一份带 `checkpoint_sha` 的 metadata 交给 openpi 自己的 `WebsocketPolicyServer`。它跑在
+**openpi 的解释器**下（`PYTHONPATH=<harness> <openpi>/.venv/bin/python
+<harness>/scripts/serve_vla_openpi.py --checkpoint-dir … --config …`），这正是 §6.2 那条缝：
+模型栈留在自己的 venv 里，harness 这边只要 websockets+msgpack+numpy。它在 `scripts/` 而
+不在卡里，因为 `plugins/` 只能 import 自己 manifest 声明的东西（`tests/test_boundaries.py`
+是闸），而 openpi 恰恰**不是**这张卡的依赖——卡的全部意义就是模型栈在 socket 那头。
+`training_obs_image_size` / `action_chunk_size` / `default_unnorm_key` 一律从解析出来的
+`TrainConfig` 读，不在包装器里重写一遍；`camera_views` **不回显**——slot 顺序在 config 的
+input transform 里（RoboCasa 是 `RoboCasaInputs`），没有可问的接口，手抄一份就是那种会
+悄悄过期的第二份拷贝，所以它照旧留在 `handshake["unverified"]`。
+`--print-sha` 只算摘要不碰 GPU。
+
+**这条路已经端到端验过**（`scripts/probe_vla_handshake.py`，对着真 server 真 socket，不是
+对着 `reconcile()` 的 dict）：摘要相符 → MOUNTED；摘要差一个字符 → REFUSED（`handshake
+mismatch`）；manifest 声明了摘要而**原样的** openpi `serve_policy.py` 发 `{}` → REFUSED
+（`handshake gap`）——注意最后这一条里两个 server 加载的是**同一份权重**，被拒的理由不是
+权重错了，而是**证不出来**。
+
+**闸怎么判。** manifest 声明了 `checkpoint_sha` 时：服务端回显同一个摘要才 mount；回显
+了不同的摘要**抛**；**一个字都不回显也抛**（错误信息是 `handshake gap`，不是
+`handshake mismatch`）。最后这条是刻意跟前四个键分开的——观测契约那四个键容忍部分回显，
+因为 `views` 上游根本不回显、openpi 服务端默认发 `{}`，严格化会让这张卡压根挂不上；而身份
+键是"声明出来就是为了被回答"的，"没人回答"和"错的权重回答了"在证据上无法区分，所以它必须
+**失败朝闭**。
+
+**它是 opt-in，这是有意的。** manifest 不写 `checkpoint_sha`，就没有这道身份闸——原样的
+openpi `serve_policy.py` 发的是 `{}`，强制要求摘要会让任何没包过的服务端挂不上，进而逼人
+往 manifest 里填一个没人真算过的摘要：**缺席的身份主张是诚实的沉默，编造的是 SkillRecord
+里的谎**。封存的握手记录里 `contract` 有没有这个键是看得见的，所以"这次 mount 关于权重
+什么也没证明"在下游读得出来；某个成对比较**要不要求**已验身份，是封 SkillRecord 的人的判断，
+不是一个 websocket 客户端的判断。反过来说：**执行模式下要把某个 delta 归因给这个 executor
+的成对比较，manifest 里就必须有这个摘要**，否则那条归因是空的。
+
+一个已知残留：`connect()` 对 `self._client is None` 幂等，而协议只在连接后的**第一帧**发
+metadata——所以服务端在一条活连接上热重载了不同权重，这边不会重验。协议层面重验就等于重连；
+现在的规约是**一次 mount 一次身份证明**。
 
 ### 7.5 数据：RoboCasa 自带示范
 
@@ -1068,6 +1199,95 @@ harness (base venv)  ──websocket+msgpack──▶  policy venv (JAX/torch)
 - **checkpoint 是 GB 级的。** 摘要进 SkillRecord 和链，权重按摘要寻址放在旁边。
 - **时钟换了单位。** 分钟变成小时，所以 dev 的代数会缩水——先把**一代**端到端跑通，
   再谈多代。
+
+### 7.7 技能库怎么说话：capability 记录
+
+到 §7.6 为止，技能库只会说一句话：**"这条 RSI 恢复规则晋级了"**（`plugins/rsi/workload.py`
+写的那种记录）。VLM 规划器要把一个 mission 拆成若干 segment、再给每一段挑一个执行器，
+需要的是另一句话：**"这个执行器能做这个 skill，在这些前提下，是这么测出来的。"**
+这就是 **capability 记录**——同一个 store、同一扇 `publish()` 门，靠 `kind` 字段区分。
+
+```
+{"kind": "capability",
+ "skill": "place",                     # 规划器可以选的 CATALOGUE 名字
+ "task":  "kitchen_thaw",              # mission 上下文
+ "binding": {"ref": "plugins.policy_vla_remote:provider",
+             "checkpoint_sha": "<64 位小写 hex>"},        # 谁来执行
+ "preconditions": ["plugins.embodiment_robocasa.predicates:obj_grasped"],
+ "effects":       ["plugins.embodiment_robocasa.predicates:obj_in_microwave"],
+ "measured": {"predicate": "plugins.embodiment_robocasa.predicates:obj_in_microwave",
+              "successes": 12, "n": 20}}
+```
+
+**前提和验收是同一种东西。** `preconditions` / `effects` 用的是 mission 卡的
+verify 表（`plugins/embodiment_robocasa/predicates.py` 的 `PREDICATES`）**一模一样**的
+`"module:factory"` 引用形式，由 `harness.registry.load_provider` 解析成
+`pred(env) -> bool`：一个查入口，一个查出口。**散文不收**——整个设计的要点就是派发器能
+把它们**对着活状态求值**，前提不成立就跳过这个 skill。所以组合是谓词级的、现场的：
+B 的前提在 A 真正留下的状态上成立，才把 A 接到 B。
+
+**已知边界，故意不加字段。** 谓词名字对上并不保证 B 的实测率能迁移过来——A 交接过来的
+状态可能落在 B 被测量的分布之外，而两边谓词都读 True。**有一次交接测量正在跑**，用来
+回答这件事在实践中咬不咬人；要加字段等有证据说需要，不是提前加。
+
+**还有一条边界，是谓词形状本身。** 上面例子里 `preconditions` 写的 `obj_grasped` 就是
+那条裸 latch。前提/效果这一面只认 `pred(env) -> bool`，而"真握住"需要第二个参数——它
+静止时的 z（`obj_grasped_secure(env, z0)`），episode 才知道的东西。所以**能挡住假阳性
+的那一版谓词，写不进 capability 记录的前提栏**；今天由 mission 卡的 verify 承担这件事
+（`plugins/mission_kitchen_thaw/planner.py:_secure_grasp_verify`，参考 survey 封存的
+`meat_pos`）。派发器真开始按前提跳过 skill 的那一天，这条要先补上，否则前提会重演一遍
+同一个谎。
+
+**三种执行器共用一个 `binding`。** 脚本驱动是进程内的一个 ref，π0.5 是一张走 socket 的
+卡，外部包是和 π0.5 一样的形状——卡片边界本身就是那层抽象，不需要再发明一层传输抽象。
+`checkpoint_sha` **有权重的时候才有**：脚本驱动没有权重可以摘要，逼它交一个只会造出这套
+schema 存在的目的所要挡的那种假话。身份闸在**权重那一侧**（§7.4 的
+`policy_vla_remote.reconcile`：声明了摘要而服务端不回显，就拒绝挂载）。
+
+**六条校验，每条挡一种真实的失败**（`harness/skill_record.py`，在 `publish()` 里执行，
+不合格**直接抛**，不是警告后照写）：
+
+| 规则 | 挡住的失败 |
+|---|---|
+| 每个谓词引用形如 `"module:attr"` | 散文条件派发器没法求值，只能靠人读 |
+| `measured.predicate ∈ effects` | 声称一件事、测的是另一件——这套 schema 就是为它存在的 |
+| `0 <= successes <= n`，`n > 0` | 无分母的率 |
+| `split` 只能是 `train` / `test`（RoboCasa：layout 11-60 / 1-10） | 分不清是能力还是泛化 |
+| `checkpoint_sha` 出现时必须是 64 位小写 hex | 记不住是哪份权重拿到的这个数 |
+| **未知顶层键一律拒绝** | 打错的字段名把证据静默丢掉，记录 claim 得就比测的多 |
+
+`preconditions` / `effects` **不许为空**：空不是"没有入口条件"，而是"永远适用"这个最宽的
+主张，并且和"这一格没人填"完全不可区分。真的无条件适用，就写一条这么说的谓词——那是
+可以 grep 的。没有 `kind` 的记录（和 `kind` 是别的值的记录）走的还是原来的路，
+**逐字节不变，摘要不动**——恢复记录不带 `heldout_judgement_established` 以外的东西进
+`assemble_bundle`，capability 记录因此对治理装配天然是惰性的。
+
+**规划器一次读完：`skill_index`。** `skills()` 交出来的是 N 条按摘要寻址的记录；VLM 要
+的是**一份**能塞进 context 的文档。`harness.skill_record.skill_index(records)` 就是那份
+文档，**每次现算，永不存第二份真相**（存下来的索引会跟记录漂，而且没人会发现）：
+
+```
+skills: skill 名 -> [{digest, binding, preconditions, effects, measured{successes,n}}]
+edges:  [{from: A, to: B, via: [共享的谓词引用]}]        # B 的前提 ⊆ A 的效果
+```
+
+`edges` 是纯集合包含，没有推断、没有模型调用、没有启发式。挂点在 `scripts/harness_runtime.py`
+的 boot：和封 `skills_manifest` 用的是**同一次读**，落成 `<session>/skill_index.json`——
+和 `runtime_status.json` 同一类的 live state，每次 boot 覆写，永远不进封存链。
+
+**脚本执行器的记录已经发布**（`scripts/publish_pi05_capabilities.py`）：五条记录——
+脚本的 navigate / grasp / carry / place 加 π0.5 的 place binding（checkpoint
+`ea09cb15…`）——数字**只从封存的 episode 文件里读**（secure 抓取尺子），不接受手填。
+π0.5 因此是表里普通的一行，不是特例。这张索引照出的组合图（同一批 10 个 seeds 上）：
+
+```
+navigate 10/10 → grasp 6/10 → carry 3/10 → place {scripted 0/10, π0.5 0/10}
+```
+
+这正是这套 schema 存在的意义：mission 的失败不再是一个数，而是一条能指认哪一格在
+耗散的链——这一轮指认的是 grasp 和 carry（脚本侧），不是 place。记录本身封存在
+`runs/pi05-campaign/round99_skills/`（证据，不进 git）；发布器进 git，随时可以对着
+新一批封存证据重发。
 
 ---
 
