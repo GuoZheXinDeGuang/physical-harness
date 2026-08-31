@@ -1,0 +1,17 @@
+# Abstract skill -> RoboCasa persistent-segment task. The task names are what
+# lunch_driver.py already implements for PackFoodByTemp.
+[skills.navigate_to_object]
+backend = "scripted_mobile_manipulation"
+task_template = "nav_{object}"
+
+[skills.pick]
+backend = "scripted_mobile_manipulation"
+task_template = "grasp_{object}"
+
+[skills.transport]
+backend = "scripted_mobile_manipulation"
+task_template = "carry_{object}"
+
+[skills.place_in]
+backend = "scripted_mobile_manipulation"
+task_template = "pack_{object}"

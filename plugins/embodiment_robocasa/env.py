@@ -11,6 +11,7 @@ on a card-absent machine); only make_env drags the simulator in.
 
 from __future__ import annotations
 
+import importlib
 import os
 
 import numpy as np
@@ -30,6 +31,16 @@ TASKS: dict[str, dict] = {
     # predicate layers, not this key.
     "recycle_cans": {"env": "RecycleSodaCans", "object_key": "can1_pos"},
     "pack_lunch": {"env": "PackFoodByTemp", "object_key": "hot0_pos"},
+    # Same benchmark world as pack_lunch, but the task graph is emitted from the
+    # shared abstract skill library by a VLM rather than a fixed mission table.
+    "pack_all_robocasa": {"env": "PackFoodByTemp", "object_key": "hot0_pos"},
+    "basket_smoke_vlm": {
+        "env": "BasketPackingSmoke",
+        "object_key": "item0_pos",
+        # Importing this embodiment-owned module registers its Kitchen subclass
+        # with robosuite before create_env resolves the env name.
+        "register": "plugins.embodiment_robocasa.basket_env",
+    },
     "steam_prep": {"env": "MultistepSteaming", "object_key": "vegetable1_pos"},
 }
 
@@ -78,4 +89,6 @@ def make_env(spec: EpisodeSpec):
     from robocasa.utils.env_utils import create_env
 
     cfg = task_config(spec)
+    if cfg.get("register"):
+        importlib.import_module(cfg["register"])
     return create_env(env_name=cfg["env"], robots=ROBOT, seed=spec.seed)

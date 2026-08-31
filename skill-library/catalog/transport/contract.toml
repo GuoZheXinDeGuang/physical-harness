@@ -1,0 +1,11 @@
+[skill]
+name = "transport"
+description = "Move while keeping a grasped object secure, ending near its destination."
+kind = "segment"
+requires = ["robot is holding object", "target is present in the scene inventory"]
+ensures = ["object remains held", "target is within placement reach"]
+exit_conditions = ["backend reaches the destination manipulation dock"]
+
+[arguments]
+object = "str"
+target = "str"

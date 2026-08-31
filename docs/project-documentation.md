@@ -68,7 +68,7 @@ physical-harness/
 │     harness_runtime.py   常驻 runtime，盯 inbox
 │     cockpit             一键启动一切（含拉起 ph-station）
 │     rsi_campaign.py      RSI 七步链
-│     frame_dump.py        画面和 keyframe
+│     frame_dump.py        画面、keyframe 和最新 rollout MP4
 │     plugin_doctor.py     card 体检
 │
 ├── profiles/dsh/     ← 注意：控制台的配置在这里，不在 ph-station
@@ -99,7 +99,7 @@ ph-station/
 │                            自动暴露 POST /api/board/<name>
 │
 ├── packages/client/      面板（全是渲染）
-│     ui-ph-livegraph/      执行图谱 + 过程流 + 取景窗
+│     ui-ph-livegraph/      执行图谱 + 过程流 + 取景窗/视频下载
 │     ui-ph-panels/         RSI 总览 + 迭代记录 + 能力卡 + 账本 + Run RSI 按钮
 │     ui-ph-ops/            运行体征侧栏：主机资源、本地模型开关
 │     ui-ph-vault/          技能库
@@ -774,8 +774,10 @@ oracles   = "plugins.planner_vlm:ORACLES"                # declared verify predi
   `export DEEPSEEK_API_KEY=...`。key 走的是环境变量**名**、绝不是值——秘密不进哈希链。
 
 一个已在代码里核实的坑：runtime 的 task 路径挂 binding 的 planner ref 时**不带
-params**，planner 用它**自己**的默认值按 ref 解析 endpoint
-（`plugins/planner_vlm/__init__.py` 里的 `endpoint_params = {"preset": "local_sglang"}`）。
+params**，planner 用它**自己**的默认值按 ref 解析 endpoint。当前与 3080 的操作员设置
+对齐到 `deepseek-official / deepseek-v4-pro`；`model_endpoint` 先读
+`DEEPSEEK_API_KEY` 环境变量，缺失时只按同名 ref 从 `$DSH_HOME/.credentials.yaml` 读取，
+key 不进入 manifest、brief、prompt、日志或 endpoint identity。
 改 `plugins/model_endpoint/manifest.toml` 的 params **不会**给 planner 改道——那些
 params 只在有东西 kernel-mount `model.endpoint` 时才起作用，而今天没有。要用托管 API
 或别的端口，改 planner 的 `endpoint_params` 默认值（一行；支持逐字段覆盖，如
@@ -811,6 +813,51 @@ PYTHONPATH=. .venv/bin/python scripts/plugin_doctor.py plugins/planner_vlm
 （Tier A 把每条 binding ref 都经真契约闸加载；planner 冒烟探 `available()`，没有端点
 应答时**响亮地 SKIP**。离线逻辑由 `python -m pytest tests/test_planner_vlm.py
 tests/test_model_endpoint.py` 覆盖，不需要端点。）
+
+#### 6.1.1 静态 skill library 与 `pack_all_robocasa`
+
+第一版共享技能库在 `skill-library/`，布局参考 open-robot-skills 的“一技能一目录”：
+
+```text
+skill-library/
+  catalog/<skill>/{SKILL.md,contract.toml}   # 语义、参数、前/后条件、成功条件
+  embodiments/robocasa.toml                 # 抽象技能 -> RoboCasa 子任务
+  embodiments/libero.toml                   # 同一抽象 -> LIBERO 子任务
+harness/skill_library.py                     # 加载、校验、生成 catalogue/segment_specs
+```
+
+上层只看 `navigate_to_object / pick / transport / place_in`；例如
+`pick(object="hot0")` 在 RoboCasa 绑定成 `grasp_hot0`。LIBERO 复用 `pick/place_in`
+的**同一语义契约**，但当前卡只有 env 骨架，没有合格的 policy 和 terminal oracle，所以
+绑定明确写着 `implemented=false`，不会被暴露给 planner——不能执行的技能绝不假装存在。
+
+`plugins/mission_pack_all/` 是第一条闭环：manifest 把共享 catalogue、技能说明、场景物体清单
+和 `target_by_object` 交给 `planner_vlm`；VLM 为四件食物逐件生成
+`navigate -> pick -> transport -> place_in` DAG；`plugins/task/validate.py` 查图的技能、必填参数、
+类型、拓扑和 verify 覆盖；派发前 `_segment_spec` 再查物体/容器 grounding，然后才把抽象节点
+翻译为 `lunch_driver.py` 已实现的 RoboCasa stage。调用示例：
+
+```json
+{"kind":"task","task":"pack_all_robocasa","seed":424242,
+ "instruction":"把所有食物按冷热分别装进正确的保鲜盒"}
+```
+
+新增 benchmark 时不需要复制整套 skill：保留能共享的语义契约，只在
+`skill-library/embodiments/<benchmark>.toml` 写适配；该 benchmark 特有的动作另加 contract。
+也就是说，**共享的是抽象和图语言，控制器、动作空间、成功谓词仍由 benchmark 自己实现。**
+
+`basket_smoke_vlm` 是更小的端到端冒烟任务：场景固定提供 `item0/item1/item2` 和
+`basket`，VLM 只需生成三组 `pick -> place_in`，不包含 navigation 或 transport。每个
+对象都必须恰好出现一次，`place_in` 必须在对应 `pick` 的依赖后且目标必须是 `basket`；
+这些约束由 validator 读取 task-authored `planning_context` 执行，不依赖 prompt 自觉。每个
+segment 失败后先在**同一张已验证图、同一世界状态**上原地重试一次；仍失败才消耗 VLM
+replan，因此偶发的边缘放置不会立刻让长任务重新规划。RoboCasa 的 `place_in` 上限为
+450 step，任务总 horizon 为 4000 step；失败记录同时携带 driver phase、是否进入容器和
+是否已经释放，供下一次诊断使用，这些字段不参与成功判定。
+
+启用 `--frames` 时，runtime 会把当前任务渲染帧汇成
+`runs/<session>/rollout.mp4`。它是可丢弃的实时产物，不进入证据链，也不会影响任务判定；
+任务结束后可直接在执行图的取景窗点击“下载视频”。新任务开始时会替换上一条视频。
 
 ### 6.2 把你的 VLA 放在 socket 后面
 

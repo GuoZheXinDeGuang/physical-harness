@@ -38,11 +38,15 @@ the board (query it), architecture in `ARCHITECTURE.md`.
 ## Your one execution door
 
 `submit_brief(brief, session=...)` — drop a work order into a resident
-runtime's inbox. A brief is a **pure selector plus budgets**; providers are
-chosen server-side from manifests, and any extra key is rejected.
+runtime's inbox. A brief is a **selector plus budgets**, with one task-only data
+field: optional natural-language `instruction`. Providers, skills, scene
+grounding and oracles are still chosen server-side from manifests; any other
+extra key is rejected. `instruction` selects no authority and cannot name a
+provider.
 
 ```
 {"kind":"task", "task":"kitchen_thaw", "seed":420011, "max_replans":3, "max_actuations":40}
+{"kind":"task", "task":"basket_smoke_vlm", "seed":424243, "instruction":"把所有物品放进篮子"}
 {"kind":"campaign", "campaign":"stack", "dev":[41000,41999], "heldout":[42000,42199]}
 {"kind":"rsi", "task":"kitchen_thaw"}
 ```

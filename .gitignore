@@ -27,3 +27,11 @@ STATUS.md
 # is ONE file (docs/project-documentation.md); everything a stranger does not
 # need lives here or in local-archive/docs/. NO trailing slash -- see .env above.
 docs-dev
+
+# read-only-host RoboCasa adaptation (see .robocasa-fix/sitecustomize.py): the
+# writable assets mirror + the PYTHONPATH hook that redirects assets_root to it.
+.robocasa-assets/
+.robocasa-fix/
+# stray numba cache from a launch that predates cockpit setting NUMBA_CACHE_DIR
+# (spawns now cache under runs/<session>/numba-cache, already ignored above).
+.numba-cache/

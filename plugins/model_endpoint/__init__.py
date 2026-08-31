@@ -25,6 +25,7 @@ import json
 import os
 import urllib.request
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 #: preset name -> the {base_url, api_key_env, model} triple. A preset is config,
@@ -38,6 +39,51 @@ PRESETS: dict[str, dict[str, str | None]] = {
     "deepseek": {"base_url": "https://api.deepseek.com/v1",
                  "api_key_env": "DEEPSEEK_API_KEY", "model": "deepseek-chat"},
 }
+
+
+def _credential_ref(name: str | None) -> str | None:
+    """Resolve a named secret without ever making it configuration identity.
+
+    Environment wins.  The fallback is the credential store already owned by
+    the 3080 console, whose deliberately small on-disk shape is::
+
+        refs:
+          DEEPSEEK_API_KEY: <value>
+
+    This is a narrow bridge, not a YAML implementation: only a direct scalar
+    under ``refs`` is admitted.  It never logs or returns the surrounding file,
+    and callers put the result only in an Authorization header.
+    """
+    if not name:
+        return None
+    value = os.environ.get(name)
+    if value:
+        return value
+    home = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh")))
+    path = home / ".credentials.yaml"
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return None
+    in_refs = False
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if indent == 0:
+            in_refs = stripped == "refs:"
+            continue
+        if not in_refs or indent < 2 or ":" not in stripped:
+            continue
+        key, scalar = stripped.split(":", 1)
+        if key.strip() != name:
+            continue
+        scalar = scalar.strip()
+        if len(scalar) >= 2 and scalar[0] == scalar[-1] and scalar[0] in "\"'":
+            scalar = scalar[1:-1]
+        return scalar or None
+    return None
 
 
 class OpenAICompatEndpoint:
@@ -71,7 +117,7 @@ class OpenAICompatEndpoint:
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        key = os.environ.get(self._key_env) if self._key_env else None
+        key = _credential_ref(self._key_env)
         if key:
             headers["Authorization"] = f"Bearer {key}"
         return headers

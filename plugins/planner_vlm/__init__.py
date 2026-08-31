@@ -62,13 +62,17 @@ ORACLES: tuple[str, ...] = ("stack_success",)
 _RULES = """You are a robot task planner. Reply with ONE JSON object and nothing else \
 (no prose, no code fences):
 {"goal": "<string>", "nodes": [{"id": "<string>", "skill": "<string>", \
-"args": {...}, "after": ["<earlier id>", ...]}, ...], "verify": [{"after": "<node id>", \
+"kind": "<declared kind>", "args": {...}, "after": ["<earlier id>", ...]}, ...], \
+"verify": [{"after": "<node id>", \
 "predicate": "<string>"}, ...]}
 Hard rules -- a violation gets the whole plan rejected:
 - Select skills ONLY from the catalogue, passing EXACTLY the declared args with the \
 declared types. Never invent a skill, an arg, or a predicate.
-- Every node object carries exactly the keys id, skill, args, after (all ids unique, \
-non-empty strings).
+- If skill_docs is present, obey each skill's requires/ensures and copy its declared \
+kind into the node. Every node carries id, skill, args, after and optionally kind \
+(all ids unique, non-empty strings).
+- Ground every object and target in planning_context. If planning_context declares a \
+target_by_object mapping, use that exact target for each object.
 - "after" lists only ids of nodes EARLIER in the list (the list is the execution order).
 - nodes must be NON-EMPTY (an empty plan is always rejected): plan the minimal \
 graph that achieves the goal with the catalogue's skills.
@@ -89,7 +93,14 @@ class VlmPlanner:
                  endpoint_params: Mapping[str, Any] | None = None,
                  max_tokens: int = 2048) -> None:
         self._endpoint_ref = endpoint
-        self._endpoint_params = dict(endpoint_params or {"preset": "local_sglang"})
+        # Match the 3080 console's checked-in provider/model route. The endpoint
+        # resolves DEEPSEEK_API_KEY from env first, then the console-owned DSH
+        # credential store; the secret never enters this config or a plan hash.
+        self._endpoint_params = dict(endpoint_params or {
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key_env": "DEEPSEEK_API_KEY",
+            "model": "deepseek-v4-pro",
+        })
         self._max_tokens = max_tokens
         self._ep = None            # the ModelEndpoint, resolved lazily by ref
         #: last successfully parsed plan, so a fault's ``nodes_done`` ids can be
@@ -121,9 +132,13 @@ class VlmPlanner:
         completed = [n for n in (self._last_plan or {}).get("nodes", ())
                      if n["id"] in done_ids]
         return {
-            "goal": brief.get("task"),
+            "goal": (brief.get("instruction")
+                     or brief.get("default_instruction")
+                     or brief.get("task")),
             "catalogue": {skill: {arg: t.__name__ for arg, t in schema.items()}
                           for skill, schema in catalogue.items()},
+            "skill_docs": brief.get("skill_docs") or {},
+            "planning_context": brief.get("planning_context") or {},
             "oracles": list(brief.get("oracles") or ()),
             "scene": brief.get("scene") or {},
             "budget": brief.get("budget"),
@@ -161,8 +176,10 @@ class VlmPlanner:
                      "Planning input:\n"
                      + json.dumps(self._payload(brief), sort_keys=True)
                      + "\n\nOutput ONLY the plan JSON object for this input now."}]
+        json_mode = {"type": "json_object"}
         reply = self._endpoint().chat(messages, temperature=0.0,
-                                      max_tokens=self._max_tokens)
+                                      max_tokens=self._max_tokens,
+                                      response_format=json_mode)
         try:
             return self._parse(reply)
         except ValueError as first:
@@ -172,7 +189,8 @@ class VlmPlanner:
                           f"Your reply failed strict JSON parsing: {first}. "
                           "Reply again with ONLY the JSON object."}]
             retry = self._endpoint().chat(messages, temperature=0.0,
-                                          max_tokens=self._max_tokens)
+                                          max_tokens=self._max_tokens,
+                                          response_format=json_mode)
             try:
                 return self._parse(retry)
             except ValueError as second:
@@ -190,6 +208,9 @@ class VlmPlanner:
         key = json.dumps([self._endpoint_ref,
                           dict(sorted(self._endpoint_params.items())),
                           brief.get("task"), brief.get("seed"),
+                          brief.get("instruction"),
+                          brief.get("default_instruction"),
+                          brief.get("planning_context"),
                           brief.get("fault")], sort_keys=True, default=str)
         frozen = _FROZEN.get(key)
         if frozen is None:

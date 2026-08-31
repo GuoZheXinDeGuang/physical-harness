@@ -965,6 +965,18 @@ def read_runtime_frame(session_dir: str | Path, after_ts: float = 0.0,
                 "ts": ts, "age_s": round(max(time.time() - ts, 0.0), 3)}
 
 
+def read_runtime_rollout(session_dir: str | Path) -> dict:
+    """Latest task rollout MP4 for one session, as live downloadable state."""
+    path = Path(session_dir) / "rollout.mp4"
+    try:
+        raw = path.read_bytes()
+        stat = path.stat()
+    except OSError:
+        return {"error": "no rollout video"}
+    return {"mp4_b64": base64.b64encode(raw).decode("ascii"),
+            "ts": round(stat.st_mtime, 3), "size": stat.st_size}
+
+
 def read_runtime_keyframes(session_dir: str | Path) -> dict:
     """The INDEX of one session's live keyframe stills
     (``<session>/keyframes/<seq:06d>-<kind>.jpg``, written by

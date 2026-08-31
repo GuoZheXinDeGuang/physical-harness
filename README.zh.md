@@ -160,4 +160,3 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/parity_check.py <archived_ca
 环境下运行：**806 passed, 30 skipped, 28 deselected**。快照格式与隔离流程见
 [docs/project-documentation.md](docs/project-documentation.md) §3；每当计数变动时，请在同一个
 commit 中刷新该章节与本行。
-

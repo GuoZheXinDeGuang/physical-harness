@@ -1,0 +1,17 @@
+needs_sim = true
+
+[task_bindings.stack_blocks_vlm]
+env = "plugins.embodiment_robosuite:provider"
+percept = "plugins.embodiment_robosuite.percept:provider"
+policy = "plugins.policies:stack_skill_provider"
+planner = "plugins.planner_vlm:provider"
+catalogue = "plugins.mission_stack_blocks:CATALOGUE"
+oracles = "plugins.mission_stack_blocks:ORACLES"
+skill_docs = "plugins.mission_stack_blocks:SKILL_DOCS"
+planning_context = "plugins.mission_stack_blocks:PLANNING_CONTEXT"
+default_instruction = "plugins.mission_stack_blocks:DEFAULT_INSTRUCTION"
+episodic = true
+episode = "plugins.mission_stack_blocks:EPISODE"
+segment_specs = "plugins.mission_stack_blocks:SEGMENT_SPECS"
+max_actuations = 4
+segment_retries = 1

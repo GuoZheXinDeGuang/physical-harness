@@ -79,6 +79,18 @@ def stack_scripted_provider() -> StackPolicies:
     return StackPolicies()
 
 
+class StackSkillPolicies:
+    """Persistent two-skill adapter for the VLM-planned Stack task."""
+
+    def make_driver(self, spec: Any) -> Any:
+        return _policy.StackSkillDriver(spec)
+
+
+def stack_skill_provider() -> StackSkillPolicies:
+    """Expose Stack as separate ``pick`` and ``place_on`` graph segments."""
+    return StackSkillPolicies()
+
+
 #: Where a geometric grasp pose comes from: a ref, not an import. The grasp math
 #: (camera cloud -> top-down PCA pose) belongs to the embodiment card; reaching it
 #: by string keeps this card from importing a sibling (tests/test_boundaries.py),
