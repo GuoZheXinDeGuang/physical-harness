@@ -38,11 +38,11 @@ prints carries that caveat; ``obj_in_microwave`` was audited in gate 1 and is
 sound. The flag rides in the JSON artifact so it cannot be dropped downstream.
 
     .venv/bin/python scripts/compare_serving_arms.py \
-      --arm "sealed baseline:runs/gate2_trainsplit" \
-      --arm "control k=10:runs/round98_k10,runs/round98b_k10" \
-      --arm "k=1:runs/round98_k1,runs/round98b_k1" \
+      --arm "sealed baseline:runs/pi05-campaign/gate2_trainsplit" \
+      --arm "control k=10:runs/pi05-campaign/round98_k10,runs/round98b_k10" \
+      --arm "k=1:runs/pi05-campaign/round98_k1,runs/round98b_k1" \
       --baseline "sealed baseline" --control "control k=10" \
-      --out runs/round98_serving_ablation.json
+      --out runs/pi05-campaign/round98_serving_ablation.json
 
     # the tests, against values computed by hand (0.1 s, no env, no deps)
     .venv/bin/python scripts/compare_serving_arms.py --selfcheck

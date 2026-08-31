@@ -6,7 +6,7 @@ The preregistration is ``grasp_cube_prereg()`` from scripts/prereg_grasp_cube.py
 operating point (percept_noise 0.012, pick_stages, terminal_label, the chain's
 clear_build_provider policy) and fresh blocks 51000-51299 (dev) / 51300-51499
 (held-out). parent_store=None -> from-scratch (the machinery decision, sealed in
-runs/grasp-cube-cal/campaign_plan: the demo lineage was earned at 0.02-noise /
+runs/scripted-calibration/grasp-cube-cal/campaign_plan: the demo lineage was earned at 0.02-noise /
 stageless / base_rate 0.43, so seeding it would import a mis-calibrated threshold).
 
 Runs only after probe_grasp_cube.py cleared the §4 go/no-go. Held-out is NOT
@@ -21,7 +21,7 @@ rsi_run stamps env/policy/percept onto the prereg from this mount -> its sha
 equals the sealed prereg sha (both resolve the same refs). Nothing new here.
 
     PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/grasp_cube_campaign.py \
-        --out runs/grasp-cube-g1
+        --out runs/scripted-calibration/grasp-cube-g1
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def _stamped_sha(prereg, kernel: Kernel) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=REPO / "runs/grasp-cube-g1")
+    ap.add_argument("--out", type=Path, default=REPO / "runs/scripted-calibration/grasp-cube-g1")
     ap.add_argument("--workers", type=int, default=10)
     args = ap.parse_args()
 

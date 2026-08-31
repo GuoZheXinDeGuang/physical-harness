@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """M6 chain battery: paired baseline vs governed on the ``inventory_build`` chain.
 
-Claim (a)+(b) of the prereg (runs/inventory-build-cal, sha f7b3a89e8087): does the
+Claim (a)+(b) of the prereg (runs/scripted-calibration/inventory-build-cal, sha f7b3a89e8087): does the
 EXISTING M5 governance bundle (stack-g1 regrasp + place-g2 replace x2, both
 families) lift the heterogeneous 11-node chain boolean when mounted at its
 ``build-stack`` node? No new promotion -- this MEASURES a transfer, it seals
@@ -16,8 +16,8 @@ boolean (plugins.rsi.stats.power.mcnemar_p) -- the prereg's gate method. Fixed
 generation-loop concern and does not apply.
 
     MUJOCO_GL=egl PYTHONPATH=. .venv/bin/python scripts/chain_battery_inventory.py \
-        --seeds 50150:50450 --skills-root runs/inventory-build-gov/skills \
-        --out runs/inventory-build-cal/dev.json
+        --seeds 50150:50450 --skills-root runs/scripted-calibration/inventory-build-gov/skills \
+        --out runs/scripted-calibration/inventory-build-cal/dev.json
 """
 
 from __future__ import annotations
@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--selfcheck", action="store_true", help="run the discordance self-check and exit")
     ap.add_argument("--seeds", help='"S:E" (half-open) | "S1,S2,.." | "S"')
-    ap.add_argument("--skills-root", default="runs/inventory-build-gov/skills")
+    ap.add_argument("--skills-root", default="runs/scripted-calibration/inventory-build-gov/skills")
     ap.add_argument("--baseline-root", default=None,
                     help="root for the reference arm (default None = ungoverned); "
                          "set to an ablation root to measure the DELTA of the extra "

@@ -52,20 +52,20 @@ touches STATUS.md.
     cd /home/yusenzlabpc/Desktop/physical-harness && MUJOCO_GL=egl PYTHONPATH=. \
       /home/yusenzlabpc/Desktop/sims/robocasa-venv/bin/python \
       scripts/probe_pi05_rollout.py --arm pi05 --split train --seeds 420101:420111 \
-      --steps 1400 --timeout 1800 --out runs/gate2_eval
+      --steps 1400 --timeout 1800 --out runs/pi05-campaign/gate2_eval
 
     # one episode, in-process (what the parent spawns)
     ... scripts/probe_pi05_rollout.py --arm pi05 --split train --seed 420101 \
-      --out runs/gate2_eval
+      --out runs/pi05-campaign/gate2_eval
 
     # the discriminator: the SAME policy, from the DEMOS' own initial states
     ... scripts/probe_pi05_rollout.py --arm pi05 --split train --demos 0:10 \
-      --steps 2400 --timeout 900 --out runs/gate2_diag
+      --steps 2400 --timeout 900 --out runs/pi05-campaign/gate2_diag
 
     # the serving path as a suspect: re-query every step instead of draining the
     # chunk, optionally ensembling the overlap (both OFF unless asked for)
     ... scripts/probe_pi05_rollout.py --arm pi05 --split train --seeds 420101:420111 \
-      --steps 2400 --replan-every 1 --ensemble 0.25 --out runs/round98_k1_ens
+      --steps 2400 --replan-every 1 --ensemble 0.25 --out runs/pi05-campaign/round98_k1_ens
 """
 from __future__ import annotations
 
@@ -769,7 +769,7 @@ def main(argv=None) -> int:
     ap.add_argument("--demo", type=int, default=None,
                     help="reset to this LeRobot demo's sealed initial state "
                          "(demo_replay also replays its actions from there)")
-    ap.add_argument("--out", default="runs/gate2_eval")
+    ap.add_argument("--out", default="runs/pi05-campaign/gate2_eval")
     ap.add_argument("--video-stride", type=int, default=2)
     ap.add_argument("--video-fps", type=int, default=20)
     ap.add_argument("--flush-every", type=int, default=100)

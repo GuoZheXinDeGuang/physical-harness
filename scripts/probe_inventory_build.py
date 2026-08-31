@@ -18,7 +18,7 @@ by node KIND (design §3b) so the go/no-go can tell a governable death from a
 deterministic one.
 
     MUJOCO_GL=egl PYTHONPATH=. .venv/bin/python scripts/probe_inventory_build.py \
-        --seeds 50000:50150 --out runs/inventory-build-cal/calibration.json
+        --seeds 50000:50150 --out runs/scripted-calibration/inventory-build-cal/calibration.json
 """
 
 from __future__ import annotations

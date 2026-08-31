@@ -192,7 +192,7 @@ class NavigateDriver:
                        # 1.00 was chosen for that retraction authority alone and
                        # sat BELOW the whole band the demos hand `place` over in
                        # (meat_z 1.341 +- 0.100, range [1.120, 1.520], n=29,
-                       # runs/gate2_diag/demo_place_windows.json): no correctly
+                       # runs/pi05-campaign/gate2_diag/demo_place_windows.json): no correctly
                        # stowed episode could be in distribution on that axis.
                        # 1.25 is inside the band and retraction still converges
                        # (tuning block: meat_z in the demo range at hand-off

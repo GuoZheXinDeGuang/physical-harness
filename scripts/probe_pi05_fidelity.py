@@ -27,7 +27,7 @@ handed the optimizer -- no live simulator, no re-render, no orientation question
     cd /home/yusenzlabpc/Desktop/physical-harness && PYTHONPATH=. \
       /home/yusenzlabpc/Desktop/sims/robocasa-venv/bin/python \
       scripts/probe_pi05_fidelity.py --episodes 5 --per-episode 60 \
-      --sha <digest> --out runs/gate2_eval/action_fidelity.json
+      --sha <digest> --out runs/pi05-campaign/gate2_eval/action_fidelity.json
 """
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ def main(argv=None) -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--sha", default=None)
-    ap.add_argument("--out", type=Path, default=Path("runs/gate2_eval/action_fidelity.json"))
+    ap.add_argument("--out", type=Path, default=Path("runs/pi05-campaign/gate2_eval/action_fidelity.json"))
     a = ap.parse_args(argv)
 
     from plugins.policy_vla_remote import RemoteVlaPolicy
