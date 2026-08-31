@@ -27,8 +27,8 @@ def _obs_sig(obs) -> np.ndarray:
 @pytest.mark.robocasa
 def test_env_make_reset_close():
     emb = provider()
-    assert emb.tasks() == ("kitchen_thaw", "pack_lunch", "recycle_cans",
-                            "steam_prep")
+    assert emb.tasks() == ("basket_smoke_vlm", "kitchen_thaw", "pack_all_robocasa",
+                           "pack_lunch", "recycle_cans", "steam_prep")
     spec = EpisodeSpec(seed=7, task="kitchen_thaw")
     assert emb.object_key(spec) == "meat_pos"
 
@@ -67,6 +67,30 @@ def test_same_seed_determinism():
     s2, l2 = rollout()
     assert np.allclose(s1, s2), "same-seed obs diverged -- non-deterministic"
     assert l1 == l2, "same-seed language instruction diverged"
+
+
+@pytest.mark.robocasa
+def test_basket_smoke_objects_share_one_reachable_counter_region():
+    """Regression for the multi-section counter split seen at seed 424246."""
+    emb = provider()
+    for seed in (0, 424243, 424246):
+        env = emb.make_env(EpisodeSpec(seed=seed, task="basket_smoke_vlm"))
+        try:
+            env.reset()
+            names = ("item0", "item1", "item2", "basket")
+            xy = {
+                name: np.asarray(env.sim.data.body_xpos[env.obj_body_id[name]])[:2]
+                for name in names
+            }
+            diameter = max(
+                float(np.linalg.norm(xy[a] - xy[b]))
+                for i, a in enumerate(names) for b in names[i + 1:]
+            )
+            assert diameter <= 0.35, (
+                f"seed {seed}: basket smoke cluster spans {diameter:.3f}m; "
+                "place_in is arm-only")
+        finally:
+            env.close()
 
 
 @pytest.mark.robocasa
