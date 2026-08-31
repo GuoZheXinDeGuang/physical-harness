@@ -1,5 +1,5 @@
 [skill]
-name = "navigate_to_object"
+name = "navigate"
 description = "Move the robot to a pose from which it can reach the named object."
 kind = "segment"
 requires = ["object is present in the scene inventory"]

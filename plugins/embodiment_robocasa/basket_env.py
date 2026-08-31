@@ -2,7 +2,7 @@
 
 Three compact objects and one basket spawn on the robot's initial counter.  The
 scene deliberately removes navigation and appliance interaction so the run
-isolates the abstract ``pick -> place_in`` composition being tested.
+isolates the abstract ``grasp -> place`` composition being tested.
 """
 
 from __future__ import annotations

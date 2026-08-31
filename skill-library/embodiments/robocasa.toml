@@ -1,17 +1,25 @@
 # Abstract skill -> RoboCasa persistent-segment task. The task names are what
 # lunch_driver.py already implements for PackFoodByTemp.
-[skills.navigate_to_object]
+#
+# These four skills share their names with the MEASURED capability records for
+# the kitchen_thaw binding of the same scripted driver stages (nav_/grasp_/
+# carry_/pack_). The catalog here is only the symbolic contract; the measured
+# successes/n live in the capability-record store, published by
+# scripts/publish_pi05_capabilities.py from the sealed round99 rollouts to
+# runs/pi05-campaign/round99_skills/ (skill_index.json). One fact, one home: the
+# capability record is the single source of measured truth, not this file.
+[skills.navigate]
 backend = "scripted_mobile_manipulation"
 task_template = "nav_{object}"
 
-[skills.pick]
+[skills.grasp]
 backend = "scripted_mobile_manipulation"
 task_template = "grasp_{object}"
 
-[skills.transport]
+[skills.carry]
 backend = "scripted_mobile_manipulation"
 task_template = "carry_{object}"
 
-[skills.place_in]
+[skills.place]
 backend = "scripted_mobile_manipulation"
 task_template = "pack_{object}"

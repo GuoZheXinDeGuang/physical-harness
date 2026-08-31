@@ -6,7 +6,7 @@ from typing import Any
 
 from harness.skill_library import LIBRARY
 
-SKILLS = ("pick", "place_on")
+SKILLS = ("grasp", "place_on")
 OBJECT = "cubeA"
 TARGET = "cubeB"
 
@@ -15,7 +15,7 @@ SKILL_DOCS = LIBRARY.planner_docs("robosuite", SKILLS)
 ORACLES = ("segment_success",)
 
 DEFAULT_INSTRUCTION = (
-    "Stack cubeA on top of cubeB. First pick up cubeA, then place cubeA "
+    "Stack cubeA on top of cubeB. First grasp cubeA, then place cubeA "
     "stably on cubeB. Use only the available skills."
 )
 
@@ -25,7 +25,7 @@ PLANNING_CONTEXT = {
     "objects": [OBJECT],
     "supports": [TARGET],
     "target_by_object": {OBJECT: TARGET},
-    "required_per_object_order": ["pick", "place_on"],
+    "required_per_object_order": ["grasp", "place_on"],
 }
 
 EPISODE: dict[str, Any] = {

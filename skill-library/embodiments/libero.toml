@@ -1,13 +1,13 @@
-# LIBERO shares the semantic pick/place contracts. These bindings intentionally
+# LIBERO shares the semantic grasp/place contracts. These bindings intentionally
 # say implemented=false: the checkout has only an EnvProvider skeleton and no
 # admitted LIBERO policy / terminal oracle yet. They become planner-visible only
 # after that lower-level adapter is implemented and audited.
-[skills.pick]
+[skills.grasp]
 backend = "vla"
 task_template = "pick_{object}"
 implemented = false
 
-[skills.place_in]
+[skills.place]
 backend = "vla"
 task_template = "place_{object}_in_{target}"
 implemented = false

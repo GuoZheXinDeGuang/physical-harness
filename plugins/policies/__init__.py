@@ -87,7 +87,7 @@ class StackSkillPolicies:
 
 
 def stack_skill_provider() -> StackSkillPolicies:
-    """Expose Stack as separate ``pick`` and ``place_on`` graph segments."""
+    """Expose Stack as separate ``grasp`` and ``place_on`` graph segments."""
     return StackSkillPolicies()
 
 

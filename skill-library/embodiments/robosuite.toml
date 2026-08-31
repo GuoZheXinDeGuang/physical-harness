@@ -1,6 +1,6 @@
 # Abstract skill -> robosuite Stack persistent-segment task. Both segments are
 # implemented by one stateful driver over one live Stack environment.
-[skills.pick]
+[skills.grasp]
 backend = "scripted_tabletop_stack"
 task_template = "grasp_{object}"
 

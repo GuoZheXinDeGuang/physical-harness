@@ -6,7 +6,7 @@ from typing import Any
 
 from harness.skill_library import LIBRARY
 
-SKILLS = ("pick", "place_in")
+SKILLS = ("grasp", "place")
 ITEMS = ("item0", "item1", "item2")
 TARGET = "basket"
 
@@ -15,8 +15,8 @@ SKILL_DOCS = LIBRARY.planner_docs("robocasa", SKILLS)
 ORACLES = ("segment_success",)
 
 DEFAULT_INSTRUCTION = (
-    "Put every object into the basket. For each object, pick it and then place "
-    "it inside the basket. Do not use navigation or transport."
+    "Put every object into the basket. For each object, grasp it and then place "
+    "it inside the basket. Do not use navigation or carry."
 )
 PLANNING_CONTEXT = {
     "benchmark": "robocasa",
@@ -24,8 +24,8 @@ PLANNING_CONTEXT = {
     "objects": list(ITEMS),
     "receptacles": [TARGET],
     "target_by_object": {item: TARGET for item in ITEMS},
-    "required_per_object_order": ["pick", "place_in"],
-    "unavailable_skills": ["navigate_to_object", "transport"],
+    "required_per_object_order": ["grasp", "place"],
+    "unavailable_skills": ["navigate", "carry"],
 }
 
 EPISODE: dict[str, Any] = {

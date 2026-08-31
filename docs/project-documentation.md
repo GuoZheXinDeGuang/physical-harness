@@ -827,14 +827,23 @@ skill-library/
 harness/skill_library.py                     # 加载、校验、生成 catalogue/segment_specs
 ```
 
-上层只看 `navigate_to_object / pick / transport / place_in`；例如
-`pick(object="hot0")` 在 RoboCasa 绑定成 `grasp_hot0`。LIBERO 复用 `pick/place_in`
-的**同一语义契约**，但当前卡只有 env 骨架，没有合格的 policy 和 terminal oracle，所以
-绑定明确写着 `implemented=false`，不会被暴露给 planner——不能执行的技能绝不假装存在。
+上层只看 `navigate / grasp / carry / place`——**和 §7.7 capability 记录同一套词**，不是
+第二套命名；例如 `grasp(object="hot0")` 在 RoboCasa 绑定成 `grasp_hot0`。LIBERO 复用
+`grasp/place` 的**同一语义契约**，但当前卡只有 env 骨架，没有合格的 policy 和 terminal
+oracle，所以绑定明确写着 `implemented=false`，不会被暴露给 planner——不能执行的技能绝不
+假装存在。support（摞放）是和 containment（装入）不同的后置条件，所以 `place` 之外另留一个
+`place_on`——它绑在 robosuite Stack 的脚本 driver 上（`skills.place_on`），是真有东西执行才
+留的名，不是凭空的第六个契约。
+
+**一个事实，一个家。** catalog（`skill-library/`）只写 symbolic contract——技能的语义、参数、
+前后条件散文；测过的数字（successes/n）不在这里，在 capability 记录里（§7.7，
+`runs/pi05-campaign/round99_skills/`）。名字共享时二者不冲突：catalog 说"这个技能是什么"，
+capability 记录说"这个 executor 测出来能做到几成"。robocasa 绑定的四个技能共享 §7.7 的测量
+名，`skill-library/embodiments/robocasa.toml` 顶部的注释指向那份 store。
 
 `plugins/mission_pack_all/` 是第一条闭环：manifest 把共享 catalogue、技能说明、场景物体清单
 和 `target_by_object` 交给 `planner_vlm`；VLM 为四件食物逐件生成
-`navigate -> pick -> transport -> place_in` DAG；`plugins/task/validate.py` 查图的技能、必填参数、
+`navigate -> grasp -> carry -> place` DAG；`plugins/task/validate.py` 查图的技能、必填参数、
 类型、拓扑和 verify 覆盖；派发前 `_segment_spec` 再查物体/容器 grounding，然后才把抽象节点
 翻译为 `lunch_driver.py` 已实现的 RoboCasa stage。调用示例：
 
@@ -848,11 +857,11 @@ harness/skill_library.py                     # 加载、校验、生成 catalogu
 也就是说，**共享的是抽象和图语言，控制器、动作空间、成功谓词仍由 benchmark 自己实现。**
 
 `basket_smoke_vlm` 是更小的端到端冒烟任务：场景固定提供 `item0/item1/item2` 和
-`basket`，VLM 只需生成三组 `pick -> place_in`，不包含 navigation 或 transport。每个
-对象都必须恰好出现一次，`place_in` 必须在对应 `pick` 的依赖后且目标必须是 `basket`；
+`basket`，VLM 只需生成三组 `grasp -> place`，不包含 navigation 或 carry。每个
+对象都必须恰好出现一次，`place` 必须在对应 `grasp` 的依赖后且目标必须是 `basket`；
 这些约束由 validator 读取 task-authored `planning_context` 执行，不依赖 prompt 自觉。每个
 segment 失败后先在**同一张已验证图、同一世界状态**上原地重试一次；仍失败才消耗 VLM
-replan，因此偶发的边缘放置不会立刻让长任务重新规划。RoboCasa 的 `place_in` 上限为
+replan，因此偶发的边缘放置不会立刻让长任务重新规划。RoboCasa 的 `place` 上限为
 450 step，任务总 horizon 为 4000 step；失败记录同时携带 driver phase、是否进入容器和
 是否已经释放，供下一次诊断使用，这些字段不参与成功判定。
 

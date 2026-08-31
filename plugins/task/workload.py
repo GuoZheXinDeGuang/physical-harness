@@ -388,7 +388,7 @@ def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpe
     kwargs = dict(binding)
     args = dict(node.get("args") or {})
     # Static skill-library grounding: the abstract graph carries semantic args
-    # (pick(object=hot0), place_in(object=hot0,target=tupperware0)); the
+    # (grasp(object=hot0), place(object=hot0,target=tupperware0)); the
     # embodiment binding turns those into its private sub-task vocabulary.  A
     # model cannot smuggle an unknown object or a wrong object->target pairing
     # through string formatting -- both are checked before a driver is armed.

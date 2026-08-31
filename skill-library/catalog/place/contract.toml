@@ -1,5 +1,5 @@
 [skill]
-name = "place_in"
+name = "place"
 description = "Release a held object inside a named receptacle."
 kind = "segment"
 requires = ["robot is holding object", "target is reachable"]

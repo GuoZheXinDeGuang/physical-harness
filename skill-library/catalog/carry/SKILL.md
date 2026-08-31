@@ -1,9 +1,9 @@
 ---
-name: transport
+name: carry
 description: Carry a grasped object to a destination without releasing it.
 ---
 
-# Transport
+# Carry
 
-Use on mobile-manipulation embodiments between `pick` and `place_in`. A
+Use on mobile-manipulation embodiments between `grasp` and `place`. A
 fixed-base benchmark normally omits this skill.

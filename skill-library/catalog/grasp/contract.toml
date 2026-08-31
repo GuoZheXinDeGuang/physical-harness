@@ -1,5 +1,5 @@
 [skill]
-name = "pick"
+name = "grasp"
 description = "Grasp and securely lift one named object."
 kind = "segment"
 requires = ["object is reachable", "gripper is free"]

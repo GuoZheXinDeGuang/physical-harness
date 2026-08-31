@@ -11,7 +11,7 @@ from typing import Any
 
 from harness.skill_library import LIBRARY
 
-SKILLS = ("navigate_to_object", "pick", "transport", "place_in")
+SKILLS = ("navigate", "grasp", "carry", "place")
 ITEMS = ("hot1", "hot0", "cold0", "cold1")
 TARGET_BY_OBJECT = {
     "hot0": "tupperware0",
@@ -26,7 +26,7 @@ ORACLES = ("segment_success",)
 
 DEFAULT_INSTRUCTION = (
     "Pack every food item into its assigned tupperware. Do one item at a time: "
-    "navigate to it, pick it, transport it to its assigned target, then place it "
+    "navigate to it, grasp it, carry it to its assigned target, then place it "
     "inside."
 )
 
@@ -40,7 +40,7 @@ PLANNING_CONTEXT = {
     "receptacles": ["tupperware0", "tupperware1"],
     "target_by_object": dict(TARGET_BY_OBJECT),
     "required_per_object_order": [
-        "navigate_to_object", "pick", "transport", "place_in"
+        "navigate", "grasp", "carry", "place"
     ],
 }
 

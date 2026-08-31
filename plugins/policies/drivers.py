@@ -355,7 +355,7 @@ class StackScriptedDriver:
 
 
 class StackSkillDriver:
-    """Expose the atomic Stack controller as persistent ``pick`` / ``place_on``.
+    """Expose the atomic Stack controller as persistent ``grasp`` / ``place_on``.
 
     The two graph nodes share one :class:`StackScriptedDriver`, one environment,
     and one observation stream.  Splitting only changes where execution pauses
@@ -385,7 +385,7 @@ class StackSkillDriver:
     def enter_segment(self, env, spec: EpisodeSpec) -> None:
         del env
         if spec.task == "grasp_cubeA":
-            self._segment = "pick"
+            self._segment = "grasp"
             self.inner.k = 0
             self._segment_end = self._GRASP_END
             return
@@ -414,7 +414,7 @@ class StackSkillDriver:
         return self.inner.k >= self._segment_end
 
     def segment_success(self, env) -> bool:
-        if self._segment == "pick":
+        if self._segment == "grasp":
             if self._latest_obs is None or self._start_z is None:
                 return False
             z = float(np.asarray(self._latest_obs["cubeA_pos"])[2])
