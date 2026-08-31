@@ -354,6 +354,90 @@ class StackScriptedDriver:
         return "stack_scripted@v1"
 
 
+class StackSkillDriver:
+    """Expose the atomic Stack controller as persistent ``pick`` / ``place_on``.
+
+    The two graph nodes share one :class:`StackScriptedDriver`, one environment,
+    and one observation stream.  Splitting only changes where execution pauses
+    and which predicate is reported; it does not introduce a second controller
+    or reset the world between grasp and placement.
+    """
+
+    _GRASP_END = sum(
+        duration for name, duration in STACK_SCHEDULE
+        if name in StackScriptedDriver._GRASP_PHASES
+    )
+    _TOTAL_END = sum(duration for _, duration in STACK_SCHEDULE)
+
+    def __init__(self, spec: EpisodeSpec) -> None:
+        self.spec = spec
+        self.inner = StackScriptedDriver(spec)
+        self._segment: str | None = None
+        self._segment_end = 0
+        self._start_z: float | None = None
+        self._latest_obs = None
+
+    def observe_once(self, obs) -> np.ndarray:
+        self._latest_obs = obs
+        self._start_z = float(np.asarray(obs["cubeA_pos"])[2])
+        return self.inner.observe_once(obs)
+
+    def enter_segment(self, env, spec: EpisodeSpec) -> None:
+        del env
+        if spec.task == "grasp_cubeA":
+            self._segment = "pick"
+            self.inner.k = 0
+            self._segment_end = self._GRASP_END
+            return
+        if spec.task == "place_cubeA_on_cubeB":
+            self._segment = "place_on"
+            self.inner.k = self._GRASP_END
+            self._segment_end = self._TOTAL_END
+            return
+        raise ValueError(
+            f"stack skill driver cannot execute {spec.task!r}; expected "
+            "'grasp_cubeA' or 'place_cubeA_on_cubeB'"
+        )
+
+    def act(self, obs) -> np.ndarray:
+        self._latest_obs = obs
+        return self.inner.act(obs)
+
+    def retarget(self, target: np.ndarray) -> None:
+        self.inner.retarget(target)
+
+    def on_handback(self) -> None:
+        self.inner.on_handback()
+
+    @property
+    def exhausted(self) -> bool:
+        return self.inner.k >= self._segment_end
+
+    def segment_success(self, env) -> bool:
+        if self._segment == "pick":
+            if self._latest_obs is None or self._start_z is None:
+                return False
+            z = float(np.asarray(self._latest_obs["cubeA_pos"])[2])
+            q = np.asarray(self._latest_obs["robot0_gripper_qpos"])
+            return bool(z > self._start_z + 0.04 and abs(q[0] - q[1]) > 0.01)
+        if self._segment == "place_on":
+            # The simulator's contact-aware Stack predicate: cubeA is lifted,
+            # touches cubeB, and is no longer held by the gripper.
+            return bool(env._check_success())
+        return False
+
+    def segment_diagnostics(self, env) -> dict:
+        return {
+            "segment": self._segment,
+            "policy_step": self.inner.k,
+            "stack_success": bool(env._check_success()),
+        }
+
+    @property
+    def identity(self) -> str:
+        return "stack_skill_graph@v1"
+
+
 def _default_make_driver(spec: EpisodeSpec) -> PolicyDriver:
     """Resolve the spec's frozen policy."""
     if spec.policy in (None, "", "scripted"):

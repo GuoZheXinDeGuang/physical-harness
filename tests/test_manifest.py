@@ -64,7 +64,8 @@ def test_runtime_accepts_the_manifest_declared_task(tmp_path, monkeypatch):
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
-    _drop(inbox, "toy.json", {"kind": "task", "task": "toy", "seed": 90000})
+    _drop(inbox, "toy.json", {"kind": "task", "task": "toy", "seed": 90000,
+                              "instruction": "run the toy task"})
 
     rt = runtime.main(session, drain=True)  # default execution mode
 
@@ -72,6 +73,21 @@ def test_runtime_accepts_the_manifest_declared_task(tmp_path, monkeypatch):
     completes = [r for r in rt.log.rows() if r["kind"] == "task.plan_complete"]
     assert len(completes) == 1 and completes[0]["data"]["success"]
     assert SessionLog.load(session / "session-log").verify()
+
+
+def test_task_instruction_must_be_a_bounded_nonempty_string(tmp_path, monkeypatch):
+    monkeypatch.setattr(workload, "_governed_rollout", _ok_rollout)
+    session = tmp_path / "s"
+    inbox = session / "inbox"
+    inbox.mkdir(parents=True)
+    _drop(inbox, "bad-instruction.json",
+          {"kind": "task", "task": "toy", "instruction": {"provider": "evil"}})
+
+    rt = runtime.main(session, drain=True)
+
+    assert (rt.failed / "bad-instruction.json").exists()
+    errors = [r for r in rt.log.rows() if r["kind"] == "runtime.task_error"]
+    assert len(errors) == 1 and "instruction must be" in errors[0]["data"]["error"]
 
 
 def test_a_brief_still_cannot_name_a_provider(tmp_path, monkeypatch):

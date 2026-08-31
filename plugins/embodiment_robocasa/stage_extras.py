@@ -107,6 +107,10 @@ class PointPlaceDriver:
     def done(self, env) -> bool:
         raise NotImplementedError
 
+    def diagnostics(self, env) -> dict[str, Any]:
+        """Live terminal details used to explain a bounded place failure."""
+        return {"phase": self.phase}
+
     # -- the shared phase chain ------------------------------------------------
     def act(self, env, obs):
         c = np.asarray(self._drop_point(env), float)
@@ -155,6 +159,16 @@ class ReceptaclePlaceDriver(PointPlaceDriver):
         return bool(OU.check_obj_in_receptacle(env, self.obj_name, self.receptacle)
                     and OU.gripper_obj_far(env, obj_name=self.obj_name))
 
+    def diagnostics(self, env) -> dict[str, Any]:
+        import robocasa.utils.object_utils as OU
+
+        return {
+            "phase": self.phase,
+            "inside": bool(OU.check_obj_in_receptacle(
+                env, self.obj_name, self.receptacle)),
+            "released": bool(OU.gripper_obj_far(env, obj_name=self.obj_name)),
+        }
+
 
 class CompositeStageDriver:
     """The generic composite ``policy.driver`` for a heterogeneous persistent
@@ -187,7 +201,7 @@ class CompositeStageDriver:
             return True
         return self.k >= self._cap or bool(self._stage.done(self._env))
 
-    def retarget(self, target) -> None:  # noqa: D401 -- stages self-target
+    def retarget(self, target) -> None:
         """No-op: the stage drivers self-target off the live env, never a pose."""
 
     def on_handback(self) -> None:
@@ -213,6 +227,11 @@ class CompositeStageDriver:
 
     def segment_success(self, env) -> bool:
         return bool(self._stage.done(env))
+
+    def segment_diagnostics(self, env) -> dict[str, Any]:
+        """Optional stage-owned terminal details; never used for control."""
+        diagnose = getattr(self._stage, "diagnostics", None)
+        return dict(diagnose(env)) if diagnose is not None else {}
 
 
 class CompositePolicies:

@@ -8,10 +8,13 @@
 #
 # WHAT IT STARTS (operator is UI-only -- no second terminal):
 #   1. the resident harness_runtime on runs/session-main (adopt-or-spawn, below)
-#   2. the KITCHEN runtime on runs/session-robocasa (robocasa venv, headless egl)
-#   3. the EVOLUTION runtime on runs/session-robocasa-rsi (--mode evolution
+#   2. the STACK EVOLUTION runtime on runs/session-main-rsi (the robosuite
+#      interpreter, --mode evolution, headless egl)
+#   3. the KITCHEN runtime on runs/session-robocasa (--frames, robocasa venv,
+#      headless egl)
+#   4. the KITCHEN EVOLUTION runtime on runs/session-robocasa-rsi (--mode evolution
 #      --frames, same venv, headless egl)
-#      2 and 3 are ON by default for ONE reason: they are inboxes the console
+#      2 through 4 are ON by default for ONE reason: they are inboxes the console
 #      can submit into, and an inbox nobody serves is where briefs go to rot --
 #      three times now (RSI brief idle 21h on 8/27, the web reap on 8/28, the
 #      recycle_cans brief on 8/29 that sat in session-robocasa because cockpit
@@ -20,7 +23,7 @@
 #      to leave 2 off; phase 3 shipped and the console submits kitchen tasks by
 #      hand now, so the reason died and the default follows it. Both skipped
 #      with one warning if the robocasa venv is absent.
-#   4. the web console (the ph-station fork build)
+#   5. the web console (the ph-station fork build)
 #
 # RUNTIME adopt-vs-spawn: harness_runtime.py now guards its own session dir (an
 #   exclusive flock on runs/<session>/runtime.lock; a second instance refuses to
@@ -60,6 +63,7 @@ DO_STATUS=0
 NO_RUNTIME=0
 NO_RENDER=0
 SESSION_DIR="runs/session-main"          # cockpit's canonical resident session
+STACK_EVOLUTION_SESSION_DIR="runs/session-main-rsi"
 ROBOCASA_SESSION_DIR="runs/session-robocasa"
 EVOLUTION_SESSION_DIR="runs/session-robocasa-rsi"  # evolution runtime; ON by default
 
@@ -104,19 +108,23 @@ Before serving it renders \$DSH_HOME/cordis.patch.yml from
 profiles/dsh/cordis.patch.template.yml (the console's MCP tools, LLM route and
 default agent preset) and seeds the workspace record. Both are idempotent.
 
-Starting (no --stop) brings up four things and leaves them running:
+Starting (no --stop) brings up five things and leaves them running:
   1. the resident harness_runtime on $SESSION_DIR --
        ADOPTED if one is already serving it (PID printed, not restarted, not
        killed by --stop), otherwise SPAWNED (nohup, logged) and recorded for
        --stop. Never two runtimes on one session dir.
-  2. the KITCHEN runtime on $ROBOCASA_SESSION_DIR (robocasa venv, headless
-       MUJOCO_GL=egl) -- same adopt-or-spawn discipline, ON by default.
-  3. the EVOLUTION runtime on $EVOLUTION_SESSION_DIR (--mode evolution --frames,
+  2. the STACK EVOLUTION runtime on $STACK_EVOLUTION_SESSION_DIR (robosuite
+       venv, --mode evolution, headless MUJOCO_GL=egl). This is the inbox for
+       {"kind":"rsi","task":"stack"}; execution and evolution never share a
+       resident runtime.
+  3. the KITCHEN runtime on $ROBOCASA_SESSION_DIR (--frames, robocasa venv,
+       headless MUJOCO_GL=egl) -- same adopt-or-spawn discipline, ON by default.
+  4. the KITCHEN EVOLUTION runtime on $EVOLUTION_SESSION_DIR (--mode evolution --frames,
        robocasa venv, headless MUJOCO_GL=egl) -- likewise ON by default.
-     2 and 3 are both inboxes the console submits into; an un-managed dead
+     These are all inboxes the console submits into; an un-managed dead
      runtime on either is how briefs got dropped into a dead inbox. Both are
      skipped with one warning when the robocasa venv is absent.
-  4. the web console (the ph-station fork build).
+  5. the web console (the ph-station fork build).
 
 serves the ph-station fork build (native brand). use this instead of running
 'npx @deepseek-ai/dsh web' or a second terminal for the runtime.
@@ -376,6 +384,15 @@ if [ "$NO_RUNTIME" -eq 0 ]; then
   # 取景窗 OFF for a REMOTE operator -- the local window they cannot see was
   # suppressing the browser viewport they use. The two compose in _mount_plan.
   runtime_up "$SESSION_DIR" ".venv/bin/python" 1 --frames
+
+  # Stack RSI needs the robosuite interpreter, not the robocasa venv. Keep it
+  # in a separate evolution-only inbox so a long campaign cannot block normal
+  # stack task execution and an execution agent cannot accidentally run RSI.
+  runtime_up "$STACK_EVOLUTION_SESSION_DIR" ".venv/bin/python" 0 --mode evolution --frames
+  {
+    echo "runtime_pid=$RT_PID"
+    echo "runtime_adopted=$RT_ADOPTED"
+  } > "$REPO/$STACK_EVOLUTION_SESSION_DIR/cockpit.pids"
 fi
 
 # --- web: adopt-or-spawn (same discipline as the runtime). A server already
@@ -412,7 +429,7 @@ fi
 # robocasa venv warns and skips both -- never blocks the console.
 if [ "$NO_RUNTIME" -eq 0 ]; then
   if [ -x "$ROBOCASA_PYTHON" ]; then
-    runtime_up "$ROBOCASA_SESSION_DIR" "$ROBOCASA_PYTHON" 0
+    runtime_up "$ROBOCASA_SESSION_DIR" "$ROBOCASA_PYTHON" 0 --frames
     {
       echo "runtime_pid=$RT_PID"
       echo "runtime_adopted=$RT_ADOPTED"

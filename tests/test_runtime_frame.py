@@ -24,6 +24,7 @@ from test_read_session import _session
 from board import mcp_server as ms
 from board import store as bs
 from board import storecli
+from harness import opstream
 from scripts import frame_dump
 from scripts import harness_runtime as runtime
 
@@ -36,6 +37,7 @@ def _disarm():
     yield
     frame_dump._PATH = None
     frame_dump._BASE_REF = base
+    opstream._path = None
 
 
 class _FakeSim:
@@ -93,6 +95,43 @@ def test_frame_env_dumps_on_reset_and_step_interval(tmp_path):
     px = np.asarray(img)
     assert px[0].mean() > px[-1].mean(), "flipped back upright (marked row on top)"
     assert not (tmp_path / "frame.jpg.tmp").exists(), "atomic publish leaves no temp"
+
+
+def test_latest_rollout_video_follows_task_lifecycle(tmp_path, monkeypatch):
+    pytest.importorskip("PIL.Image", reason="Pillow not installed (rides the sim extras)")
+    session = tmp_path / "session-main"
+    session.mkdir()
+    (session / "rollout.mp4").write_bytes(b"previous")
+    frame_dump.arm(session / "frame.jpg")
+    opstream_path = session / "runtime_events.jsonl"
+    opstream.arm(opstream_path)
+
+    def fake_ffmpeg(args, **kwargs):
+        Path(args[-1]).write_bytes(b"mp4-video")
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(frame_dump.subprocess, "run", fake_ffmpeg)
+    opstream.emit("task_claimed")
+    assert not (session / "rollout.mp4").exists()
+    env = frame_dump._FrameEnv(_FakeEnv())
+    env.reset()
+    env.step([0.0])
+    env.close()
+    opstream.emit("task_done")
+
+    assert not (session / "rollout-frames").exists()
+    direct = bs.read_runtime_rollout(session)
+    assert direct["size"] == 9 and direct["mp4_b64"]
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    target = _session(runs)
+    (target / "rollout.mp4").write_bytes(b"mp4-video")
+    ms.configure(runs)
+    cli = {"runs": runs, "status": tmp_path / "S.md", "progress": tmp_path / "p.md"}
+    assert ms.runtime_rollout("session-main") == bs.read_runtime_rollout(target)
+    assert storecli.dispatch("runtime_rollout", "session-main", **cli) == \
+        bs.read_runtime_rollout(target)
 
 
 def test_dump_never_raises(tmp_path):
@@ -267,8 +306,8 @@ def test_wait_ms_long_polls_until_the_frame_changes(tmp_path):
     """wait_ms blocks past an unchanged cursor and answers the moment the
     writer replaces the frame -- the 取景窗 long poll that lets the browser's
     to-hand fps track the dump rate instead of a fixed poll period."""
-    import threading
     import os as _os
+    import threading
 
     runs = tmp_path / "runs"
     runs.mkdir()

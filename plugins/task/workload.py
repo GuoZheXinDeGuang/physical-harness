@@ -358,6 +358,8 @@ def _governed_segment(episode: EpisodeContext, seg_spec: EpisodeSpec, bundle, *,
         ep.obs = seg["obs"]
         ep.cursor += seg["steps"]
         seg["success"] = ep.driver.segment_success(ep.env)
+        if hasattr(ep.driver, "segment_diagnostics"):
+            seg["diagnostics"] = ep.driver.segment_diagnostics(ep.env)
         return seg
     obj_key = ep.embodiment.object_key(seg_spec)
     ep.driver.retarget(ep.obs[obj_key])
@@ -384,9 +386,38 @@ def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpe
     if not binding:
         return ep.spec
     kwargs = dict(binding)
+    args = dict(node.get("args") or {})
+    # Static skill-library grounding: the abstract graph carries semantic args
+    # (pick(object=hot0), place_in(object=hot0,target=tupperware0)); the
+    # embodiment binding turns those into its private sub-task vocabulary.  A
+    # model cannot smuggle an unknown object or a wrong object->target pairing
+    # through string formatting -- both are checked before a driver is armed.
+    allowed_args = kwargs.pop("allowed_args", None)
+    if allowed_args:
+        for arg, allowed in allowed_args.items():
+            if args.get(arg) not in allowed:
+                raise ValueError(
+                    f"segment {node['id']!r}: {arg}={args.get(arg)!r} is not "
+                    f"grounded; allowed values: {list(allowed)!r}")
+    target_by_object = kwargs.pop("target_by_object", None)
+    if target_by_object is not None:
+        obj, target = args.get("object"), args.get("target")
+        expected = target_by_object.get(obj)
+        if expected is None or target != expected:
+            raise ValueError(
+                f"segment {node['id']!r}: target {target!r} is invalid for "
+                f"object {obj!r}; expected {expected!r}")
+    task_template = kwargs.pop("task_template", None)
+    if task_template is not None:
+        try:
+            kwargs["task"] = str(task_template).format(**args)
+        except KeyError as exc:
+            raise ValueError(
+                f"segment {node['id']!r}: binding template {task_template!r} "
+                f"needs missing arg {exc.args[0]!r}") from None
     task_by_object = kwargs.pop("task_by_object", None)
     if task_by_object is not None:
-        obj = (node.get("args") or {}).get("object")
+        obj = args.get("object")
         if obj not in task_by_object:
             raise ValueError(
                 f"segment {node['id']!r}: object {obj!r} has no task binding; "
@@ -429,6 +460,7 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
                   entered_env_step=entered, exited_env_step=exited)
     return {"success": bool(seg["success"]), "steps": seg.get("steps"),
             "stages": stages,
+            "diagnostics": seg.get("diagnostics", {}),
             "governance": _segment_governance(bundle, digests, entered, exited)}
 
 
@@ -448,7 +480,7 @@ assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
 
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
         max_replans: int = 3, max_actuations: int = 3,
-        cancelled=None) -> dict[str, Any]:
+        segment_retries: int = 0, cancelled=None) -> dict[str, Any]:
     """Run one plan -> validate -> act -> verify -> replan loop through the kernel.
 
     ``brief`` carries task/catalogue/oracles (planner-facing vocabulary,
@@ -510,6 +542,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     faults: list[dict] = []
     actuations = 0
     replans = 0
+    segment_retry_counts: dict[str, int] = {}
+    retry_plan: Mapping | None = None
     success = False
     # M7 opt-in: a brief that declares ``episodic`` opens ONE persistent world
     # here and threads it through every node; ``env.close()`` fires once in the
@@ -534,9 +568,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         # deterministic planners ignore it.
         brief = {**brief, "scene": scene.snapshot({}), "seed": seed,
                  "budget": max_actuations - actuations}
-        plan = planner.plan(brief)
-        ok, msg = validate_plan(plan, catalogue, oracles,
-                                done=tuple(done_specs.values()))
+        # A low-level segment gets a bounded retry in the same world and on the
+        # same validated graph.  A controller miss is not evidence that the task
+        # decomposition changed, so do not spend a VLM call or a replan on it.
+        plan = retry_plan if retry_plan is not None else planner.plan(brief)
+        retry_plan = None
+        ok, msg = validate_plan(
+            plan, catalogue, oracles, done=tuple(done_specs.values()),
+            requirements=brief.get("planning_context"))
         # Operational feed (harness.opstream; never chain evidence): the FULL
         # node graph, the moment it exists, so the execution-graph panel draws
         # the plan while the first node is still running.
@@ -600,7 +639,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                     break
                 opstream.emit("actuation_end", node=node["id"], actuation=actuations,
                               success=bool(result.get("success")),
-                              steps=result.get("steps"))
+                              steps=result.get("steps"),
+                              diagnostics=result.get("diagnostics", {}))
                 stages = result.get("stages", [])
                 done = [s["name"] for s in stages if s["success"]]
                 left = [s["name"] for s in stages if not s["success"]]
@@ -616,7 +656,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 # A perceive/decide node's payload (facts / chosen route) is sealed
                 # so a later decide/verify node -- reading ctx.nodes_out -- routes on
                 # it. Manipulate nodes carry neither; the keys stay absent.
-                for extra in ("facts", "decision"):
+                for extra in ("facts", "decision", "diagnostics"):
                     if extra in result:
                         entry[extra] = result[extra]
                 nodes_out[node["id"]] = entry
@@ -654,7 +694,22 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         # budget and cancelled are TERMINAL faults: replanning around either
         # would be the loop arguing with a floor the operator (or the budget)
         # already set.
-        if fault["kind"] in ("budget", "cancelled") or replans >= max_replans:
+        if fault["kind"] in ("budget", "cancelled"):
+            break
+        failed_node = fault.get("node")
+        failed_spec = next(
+            (n for n in plan.get("nodes", ()) if n.get("id") == failed_node), None)
+        used = segment_retry_counts.get(str(failed_node), 0)
+        if (fault["kind"] == "node_failure" and failed_spec is not None
+                and failed_spec.get("kind", "manipulate") == "segment"
+                and used < segment_retries):
+            segment_retry_counts[str(failed_node)] = used + 1
+            retry_plan = plan
+            opstream.emit("node_retry", node=failed_node, retry=used + 1,
+                          max_retries=segment_retries,
+                          msg="retrying failed segment on the same validated graph")
+            continue
+        if replans >= max_replans:
             break
         replans += 1
         opstream.emit("replan", replan=replans, fault_kind=fault["kind"],
@@ -680,6 +735,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         "nodes": {nid: {"success": n["success"],
                         "stages": [{"name": s["name"], "success": s["success"]}
                                    for s in n["stages"]],
+                        "diagnostics": n.get("diagnostics", {}),
                         "governance": n["governance"]}
                   for nid, n in nodes_out.items()},
     })

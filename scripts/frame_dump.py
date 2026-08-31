@@ -34,6 +34,8 @@ loses zero evidence.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 
 from harness import opstream
 
@@ -61,6 +63,13 @@ KEYFRAME_KINDS = frozenset({"plan_built", "node_start", "stage_transition",
 #: raising here would break the task the stills only watch.
 MAX_KEYFRAMES = 2000
 _CAPTURED = 0
+
+#: Latest-rollout video capture. Frames are operational state beside frame.jpg,
+#: never chain evidence. One resident runtime processes one brief at a time.
+VIDEO_FPS = 20
+MAX_VIDEO_FRAMES = 6000
+_VIDEO_ACTIVE = False
+_VIDEO_SEQ = 0
 
 #: The base embodiment.env ref whose SEMANTICS the frames overlay delegates to.
 #: harness_runtime._mount_plan sets it per task (the sim override or the viewer
@@ -104,10 +113,72 @@ CAMERAS = ("robot0_agentview_left", "agentview", "frontview")
 def arm(path) -> None:
     """Direct subsequent dumps at ``path`` (str or Path), or disarm with None.
     Runtime-boot only; unarmed, the wrapper is a pure pass-through."""
-    global _PATH, _LAST_ENV, _CAPTURED
+    global _PATH, _LAST_ENV, _CAPTURED, _VIDEO_ACTIVE, _VIDEO_SEQ
     _PATH = str(path) if path else None
     _LAST_ENV = None
     _CAPTURED = 0
+    _VIDEO_ACTIVE = False
+    _VIDEO_SEQ = 0
+    if _PATH is not None:
+        shutil.rmtree(os.path.join(os.path.dirname(_PATH), "rollout-frames"),
+                      ignore_errors=True)
+
+
+def _record_video_frame(image) -> None:
+    """Append one already-rendered image to the active rollout staging area."""
+    global _VIDEO_SEQ
+    if not _VIDEO_ACTIVE or _PATH is None or _VIDEO_SEQ >= MAX_VIDEO_FRAMES:
+        return
+    try:
+        directory = os.path.join(os.path.dirname(_PATH), "rollout-frames")
+        os.makedirs(directory, exist_ok=True)
+        _VIDEO_SEQ += 1
+        image.save(os.path.join(directory, f"{_VIDEO_SEQ:06d}.jpg"),
+                   "JPEG", quality=QUALITY)
+    except Exception:  # noqa: BLE001, S110 -- rollout capture cannot affect the task
+        pass
+
+
+def _video_event(seq: int, kind: str) -> None:
+    """Start/finalize latest-rollout capture from task lifecycle events."""
+    del seq
+    global _VIDEO_ACTIVE, _VIDEO_SEQ
+    if _PATH is None:
+        return
+    root = os.path.dirname(_PATH)
+    staging = os.path.join(root, "rollout-frames")
+    output = os.path.join(root, "rollout.mp4")
+    if kind == "task_claimed":
+        _VIDEO_ACTIVE = True
+        _VIDEO_SEQ = 0
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            os.remove(output)
+        except OSError:
+            pass
+        return
+    if kind not in {"task_done", "task_failed", "task_cancelled"}:
+        return
+    _VIDEO_ACTIVE = False
+    if _VIDEO_SEQ == 0:
+        shutil.rmtree(staging, ignore_errors=True)
+        return
+    temporary = os.path.join(root, "rollout.tmp.mp4")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(VIDEO_FPS),
+             "-i", os.path.join(staging, "%06d.jpg"), "-c:v", "libx264",
+             "-pix_fmt", "yuv420p", "-movflags", "+faststart", temporary],
+            check=True, timeout=120, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        os.replace(temporary, output)
+    except Exception:  # noqa: BLE001 -- every encoder failure leaves no rollout
+        try:
+            os.remove(temporary)
+        except OSError:
+            pass
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def dump(env, path: str | None = None) -> None:
@@ -136,9 +207,12 @@ def dump(env, path: str | None = None) -> None:
         from PIL import Image
 
         tmp = dest + ".tmp"
-        Image.fromarray(px[::-1]).save(tmp, "JPEG", quality=QUALITY)
+        image = Image.fromarray(px[::-1])
+        image.save(tmp, "JPEG", quality=QUALITY)
         os.replace(tmp, dest)
-    except Exception:
+        if path is None:
+            _record_video_frame(image)
+    except Exception:  # noqa: BLE001, S110 -- viewport capture cannot affect the task
         pass
 
 
@@ -245,3 +319,4 @@ def frames_provider():
 # Inverted registration, once per process (module import is cached): harness/
 # imports no scripts, so the capture layer wires ITSELF onto the event stream.
 opstream.on_emit(keyframe)
+opstream.on_emit(_video_event)

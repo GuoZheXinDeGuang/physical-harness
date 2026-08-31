@@ -466,9 +466,9 @@ _HET_PREDICATES = {"at": "test_persistent_mission:_always",
 _HET_SEGMENT_SPECS = {"walk": {"task": "go"}, "grab": {"task": "pick"}}
 
 
-def _het_kernel() -> Kernel:
+def _het_kernel(planner=None) -> Kernel:
     k = Kernel(CAPABILITIES)
-    k.provide("task.planner", _HetPlanner(), ref="tests.fakes:planner")
+    k.provide("task.planner", planner or _HetPlanner(), ref="tests.fakes:planner")
     k.provide("graph.scene", _FakeScene(), ref="tests.fakes:scene")
     k.provide("graph.skill", InMemorySkillGraph(),
               ref="plugins.graphs:skill_graph_provider")
@@ -522,3 +522,39 @@ def test_heterogeneous_segment_failure_replans_in_the_same_world(monkeypatch):
     # no new world on replan; walk (already done) was never re-driven, grab retried
     assert _HET_EMB.makes == 1 and _HET_EMB.world.resets == 1 and _HET_EMB.world.closes == 1
     assert HET_DRIVER.entered.count("go") == 1 and HET_DRIVER.entered.count("pick") == 3
+
+
+def test_segment_retry_reuses_valid_graph_without_calling_planner(monkeypatch):
+    """One controller miss retries in-place before graph-level replanning."""
+    class _FailPickOnce(_HetDriver):
+        def __init__(self):
+            super().__init__({"go": True, "pick": True})
+            self.pick_checks = 0
+
+        def segment_success(self, env) -> bool:
+            if self.entered[-1] != "pick":
+                return True
+            self.pick_checks += 1
+            return self.pick_checks > 1
+
+    class _CountingHetPlanner(_HetPlanner):
+        def __init__(self):
+            self.calls = 0
+
+        def plan(self, brief):
+            self.calls += 1
+            return super().plan(brief)
+
+    global _HET_EMB, HET_DRIVER
+    _HET_EMB = _HetEmbodiment(_World())
+    HET_DRIVER = _FailPickOnce()
+    planner = _CountingHetPlanner()
+    monkeypatch.setattr(governed, "governed_segment", _het_drive)
+
+    out = workload.run(_het_brief(), _het_kernel(planner), seed=13,
+                       max_replans=0, max_actuations=20, segment_retries=1)
+
+    assert out["success"] is True
+    assert out["replans"] == 0 and planner.calls == 1
+    assert HET_DRIVER.entered == ["go", "pick", "pick"]
+    assert out["faults"][0]["node"] == "grab"

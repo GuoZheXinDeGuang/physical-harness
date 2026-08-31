@@ -25,7 +25,8 @@ NODE_KINDS = frozenset({"manipulate", "segment", "perceive", "decide", "verify"}
 
 def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
                   oracles: Collection[str],
-                  done: Collection[Mapping] = ()) -> tuple[bool, str]:
+                  done: Collection[Mapping] = (),
+                  requirements: Mapping | None = None) -> tuple[bool, str]:
     """``(ok, message)`` — fail-first, message names the offender.
 
     ``catalogue`` maps skill name -> {arg name: required python type}; it is
@@ -37,6 +38,11 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
     one of them verbatim, because attribution, per-node billing, and
     completed-node skipping all key on node ids across replans — a planner
     that renames or rewrites finished work re-bills it silently.
+
+    ``requirements`` is optional task-authored grounding. An ``objects`` list
+    plus ``required_per_object_order`` requires exactly one call to each named
+    skill for every object, with dependency ancestry preserving that order.
+    ``target_by_object`` fixes any target argument carried by those calls.
     """
     if not isinstance(plan, Mapping):
         return False, f"plan must be a JSON object, got {type(plan).__name__}"
@@ -69,6 +75,10 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
         args = node["args"]
         if not isinstance(args, Mapping):
             return False, f"node {nid!r}.args must be an object"
+        missing = set(schema) - set(args)
+        if missing:
+            return False, (f"node {nid!r} is missing required args "
+                           f"{sorted(missing)} for {skill!r}")
         for key, value in args.items():
             if key not in schema:
                 return False, (f"node {nid!r} passes unknown arg {key!r} to "
@@ -107,6 +117,58 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
             return False, (f"node {node['id']!r} (kind {kind!r}) is not covered "
                            "by any verify: add a verify entry after it or a "
                            "verify-kind successor node")
+    if requirements:
+        objects = requirements.get("objects")
+        required_order = requirements.get("required_per_object_order")
+        if objects is not None or required_order is not None:
+            if (not isinstance(objects, list) or not objects
+                    or not all(isinstance(obj, str) and obj for obj in objects)):
+                return False, "planning_context.objects must be a non-empty string list"
+            if (not isinstance(required_order, list) or not required_order
+                    or not all(isinstance(skill, str) and skill
+                               for skill in required_order)):
+                return False, ("planning_context.required_per_object_order must "
+                               "be a non-empty string list")
+            ancestors: dict[str, set[str]] = {}
+            for node in nodes:
+                direct = set(node["after"])
+                ancestors[node["id"]] = direct.union(
+                    *(ancestors[parent] for parent in direct)) if direct else set()
+            known_objects = set(objects)
+            for node in nodes:
+                if (node["skill"] in required_order
+                        and node["args"].get("object") not in known_objects):
+                    return False, (f"node {node['id']!r} applies required skill "
+                                   f"{node['skill']!r} to undeclared object "
+                                   f"{node['args'].get('object')!r}")
+            for obj in objects:
+                previous: Mapping | None = None
+                for skill in required_order:
+                    calls = [node for node in nodes
+                             if node["skill"] == skill
+                             and node["args"].get("object") == obj]
+                    if len(calls) != 1:
+                        return False, (f"object {obj!r} requires exactly one "
+                                       f"{skill!r} call, got {len(calls)}")
+                    current = calls[0]
+                    if (previous is not None
+                            and previous["id"] not in ancestors[current["id"]]):
+                        return False, (f"object {obj!r} requires {skill!r} after "
+                                       f"{previous['skill']!r}")
+                    previous = current
+            target_by_object = requirements.get("target_by_object")
+            if target_by_object is not None:
+                if not isinstance(target_by_object, Mapping):
+                    return False, "planning_context.target_by_object must be an object"
+                for node in nodes:
+                    args = node["args"]
+                    obj = args.get("object")
+                    if obj in known_objects and "target" in args:
+                        expected = target_by_object.get(obj)
+                        if args["target"] != expected:
+                            return False, (f"node {node['id']!r} targets "
+                                           f"{args['target']!r} for object {obj!r}; "
+                                           f"expected {expected!r}")
     # Replan stability: every completed node must reappear byte-identical.
     by_id = {n["id"]: n for n in nodes}
     for d in done:

@@ -1,0 +1,20 @@
+# Natural-language pack-all planning over the static shared skill library.
+# RoboCasa is executable now via the existing PackFoodByTemp composite driver;
+# the LIBERO binding stays in skill-library/embodiments/libero.toml as explicitly
+# unimplemented until that embodiment gains a real policy + terminal oracle.
+needs_sim = true
+
+[task_bindings.pack_all_robocasa]
+env = "plugins.embodiment_robocasa:provider"
+percept = "plugins.embodiment_robocasa.percept:provider"
+policy = "plugins.embodiment_robocasa.lunch_driver:provider"
+planner = "plugins.planner_vlm:provider"
+catalogue = "plugins.mission_pack_all:CATALOGUE"
+oracles = "plugins.mission_pack_all:ORACLES"
+skill_docs = "plugins.mission_pack_all:SKILL_DOCS"
+planning_context = "plugins.mission_pack_all:PLANNING_CONTEXT"
+default_instruction = "plugins.mission_pack_all:DEFAULT_INSTRUCTION"
+episodic = true
+episode = "plugins.mission_pack_all:EPISODE"
+segment_specs = "plugins.mission_pack_all:SEGMENT_SPECS"
+max_actuations = 24

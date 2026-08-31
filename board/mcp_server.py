@@ -35,7 +35,6 @@ from board import store as bs
 from board import vault as bv
 from harness.manifest import discover
 
-
 #: The default routing session -- the resident runtime cockpit always brings up.
 #: submit_brief/run_task and the session-addressed reads fall back to it, so the
 #: pre-routing single-runtime behavior is byte-identical when no session is named.
@@ -171,6 +170,15 @@ def runtime_frame(name: str = _DEFAULT_SESSION, after_ts: float = 0.0,
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return (bs.read_runtime_frame(path, after_ts, wait_ms) if path
             else {"error": "unknown session"})
+
+
+@mcp.tool()
+def runtime_rollout(name: str = _DEFAULT_SESSION) -> dict:
+    """Latest completed rollout MP4 for a session ({mp4_b64, ts, size}).
+    It exists only when the runtime was booted with --frames and one task has
+    finished. Live downloadable state, never chain evidence."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.read_runtime_rollout(path) if path else {"error": "unknown session"}
 
 
 @mcp.tool()
@@ -374,7 +382,9 @@ def _compat_warning(brief: dict, session: str, session_dir: Path) -> str | None:
 def submit_brief(brief: dict, session: str = _DEFAULT_SESSION) -> dict:
     """Drop a brief into a runtime session's inbox for it to claim.
 
-    A brief is a pure selector+budgets. Three kinds exist:
+    A brief is a selector+budgets. A task may also carry one bounded inert
+    natural-language ``instruction``; providers/skills/oracles remain
+    server-selected. Three kinds exist:
 
     * ``{"kind":"task","task":"stack","seed":90000}`` -- run one mission once.
     * ``{"kind":"campaign","campaign":"stack","dev":[[41000,41999]]}`` -- run a

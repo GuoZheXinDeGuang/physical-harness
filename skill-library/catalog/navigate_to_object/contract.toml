@@ -1,0 +1,10 @@
+[skill]
+name = "navigate_to_object"
+description = "Move the robot to a pose from which it can reach the named object."
+kind = "segment"
+requires = ["object is present in the scene inventory"]
+ensures = ["object is within manipulation reach"]
+exit_conditions = ["robot is at the benchmark backend's manipulation dock"]
+
+[arguments]
+object = "str"

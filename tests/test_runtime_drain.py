@@ -65,6 +65,26 @@ def test_runtime_drain(tmp_path, monkeypatch):
     assert [r["kind"] for r in reloaded.rows()] == [r["kind"] for r in rt.log.rows()]
 
 
+def test_pending_ignores_file_moved_after_glob(tmp_path, monkeypatch):
+    """Atomic inbox ownership changes must not kill the resident poll loop."""
+    rt = runtime.boot(tmp_path / "session-main")
+    vanished = rt.inbox / "vanished.json"
+    present = rt.inbox / "present.json"
+    vanished.write_text("{}")
+    present.write_text("{}")
+
+    real_stat = Path.stat
+
+    def racing_stat(path, *args, **kwargs):
+        if path == vanished:
+            path.unlink(missing_ok=True)  # claimed after glob, before stat
+            raise FileNotFoundError(path)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", racing_stat)
+    assert runtime._pending(rt) == [present]
+
+
 def test_malformed_brief_fails_without_a_note(tmp_path, monkeypatch):
     monkeypatch.setattr(workload, "_governed_rollout", _ok_rollout)
     session = tmp_path / "session-main"

@@ -48,8 +48,9 @@ path off this rail, but the operator starting a runtime by hand deserves the sam
 protection.
 
 Authority-laundering defense (non-negotiable): a brief names NO provider/mount
-ref. It is a pure selector+budgets -- ``{"kind":"task","task":"stack","seed":
-90000,"max_replans":3,"max_actuations":3}``. The runtime resolves the task STRING
+ref. It is a selector+budgets, plus an optional task-only natural-language
+``instruction`` -- ``{"kind":"task","task":"stack","seed":90000,
+"max_replans":3,"max_actuations":3}``. The runtime resolves the task STRING
 to its policy/planner/catalogue/oracles through the UNION of installed plugin
 manifests at boot (``harness.manifest.discover``) and stamps them server-side;
 adding a task is installing a plugin dir (a filesystem act), never a brief. A
@@ -88,7 +89,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from board.store import cancelled_run, parse_ledger
 from harness import opstream
-from scripts.brief_drop import drop
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
@@ -97,6 +97,7 @@ from harness.manifest import discover
 from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
 from profiles import base_profile
+from scripts.brief_drop import drop
 
 #: The one prose seed-ledger the guard enforces (board.store.parse_ledger).
 STATUS_MD = REPO_ROOT / "STATUS.md"
@@ -477,6 +478,12 @@ def task_brief(task: str, binding: dict) -> dict:
     """
     wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
               "oracles": _load_attr(binding["oracles"])}
+    # Optional planner-only, server-authored context. The natural-language
+    # instruction may be supplied by the task brief, but the skill semantics and
+    # scene inventory remain manifest refs -- a caller cannot redefine either.
+    for key in ("skill_docs", "planning_context", "default_instruction"):
+        if key in binding:
+            wbrief[key] = _load_attr(binding[key])
     # A heterogeneous mission (perceive/decide/verify nodes) declares a PREDICATES
     # table by ref beside catalogue/oracles; thread it so the loop can resolve each
     # kindful node's machine oracle. Manipulate-only bindings omit it.
@@ -515,13 +522,18 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
     max_replans = int(brief.get("max_replans", 3))
     # clear_table's two pick nodes need one extra actuation of headroom, matching
     # scripts/task_plan.py's default.
-    max_actuations = int(brief.get("max_actuations",
-                                   4 if task == "clear_table" else 3))
+    max_actuations = int(brief.get(
+        "max_actuations",
+        binding.get("max_actuations", 4 if task == "clear_table" else 3)))
     kernel = Kernel(CAPABILITIES, log=rt.log)
     kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render,
                              frames=rt.frames))
-    return workload.run(task_brief(task, binding), kernel, seed=seed,
+    wbrief = task_brief(task, binding)
+    if "instruction" in brief:
+        wbrief["instruction"] = brief["instruction"]
+    return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations,
+                        segment_retries=int(binding.get("segment_retries", 0)),
                         cancelled=cancelled)
 
 
@@ -800,7 +812,9 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
     })
 
 
-#: A brief is a selector plus budgets -- nothing else. Providers are chosen
+#: A brief is a selector plus budgets. A task may additionally carry one inert
+#: natural-language ``instruction``; it selects no provider/skill/oracle and is
+#: bounded below before reaching the planner. Providers are always chosen
 #: server-side (the manifest union's task_bindings / campaigns); any other key
 #: is rejected.
 #:
@@ -810,10 +824,12 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
 #: from measurement -- ``node`` overrides the attribution's target (recorded in
 #: the verdict), ``cal``/``dev``/``heldout`` pin a block instead of allocating.
 _BRIEF_KEYS = {
-    "task": {"kind", "task", "seed", "max_replans", "max_actuations"},
+    "task": {"kind", "task", "instruction", "seed", "max_replans",
+             "max_actuations"},
     "campaign": {"kind", "campaign", "dev", "heldout"},
     "rsi": {"kind", "task", "node", "cal", "dev", "heldout", "workers", "floor"},
 }
+_MAX_INSTRUCTION_CHARS = 4000
 
 
 def _seal_cancelled(rt: Runtime, brief_id: str, brief: dict, claimed: Path,
@@ -867,6 +883,13 @@ def _process(rt: Runtime, path: Path) -> None:
             # an injected key (a provider ref, say) must fail loudly rather than
             # ride along ignored until some future reader starts honoring it.
             raise ValueError(f"unknown brief keys {sorted(unknown)}")
+        if kind == "task" and "instruction" in brief:
+            instruction = brief["instruction"]
+            if (not isinstance(instruction, str) or not instruction.strip()
+                    or len(instruction) > _MAX_INSTRUCTION_CHARS):
+                raise ValueError(
+                    "task instruction must be a non-empty string of at most "
+                    f"{_MAX_INSTRUCTION_CHARS} characters")
         if kind == "task":
             # execution mounts a frozen skills root; a mid-session out-of-band
             # mutation (some record added or removed since the boot seal) must
@@ -932,7 +955,21 @@ def _process(rt: Runtime, path: Path) -> None:
 
 
 def _pending(rt: Runtime) -> list[Path]:
-    return sorted(rt.inbox.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    """Return a stable oldest-first snapshot of the inbox.
+
+    Inbox ownership changes by atomic rename.  A submitter, cancellation path,
+    or another runtime incarnation can therefore move a file after ``glob``
+    found it but before ``stat`` reads its timestamp.  That is normal lifecycle
+    churn, not a fatal runtime error: omit the vanished entry and pick it up from
+    its new owner (or on the next poll) instead of killing the resident loop.
+    """
+    pending: list[tuple[float, Path]] = []
+    for path in rt.inbox.glob("*.json"):
+        try:
+            pending.append((path.stat().st_mtime, path))
+        except FileNotFoundError:
+            continue
+    return [path for _, path in sorted(pending, key=lambda item: item[0])]
 
 
 #: Heartbeat cadence for runtime_status.json (the UI liveness signal).

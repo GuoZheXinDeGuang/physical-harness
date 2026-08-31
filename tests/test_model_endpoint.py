@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from harness import contracts
-from plugins.model_endpoint import PRESETS, provider
+from plugins.model_endpoint import PRESETS, _credential_ref, provider
 from scripts.plugin_doctor import check
 
 #: 127.0.0.1:9 -- discard port, nothing listens: connection refused immediately.
@@ -94,6 +94,31 @@ def test_chat_speaks_openai_shape_end_to_end(endpoint_url, monkeypatch):
     assert seen["body"]["messages"] == [{"role": "user", "content": "ping"}]
     assert seen["body"]["temperature"] == 0.5  # opts pass through untouched
     assert seen["body"]["max_tokens"] == 8
+
+
+def test_named_credential_falls_back_to_dsh_store_without_entering_identity(
+        tmp_path, monkeypatch):
+    dsh = tmp_path / "dsh"
+    dsh.mkdir()
+    (dsh / ".credentials.yaml").write_text(
+        "version: 1\nrefs:\n  BRIDGE_TEST_KEY: stored-secret\n")
+    monkeypatch.setenv("DSH_HOME", str(dsh))
+    monkeypatch.delenv("BRIDGE_TEST_KEY", raising=False)
+    assert _credential_ref("BRIDGE_TEST_KEY") == "stored-secret"
+    ep = provider(base_url="https://example.invalid/v1",
+                  api_key_env="BRIDGE_TEST_KEY", model="m")
+    assert ep._headers()["Authorization"] == "Bearer stored-secret"
+    assert "stored-secret" not in ep.identity
+
+
+def test_environment_credential_wins_over_dsh_store(tmp_path, monkeypatch):
+    dsh = tmp_path / "dsh"
+    dsh.mkdir()
+    (dsh / ".credentials.yaml").write_text(
+        "refs:\n  BRIDGE_TEST_KEY: stored-secret\n")
+    monkeypatch.setenv("DSH_HOME", str(dsh))
+    monkeypatch.setenv("BRIDGE_TEST_KEY", "environment-secret")
+    assert _credential_ref("BRIDGE_TEST_KEY") == "environment-secret"
 
 
 def test_dead_endpoint_is_unavailable_not_an_error():

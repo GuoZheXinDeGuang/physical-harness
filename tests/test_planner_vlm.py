@@ -118,6 +118,7 @@ def test_canned_reply_yields_a_plan_validate_plan_admits(endpoint_url):
     assert sent["catalogue"] == {"stack": {"object": "str", "target": "str"},
                                  "pick": {"object": "str"}}
     assert sent["oracles"] == list(ORACLES) and sent["budget"] == 3
+    assert _Server.requests[0]["response_format"] == {"type": "json_object"}
 
 
 def test_fenced_or_preambled_reply_still_parses(endpoint_url):
