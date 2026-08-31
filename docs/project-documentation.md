@@ -383,7 +383,7 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 ### 3.2 当前快照（2026-08-31，隔离，robosuite 被挡）
 
 ```
-pass       : 806 passed
+pass       : 824 passed
 skips      : 30 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -403,11 +403,12 @@ deselected : 28 robosuite-marked items
 ```
 
 798 → 806 是快照写下之后攒的 8 个底座项（7 个来自其间的提交，+1 是 grasp 谓词审计
-这一轮的 `test_mission_kitchen_thaw.py::test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch`）。
+这一轮的 `test_mission_kitchen_thaw.py::test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch`）；
+806 → 824 是 PR #2（静态技能库 + 三张 basket/pack/stack 任务卡）带进来的 18 个底座项。
 
-**全量对照（卡在场）**：上次实测 `829 passed, 27 skipped`（2026-08-29 的 797 + 那一轮
-`test_capability_record.py` 的 32 个无标记项）。**这一行自那以后没有重测**——要 sim venv
-才跑得动——所以它和上面的 806 不构成同一轮的算术，别拿两者相减。隔离快照少掉的 pass 是：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
+**全量对照（卡在场）**：实测 `855 passed, 27 skipped`（2026-08-31，harness `.venv`，
+robosuite 在场，PR #2 合并 + vault 计卡修正之后）。它和上面的 824 不构成同一轮的算术，
+别拿两者相减。隔离快照少掉的 pass 是：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
 而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
 只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
 
