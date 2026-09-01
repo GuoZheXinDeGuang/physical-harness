@@ -226,6 +226,8 @@ def pi05_stepper(args, env, obs, prompt):
     from plugins.policy_vla_remote import RemoteVlaPolicy
 
     contract = dict(CONTRACT)
+    if args.unnorm_key:
+        contract["unnorm_key"] = args.unnorm_key
     if args.sha:
         contract["checkpoint_sha"] = args.sha
     factory = RemoteVlaPolicy(host=args.host, port=args.port,
@@ -569,6 +571,8 @@ def run_campaign(args) -> int:
             cmd += ["--demo", str(demo)]
         if args.sha:
             cmd += ["--sha", args.sha]
+        if args.unnorm_key:
+            cmd += ["--unnorm-key", args.unnorm_key]
         t0 = time.perf_counter()
         killed = False
         try:
@@ -755,6 +759,11 @@ def main(argv=None) -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--sha", default=None, help="gate the served checkpoint identity")
+    ap.add_argument("--unnorm-key", default=None,
+                    help="override the training-obs contract's unnorm_key (the "
+                         "dataset the served checkpoint normalizes against; "
+                         "default keeps CONTRACT's robocasa/lerobot). r2 serves "
+                         "robocasa_r2/lerobot")
     # Serving-side execution knobs, both OFF unless given -- the default is the
     # drain-the-whole-chunk driver every earlier number here was produced by.
     ap.add_argument("--replan-every", type=int, default=None,

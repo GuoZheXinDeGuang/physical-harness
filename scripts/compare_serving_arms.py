@@ -84,8 +84,18 @@ PREDICATES = {
 #: questions, so :func:`compare` refuses rather than doing it quietly.
 GRASP_RULER_BOUNDARY = ("round98b_k1", 420113)
 
+#: Runs collected entirely AFTER the audit settled, so ``load_predicates`` bound
+#: the SECURE_DZ predicate for every episode -- no per-seed boundary to freeze,
+#: the whole directory is secure. A round100 secure count and a round98 latch
+#: count are answers to different questions, so labelling this right is what
+#: makes :func:`compare` REFUSE the r2-vs-round1 grasp cross-comparison instead
+#: of printing a ruler swap as if it were a policy effect.
+SECURE_DIRS = frozenset({"round100_r2_eval"})
+
 
 def grasp_ruler(run_dir: str, seed: int) -> str:
+    if run_dir in SECURE_DIRS:
+        return "secure"
     d, s = GRASP_RULER_BOUNDARY
     return "secure" if (run_dir == d and seed >= s) else "latch"
 
