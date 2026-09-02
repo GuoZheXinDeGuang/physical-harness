@@ -321,7 +321,7 @@ def runtime_events(name: str = _DEFAULT_SESSION, after_seq: int = 0) -> dict:
 def health(console_port: int = 3080) -> dict:
     """**Ask this FIRST when anything looks wrong.** Is the whole pipeline up?
 
-    ``{ok, problems, sessions, console, model, ts}`` in one call -- ``problems``
+    ``{ok, problems, sessions, console, model, policy, restart, ts}`` in one call -- ``problems``
     is the list to read and everything else is the evidence behind it. It covers
     every piece a brief travels through: per session, whether a runtime is REALLY
     serving it (checked against /proc, not against its own leftover
@@ -360,6 +360,29 @@ def model_server(action: str = "status") -> dict:
     to the simulator. Loading takes 1-2 minutes: running=true with healthy=false
     means loading. Live state, never sealed evidence, and it never raises."""
     return bs.model_server(action, _Cfg.runs)
+
+
+@mcp.tool()
+def policy_server(action: str = "status", checkpoint_dir: str = "") -> dict:
+    """Start/stop/read the pi0.5 POLICY server (scripts/serve_vla_openpi.py on
+    127.0.0.1:8000) -> {running, pid, port, serving, checkpoint_sha}, plus
+    {error} when an action failed. action is status|start|stop; checkpoint_dir
+    defaults to PH_POLICY_CHECKPOINT (the cockpit .env default). The operator
+    starts it by hand -- never start it as a side effect. running=true with
+    serving=false means the weights are still loading (minutes). Live state,
+    never raises."""
+    return bs.policy_server(action, _Cfg.runs, checkpoint_dir or None)
+
+
+@mcp.tool()
+def restart_services(build: bool = False) -> dict:
+    """Restart EVERYTHING (runtimes + this console; the policy server only if it
+    was serving) via a detached `scripts/cockpit --restart`; build=true runs
+    `pnpm build` in ph-station first and aborts the restart if it fails.
+    Returns {started, pid, log} immediately -- this very console dies moments
+    later, so do not wait on it; read health()["restart"] once it is back
+    (state idle|running|failed|done + last log line)."""
+    return bs.restart_services(_Cfg.runs, build)
 
 
 @mcp.tool()

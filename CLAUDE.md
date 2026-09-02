@@ -87,7 +87,8 @@ fate by hand from `runtime_events` + `session` + `session_progress`.
 **When anything looks wrong, call `health()` FIRST** — one dict covering every
 session's runtime liveness (asked of `/proc`, never of its own leftover
 `runtime_status.json`), mode, heartbeat age, inbox backlog and crash orphans,
-plus the console and the model server. Read its `problems` list. Never report
+plus the console, the model/policy servers and the last `cockpit --restart`
+(`restart.state`). Read its `problems` list. Never report
 "the runtime is alive" from `runtime_status()` — that file outlives the process
 that wrote it, and doing so is exactly how a brief sat queued for 21 hours.
 

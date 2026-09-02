@@ -187,6 +187,13 @@ scripts/cockpit --status # 只打印健康，什么都不启动；exit 1 = 有�
 scripts/cockpit --stop   # 只停本次调用启动的进程（按 pidfile 里的精确 PID）
 ```
 
+- **`--restart [--build]`**（控制台「重启」/「重建并重启」两个按钮 → MCP `restart_services(build)`
+  → `board.store.restart_services`）：先 `setsid` 脱离再返回（按按钮的那个控制台马上就要被
+  停掉），脱离的副本记住 pi0.5 是否 SERVING → `--stop` →（`--build` 时在 `$PH_STATION` 跑
+  `pnpm build`，失败即中止、什么都不起）→ 正常启动；`--with-policy` 只在之前 SERVING 时补回
+  （pi0.5 由操作员手动起，绝不默认）。进度写 `runs/restart.log`，`health().restart` 读它
+  （`state: idle|running|failed|done` + 最后一行），控制台回来后面板照此显示。
+
 它起三个常驻 runtime：`runs/session-main`（.venv，robosuite，`--frames`）、
 `runs/session-robocasa`（robocasa venv，无头 egl）、`runs/session-robocasa-rsi`
 （robocasa venv，`--mode evolution --frames`，默认开——进化态 brief 只能投这里）。

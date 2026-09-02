@@ -25,7 +25,8 @@ reconstructed from raw files.
 This face is read-only but for three write fns. ``model_server <action>`` is the
 console's local-model switch (``status``/``start``/``stop``, default ``status``)
 -- the launcher it may run is a constant in board.store, never an argument, and
-the action word is whitelisted there. ``cancel_brief`` drops one live marker and
+the action word is whitelisted there. ``policy_server <action>`` is the same switch for
+pi0.5 on :8000 and ``restart_services [build]`` kicks a detached cockpit --restart. ``cancel_brief`` drops one live marker and
 nothing else (the runtime does every mutation that follows). The third is
 ``submit_brief`` (the cockpit's
 submit button; ``--brief '<json>' --session <name>``), a passthrough into
@@ -70,7 +71,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
              after: int = 0, relation: str | None = None, after_ts: float = 0.0,
              wait_ms: int = 0, brief: str | None = None,
              session: str | None = None, seq: int = 0, out: Path | None = None,
-             sha: str | None = None, round: int = 0):
+             sha: str | None = None, round: int = 0, checkpoint: str | None = None):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -143,6 +144,12 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         # defaults to the read, so an omitted argument can never start or stop
         # anything. The launcher path is a board constant, never an argument.
         return bs.model_server(name or "status", runs)
+    if fn == "policy_server":
+        # Same slot rule as model_server; --checkpoint else PH_POLICY_CHECKPOINT.
+        return bs.policy_server(name or "status", runs, checkpoint)
+    if fn == "restart_services":
+        # The name slot "build" opts into the ph-station rebuild first.
+        return bs.restart_services(runs, build=(name == "build"))
     if fn == "ledger":
         return bs.burned_blocks(runs)
     if fn == "rounds":
@@ -250,7 +257,7 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
                               float(req.get("after_ts", 0.0)), int(req.get("wait_ms", 0)),
                               req.get("brief"), req.get("session"),
                               int(req.get("seq", 0)), sha=req.get("sha"),
-                              round=int(req.get("round", 0)))
+                              round=int(req.get("round", 0)), checkpoint=req.get("checkpoint"))
         except KeyError:
             result = {"error": f"unknown fn: {req.get('fn', '')}"}
         except Exception as exc:  # bad JSON / rejected name / anything: reply, keep serving
@@ -261,8 +268,8 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|submit_proposal|proposals|rsi_run|rsi_series|rsi_frames|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|skill_evidence|skills|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
-    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the task for rsi_run/rsi_series/rsi_frames, the model_server action (status|start|stop, default status), or the console port for health")
+    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|submit_proposal|proposals|rsi_run|rsi_series|rsi_frames|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|skill_evidence|skills|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|policy_server|restart_services|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the task for rsi_run/rsi_series/rsi_frames, the model_server/policy_server action (status|start|stop, default status), 'build' to make restart_services rebuild ph-station first, or the console port for health")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority); submit_proposal: the raw proposal JSON {task, kind, payload, note}")
     parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, whose brief brief_status/cancel_brief names, and whose evolve campaign rsi_run/rsi_series/rsi_frames reads (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
@@ -275,6 +282,7 @@ def main(argv=None) -> int:
     parser.add_argument("--seq", type=int, default=0, help="runtime_keyframe: the runtime_events seq whose pinned still to fetch")
     parser.add_argument("--sha", default=None, help="suite_result: the suite artifact sha to read (default: the session's newest suite.sealed row)")
     parser.add_argument("--round", type=int, default=0, help="rsi_frames: the evolve round whose kept media paths to list")
+    parser.add_argument("--checkpoint", default=None, help="policy_server start: checkpoint dir (default: PH_POLICY_CHECKPOINT, then the board constant)")
     parser.add_argument("--out", type=Path, default=None, help="trajectories: write <OUT>/dev.jsonl and heldout.jsonl (split by burned block role) and print the counts")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
@@ -285,7 +293,7 @@ def main(argv=None) -> int:
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
                           args.after_ts, args.wait_ms, args.brief, args.session, args.seq,
-                          args.out, args.sha, args.round)
+                          args.out, args.sha, args.round, args.checkpoint)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2

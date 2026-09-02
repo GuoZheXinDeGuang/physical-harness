@@ -68,3 +68,50 @@ def test_start_spawns_the_serve_script_detached_and_stop_reaps_the_pidfile(tmp_p
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
+
+
+def test_three_faces_byte_equal_and_restart_row(tmp_path, monkeypatch):
+    """policy_server status and restart_services answer the same object on the
+    store, storecli (action / 'build' in the name slot) and MCP faces. The
+    cockpit is a stub via PH_COCKPIT_BIN, so nothing real restarts."""
+    import json
+    import board.mcp_server as ms
+    import board.storecli as sc
+
+    _stopped(monkeypatch)
+    runs = (tmp_path / "runs").resolve()
+    runs.mkdir()
+    stub = tmp_path / "cockpit"
+    stub.write_text(f'#!/bin/sh\necho "$@" >> {tmp_path}/argv\n')
+    stub.chmod(0o755)
+    monkeypatch.setenv("PH_COCKPIT_BIN", str(stub))
+    ms.configure(runs, tmp_path / "STATUS.md", tmp_path / "progress.md")
+    faces = (tmp_path / "STATUS.md", tmp_path / "progress.md")
+
+    wire = json.dumps(bs.policy_server("status", runs), sort_keys=True)
+    for out in (sc.dispatch("policy_server", "status", runs, *faces),
+                sc.dispatch("policy_server", None, runs, *faces), ms.policy_server("status")):
+        assert json.dumps(out, sort_keys=True) == wire
+
+    store = bs.restart_services(runs, build=True)
+    assert store == {"started": True, "pid": store["pid"], "log": str(runs / "restart.log")}
+    shape = lambda d: json.dumps({k: v for k, v in d.items() if k != "pid"}, sort_keys=True)
+    for out in (sc.dispatch("restart_services", "build", runs, *faces), ms.restart_services(True)):
+        assert shape(out) == shape(store) and isinstance(out["pid"], int)
+    assert sc.dispatch("restart_services", None, runs, *faces)["started"] is True
+    for _ in range(100):
+        argv = (tmp_path / "argv").read_text().splitlines() if (tmp_path / "argv").exists() else []
+        if len(argv) == 4:
+            break
+        time.sleep(0.05)
+    assert argv == ["--restart --build"] * 3 + ["--restart"]
+
+    log = runs / "restart.log"
+    log.write_text("cockpit: restart begin\ncockpit: stopping\n")
+    assert bs.health(runs, 1)["restart"] == {"state": "running", "last": "cockpit: stopping"}
+    log.write_text("x\ncockpit: ERROR pnpm build failed\n")
+    assert bs._restart_state(runs)["state"] == "failed"
+    log.write_text("x\ncockpit: restart done\n\n")
+    assert bs._restart_state(runs)["state"] == "done"
+    log.unlink()
+    assert bs._restart_state(runs) == {"state": "idle", "last": ""}

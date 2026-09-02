@@ -62,6 +62,8 @@ set -u
 
 DO_STOP=0
 DO_STATUS=0
+DO_RESTART=0
+DO_BUILD=0
 NO_RUNTIME=0
 NO_RENDER=0
 SESSION_DIR="runs/session-main"          # cockpit's canonical resident session
@@ -76,6 +78,7 @@ physical-harness cockpit -- the single entry that starts EVERYTHING
 usage: cockpit [--port N] [--no-render] [--no-runtime]
        cockpit --status
        cockpit --stop
+       cockpit --restart [--build]
        cockpit -h|--help
 
   --status       print system health and exit, starting nothing. THE FIRST
@@ -117,6 +120,13 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
                  cockpit spawned counts as spawned (ownership survives a
                  console-only restart); one started outside cockpit is left
                  running. Reaps every session (main + robocasa) it recorded.
+  --restart      --stop then the normal start, DETACHED (setsid; this call
+                 returns at once -- the console button that presses it is about
+                 to die). Progress goes to runs/restart.log, which health()
+                 reports as its "restart" row. --with-policy is re-added only if
+                 the policy server was SERVING before (never by default).
+  --build        with --restart: run 'pnpm build' in \$PH_STATION first; a
+                 failed build aborts the restart and starts nothing.
   -h, --help     show this help
 
 Before serving it renders \$DSH_HOME/cordis.patch.yml from
@@ -174,6 +184,7 @@ TRUSTED_HOST="$(_env_get PH_TRUSTED_HOST)"
 WITH_MODEL="$(_env_get PH_WITH_MODEL)"; WITH_MODEL="${WITH_MODEL:-0}"
 WITH_POLICY="$(_env_get PH_WITH_POLICY)"; WITH_POLICY="${WITH_POLICY:-0}"
 POLICY_CHECKPOINT="$(_env_get PH_POLICY_CHECKPOINT)"
+ORIG_ARGS=("$@")
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -181,6 +192,8 @@ while [ $# -gt 0 ]; do
     --port=*) PORT="${1#*=}"; shift;;
     --trusted-host)   TRUSTED_HOST="${2:?--trusted-host needs a value}"; shift 2;;
     --trusted-host=*) TRUSTED_HOST="${1#*=}"; shift;;
+    --restart) DO_RESTART=1; shift;;
+    --build)   DO_BUILD=1; shift;;
     --stop)   DO_STOP=1; shift;;
     --status) DO_STATUS=1; shift;;
     --no-runtime) NO_RUNTIME=1; shift;;
@@ -192,6 +205,9 @@ while [ $# -gt 0 ]; do
     *) echo "cockpit: unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
 done
+# --restart re-invokes the start path with every arg but --restart/--build.
+START_ARGS=()
+for a in "${ORIG_ARGS[@]}"; do case "$a" in --restart|--build) ;; *) START_ARGS+=("$a");; esac; done
 
 # --- --status: the first command when something is wrong --------------------
 # Starts nothing, stops nothing, needs no node. It PRINTS board.store.health --
@@ -416,6 +432,57 @@ print("cockpit: policy server " + (f"NOT stopped: {p['error']}" if p.get("error"
 PYEOF
   fi
   [ "$stopped_any" -eq 0 ] && echo "cockpit: no pidfile under $REPO/runs/*/cockpit.pids; nothing to stop" >&2
+  exit 0
+fi
+
+# --- --restart: stop + (build) + start, from a process nobody is waiting on --
+# The console's restart button calls this through board.store.restart_services,
+# i.e. from the very web server --stop is about to kill, so the FIRST thing is
+# to re-exec detached and return; the detached copy drives --stop and the start
+# path as children of itself (their stderr lands in the same log) and ends with
+# ONE terminal line -- "restart done" or "ERROR ..." -- which health() reads as
+# the state. The policy server is re-added ONLY if it was serving: the operator
+# starts pi0.5 by hand, never as a side effect of a restart.
+if [ "$DO_RESTART" -eq 1 ]; then
+  RESTART_LOG="$REPO/runs/restart.log"
+  mkdir -p "$REPO/runs"
+  if [ -z "${PH_COCKPIT_DETACHED:-}" ]; then
+    : > "$RESTART_LOG"
+    PH_COCKPIT_DETACHED=1 setsid "${BASH:-bash}" "$0" "${ORIG_ARGS[@]}" >>"$RESTART_LOG" 2>&1 </dev/null &
+    echo "cockpit: restarting in the background (pid $!, log $RESTART_LOG)" >&2
+    exit 0
+  fi
+  unset PH_COCKPIT_DETACHED   # children (and the console they start) must not inherit it
+  echo "cockpit: restart begin $(date '+%F %T')${DO_BUILD:+ (build=$DO_BUILD)}"
+  RESTART_PY="${PH_BOARD_PYTHON:-$REPO/.venv/bin/python}"
+  [ -x "$RESTART_PY" ] || RESTART_PY="$(command -v python3)"
+  POLICY_WAS_SERVING="$(cd "$REPO" && PYTHONPATH="$REPO" "$RESTART_PY" - "$REPO/runs" <<'PYEOF'
+import sys
+from board.store import policy_server
+print(int(bool(policy_server("status", sys.argv[1])["serving"])))
+PYEOF
+)"
+  echo "cockpit: policy server was $([ "$POLICY_WAS_SERVING" = 1 ] && echo SERVING || echo 'not serving')"
+  echo "cockpit: stopping"
+  "${BASH:-bash}" "$0" --stop || echo "cockpit: WARNING --stop exited $? (continuing)"
+  if [ "$DO_BUILD" -eq 1 ]; then
+    echo "cockpit: building ph-station in $PH_STATION"
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    # shellcheck disable=SC1091
+    [ -s "$NVM_DIR/nvm.sh" ] && { . "$NVM_DIR/nvm.sh"; nvm use 22 >/dev/null; }
+    if ! (cd "$PH_STATION" && pnpm build); then
+      echo "cockpit: ERROR pnpm build failed in $PH_STATION; restart aborted, nothing started"
+      exit 1
+    fi
+  fi
+  [ "$POLICY_WAS_SERVING" = 1 ] && START_ARGS+=(--with-policy)
+  echo "cockpit: starting: cockpit ${START_ARGS[*]}"
+  if "${BASH:-bash}" "$0" "${START_ARGS[@]}"; then
+    echo "cockpit: restart done"
+  else
+    echo "cockpit: ERROR start path exited $? (see above); restart failed"
+    exit 1
+  fi
   exit 0
 fi
 

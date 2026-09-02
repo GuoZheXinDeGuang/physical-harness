@@ -1840,6 +1840,49 @@ def policy_server(action: str = "status", runs_dir: str | Path = ".",
         pidfile.unlink(missing_ok=True)
     return _policy_state()
 
+
+# --- restart everything: the console cannot restart itself -------------------
+_COCKPIT = Path(__file__).resolve().parent.parent / "scripts" / "cockpit"
+
+
+def restart_services(runs_dir: str | Path = ".", build: bool = False) -> dict:
+    """Kick ``scripts/cockpit --restart [--build]`` fully detached and return at
+    once -> ``{"started", "pid", "log"}`` (+``"error"`` when the spawn failed).
+
+    The caller is usually the console's MCP server, i.e. a process the restart
+    is about to kill, so nothing here waits: setsid, stdio on
+    ``runs/restart.log``, and the cockpit itself re-execs once more (see its
+    --restart block). Progress is read back by ``health()["restart"]``.
+    ``$PH_COCKPIT_BIN`` overrides the script (tests point it at a stub).
+    """
+    runs = Path(runs_dir)
+    log = runs / "restart.log"
+    argv = [os.environ.get("PH_COCKPIT_BIN") or str(_COCKPIT), "--restart"] + (["--build"] if build else [])
+    try:
+        runs.mkdir(parents=True, exist_ok=True)
+        with open(log, "ab") as fh:
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fh, stderr=fh,
+                                    start_new_session=True)
+    except OSError as exc:
+        return {"started": False, "pid": None, "log": str(log), "error": f"spawn failed: {exc}"}
+    return {"started": True, "pid": proc.pid, "log": str(log)}
+
+
+def _restart_state(runs_dir: Path) -> dict:
+    """``{"state": idle|running|failed|done, "last": <last log line>}`` from
+    runs/restart.log: the detached cockpit ends every restart with either
+    ``restart done`` or an ``ERROR`` line, so the last line IS the state.
+    ponytail: a restart that died mid-way (SIGKILL) reads running forever until
+    the next restart truncates the log; add a pid check if that ever bites."""
+    try:
+        lines = (Path(runs_dir) / "restart.log").read_text(errors="replace").splitlines()
+    except OSError:
+        lines = []
+    last = next((ln for ln in reversed(lines) if ln.strip()), "")
+    state = ("idle" if not last else "done" if "restart done" in last
+             else "failed" if "ERROR" in last else "running")
+    return {"state": state, "last": last}
+
 # --- system health: the ONE first command --------------------------------------
 #
 # Three incidents, one shape: a piece of the pipeline was dead and every face
@@ -1881,7 +1924,7 @@ def _count(d: Path) -> int:
 def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> dict:
     """Is my system healthy RIGHT NOW -- one call, whole pipeline.
 
-    ``{ok, problems, sessions, console, model, policy, ts}``.
+    ``{ok, problems, sessions, console, model, policy, restart, ts}``.
 
     * ``sessions`` -- every INTAKE session under runs/, i.e. every dir with an
       ``inbox/``. That is the exact set a brief can be dropped into, including a
@@ -1899,6 +1942,9 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
       part of the stack, in which case a stopped server is the silent failure.
     * ``policy`` -- ``_policy_state()`` (pi0.5 on :8000: running/serving/
       checkpoint_sha); flagged only under ``PH_WITH_POLICY=1``, same rule.
+    * ``restart`` -- ``{state, last}`` of the last ``cockpit --restart`` read
+      from runs/restart.log (idle|running|failed|done), so the panel can show
+      progress once the console is back.
 
     Each session row also carries ``state``: ``up`` (runtime alive), ``dormant``
     (dead runtime, nothing queued -- evidence left in place, never a problem),
@@ -1975,7 +2021,8 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
                         f"{_POLICY_START_HINT}")
     return {"ok": not problems, "problems": problems, "sessions": sessions,
             "console": {"port": int(console_port), "serving": serving},
-            "model": model, "policy": policy, "ts": time.time()}
+            "model": model, "policy": policy, "restart": _restart_state(runs_dir),
+            "ts": time.time()}
 
 
 # --- markdown feeds ---------------------------------------------------------
