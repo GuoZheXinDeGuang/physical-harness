@@ -19,6 +19,16 @@ policy = "plugins.embodiment_robocasa.lunch_driver:provider"
 planner = "plugins.mission_pack_lunch.planner:provider"
 catalogue = "plugins.mission_pack_lunch.planner:CATALOGUE"
 records = "plugins.mission_pack_lunch.planner:SKILL_RECORDS"
+# the record names this card's planner selects (== SKILL_RECORDS keys; a
+# base-lane test pins them) -- the vault's USES edges read this line as data
+skills = [
+    "carry_cold0", "carry_cold1", "carry_hot0", "carry_hot1", "grasp_cold0",
+    "grasp_cold1", "grasp_hot0", "grasp_hot1", "nav_cold0", "nav_cold1", "nav_hot0",
+    "nav_hot1", "pack_cold0", "pack_cold1", "pack_hot0", "pack_hot1", "report",
+    "sort_temp", "survey", "v_at_cold0", "v_at_cold1", "v_at_hot0", "v_at_hot1",
+    "v_grasped_cold0", "v_grasped_cold1", "v_grasped_hot0", "v_grasped_hot1",
+    "v_packed_cold0", "v_packed_cold1", "v_packed_hot0", "v_packed_hot1"
+]
 initial_facts = "plugins.mission_pack_lunch.planner:INITIAL_FACTS"
 oracles = "plugins.mission_pack_lunch.planner:ORACLES"
 predicates = "plugins.mission_pack_lunch.planner:PREDICATES"

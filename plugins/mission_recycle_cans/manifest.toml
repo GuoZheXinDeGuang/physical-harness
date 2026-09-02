@@ -21,6 +21,16 @@ policy = "plugins.embodiment_robocasa.recycle_driver:provider"
 planner = "plugins.mission_recycle_cans.planner:provider"
 catalogue = "plugins.mission_recycle_cans.planner:CATALOGUE"
 records = "plugins.mission_recycle_cans.planner:SKILL_RECORDS"
+# the record names this card's planner selects (== SKILL_RECORDS keys; a
+# base-lane test pins them) -- the vault's USES edges read this line as data
+skills = [
+    "carry_can1", "carry_can2", "carry_can3", "carry_can4", "drop_can1", "drop_can2",
+    "drop_can3", "drop_can4", "grasp_can1", "grasp_can2", "grasp_can3", "grasp_can4",
+    "nav_can1", "nav_can2", "nav_can3", "nav_can4", "plan_order", "report", "survey",
+    "sweep", "v_at_can1", "v_at_can2", "v_at_can3", "v_at_can4", "v_grasped_can1",
+    "v_grasped_can2", "v_grasped_can3", "v_grasped_can4", "v_placed_can1",
+    "v_placed_can2", "v_placed_can3", "v_placed_can4"
+]
 initial_facts = "plugins.mission_recycle_cans.planner:INITIAL_FACTS"
 oracles = "plugins.mission_recycle_cans.planner:ORACLES"
 predicates = "plugins.mission_recycle_cans.planner:PREDICATES"

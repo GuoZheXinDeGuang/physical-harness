@@ -12,9 +12,9 @@ no statistic: every number is verbatim from ``bundle_evidence``/``effects``; the
 only derived scalar is ``board.store._delta`` (governed_rate - base_rate).
 
 Five node kinds (skill / class / benchmark / package / capability), one edge
-kind with a fixed 14-relation vocabulary (DESCENDS_FROM, GOVERNS, REQUIRES,
+kind with a fixed 16-relation vocabulary (DESCENDS_FROM, GOVERNS, REQUIRES,
 PROVIDES, BINDS, EVIDENCED_BY, CLAIMS, SUPERSEDES, MOUNTED_IN, IN_CLASS,
-DEPENDS_ON, INSTANCE_OF, BOUND_TO, EVIDENCED_ON); each edge names its mechanical ``rule`` and
+DEPENDS_ON, INSTANCE_OF, BOUND_TO, EVIDENCED_ON, COVERS, USES); each edge names its mechanical ``rule`` and
 the ``via`` artifact it was read from, so an auditor re-derives it. Skill nodes
 come from two doors: legacy promoted records (``runs/*/skills``, id = digest,
 status from the store) and the static library (``skill-library/records``,
@@ -37,7 +37,8 @@ from board import cards as bc
 from board import store as bs
 from harness.definitions import CAPABILITIES
 from harness.manifest import PLUGINS_ROOT
-from harness.protocol import (SkillRecordV0, skill_benchmarks, skill_class, skill_dependencies,
+from harness.protocol import (SkillRecordV0, benchmark_coverage, mission_uses, skill_benchmarks,
+                              skill_class, skill_dependencies,
                               skill_instances)
 
 SCHEMA_VERSION = 1
@@ -221,11 +222,16 @@ def _package_nodes(cards: list[dict]):
         provides = c["contributes"]["mounts"]
         for cap in provides:
             providers.setdefault(cap, []).append((c["dir"], enabled))
+        # a mission card: [task_bindings.<task>].skills names the records its planner selects
+        bindings = m.get("task_bindings") or {}
+        mission = {t: sorted(b.get("skills") or ()) for t, b in bindings.items() if b.get("skills")}
         nodes.append({
             "kind": "package",
             "id": c["dir"],
             "name": c["name"],
             "provides": provides,
+            **({"tasks": sorted(mission), "skills": len({s for ss in mission.values() for s in ss})}
+               if mission else {}),
             "binds": {"tasks": c["contributes"]["task_bindings"],
                       "campaigns": c["contributes"]["campaigns"]},
             "bundles": c["contributes"]["bundles"],
@@ -381,16 +387,29 @@ def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR,
             add("DEPENDS_ON", f"skill:{src}", f"skill:{dst}",
                 {"causal": "requires∩ensures", "uses": "plan uses"}.get(rule, rule),
                 f"skill-library/records/{src}.json")
-    for name, benches in skill_benchmarks(list(library_recs.values()) + plans, benchmarks).items():
+    # mission cards as data: card_dir -> task -> binding table (COVERS / USES /
+    # the second EVIDENCED_ON route -- a skill a covered mission uses)
+    mission_cards = {c["dir"]: c["manifest"].get("task_bindings") or {} for c in cards}
+    for name, benches in skill_benchmarks(list(library_recs.values()) + plans, benchmarks,
+                                          mission_cards).items():
         for bench in benches:
             ev = library_recs[name].evidence.get(benchmarks[bench].get("embodiment"))
             add("EVIDENCED_ON", f"skill:{name}", f"benchmark:{bench}", "harness.protocol.skill_benchmarks",
                 benchmarks[bench]["card"], (ev.n, ev.k) if ev else None)
+    missions: dict[str, list[str]] = {}
+    for bench, card_dir, _task in benchmark_coverage(benchmarks, mission_cards):
+        missions.setdefault(bench, []).append(card_dir)
+        add("COVERS", f"benchmark:{bench}", card_dir, "benchmark tasks ∩ task_bindings",
+            f"{benchmarks[bench]['card']}/manifest.toml + {card_dir}/manifest.toml")
+    for card_dir, skill in mission_uses(mission_cards):
+        add("USES", card_dir, f"skill:{skill}", "manifest task_bindings.skills",
+            f"{card_dir}/manifest.toml")
     class_nodes = [{"kind": "class", "id": f"class:{c}", "name": c, "skills": n, "annotations": None}
                    for c, n in classes.items()]
     benchmark_nodes = [{"kind": "benchmark", "id": f"benchmark:{b}", "name": b,
                         "embodiment": spec.get("embodiment"), "tasks": list(spec.get("tasks") or []),
-                        "arms": list(spec.get("arms") or []), "card": spec["card"], "annotations": None}
+                        "arms": list(spec.get("arms") or []), "card": spec["card"],
+                        "missions": sorted(set(missions.get(b, ()))), "annotations": None}
                        for b, spec in benchmarks.items()]
 
     # status: promoted (claimed + judgement-established) / candidate; then retire

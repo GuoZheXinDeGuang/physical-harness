@@ -1576,12 +1576,14 @@ workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 acto
 - `skill_class(rec)` → 上面 9.1 的推导规则，一条技能一个 class。
 - `skill_dependencies(records)` → `(src, dst, rule)`：`causal` = `src.requires` 里某个**带参**谓词与 `dst.ensures` 逐位相等（ground 实例 `at(can1)`←`at(can1)`，或泛型同名变量 `at(obj)`←`at(obj)`；自环排除）；零元谓词（`gripper_free()`、`water_on()`）是资源，不产生依赖；`uses` = plan 记录图上每个节点的 `(plan.id, node.skill)`，去重保序。
 - `skill_instances(records)` → `[(instance, generic)]`：同 class 且 `instance.name == generic.name + "_" + 后缀`，最长的 generic 名胜出。
-- `skill_benchmarks(records, cards)` → `{技能: [benchmark]}`：卡的 `embodiment` 在记录 `bindings` 里，且（卡没写 `tasks`，或某条 plan 记录的 task 在 `tasks` 里且用了该技能）。benchmark 卡的 `embodiment` / `tasks` 从 `plugins/benchmark_*/manifest.toml` 的 `[benchmarks.<name>]` 读，当数据看。
+- `skill_benchmarks(records, cards, mission_cards)` → `{技能: [benchmark]}`：卡的 `embodiment` 在记录 `bindings` 里，且（卡没写 `tasks`，或某条 plan 记录的 task 在 `tasks` 里且用了该技能，或 benchmark 覆盖的某张 mission 卡在 `skills` 里列了它）。benchmark 卡的 `embodiment` / `tasks` 从 `plugins/benchmark_*/manifest.toml` 的 `[benchmarks.<name>]` 读，当数据看。
+- `benchmark_coverage(cards, mission_cards)` → `[(benchmark, 卡目录, task)]`：benchmark 的 task 是某张 mission 卡 `[task_bindings.<task>]` 的键，且同一 embodiment（binding 的 `env` ref 指向的 `embodiment_<x>` 卡）；`mission_uses(mission_cards)` → `[(卡目录, 技能)]`，读 binding 的 `skills` 行。
+- mission 卡的 `[task_bindings.<task>]` 多一行 `skills = [...]`（排序后的记录名，与规划器 `SKILL_RECORDS` 的键一一相等，`tests/test_mission_card_skills.py` 钉死）——board/ 只读这一行，永不 import `SKILL_RECORDS`。
 
 `board/vault.py:build_graph` 把静态技能库和这三条关系折进**同一张图**——控制台看到的技能图就是这一张，没有第二处：
 
 - 节点：`skill:<name>`（库记录，status `library`）、`class:<c>`、`benchmark:<name>`，与既有的 `package` / `capability` 并列（5 类）。
-- 边：`IN_CLASS`、`DEPENDS_ON`（rule `requires∩ensures` / `plan uses`）、`INSTANCE_OF`（rule `name prefix within class`，via 实例记录路径；generic 节点带 `instances: n`）、`BOUND_TO`（bindings 的 `plugins.<card>:attr` → 卡目录）、`EVIDENCED_ON`（有证据时额外带 `n` / `k`），与既有血缘边并列（14 种关系）。
+- 边：`IN_CLASS`、`DEPENDS_ON`（rule `requires∩ensures` / `plan uses`）、`INSTANCE_OF`（rule `name prefix within class`，via 实例记录路径；generic 节点带 `instances: n`）、`BOUND_TO`（bindings 的 `plugins.<card>:attr` → 卡目录）、`EVIDENCED_ON`（有证据时额外带 `n` / `k`）、`COVERS`（benchmark → mission 卡，rule `benchmark tasks ∩ task_bindings`，via 两份 manifest；benchmark 节点带 `missions: [卡目录]`）、`USES`（mission 卡 → `skill:<name>`，rule `manifest task_bindings.skills`，via 该卡 manifest；mission 卡的 package 节点带 `tasks: [...]` / `skills: n`），与既有血缘边并列（16 种关系）。
 - 记录当数据读（json → `SkillRecordV0.from_dict`，读不动的文件跳过），`board/` 依旧零插件导入。
 
 **能力、卡片、技能的边界**（图里三层，各答一个问题）：

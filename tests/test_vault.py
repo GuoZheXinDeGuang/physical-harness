@@ -226,6 +226,12 @@ def _library_tree(tmp_path):
         '[benchmarks.fake_v0]\nembodiment = "robocasa"\ntasks = ["t1"]\narms = ["scripted", "pi05"]\n')
     (plugins / "policy_fake").mkdir()
     (plugins / "policy_fake" / "manifest.toml").write_text('name = "policy_fake"\n')
+    # a mission card binding t1 on robocasa: its skills line is the USES source and
+    # the second EVIDENCED_ON route (grasp_x has no plan, only this card)
+    (plugins / "mission_fake").mkdir()
+    (plugins / "mission_fake" / "manifest.toml").write_text(
+        '[task_bindings.t1]\nenv = "plugins.embodiment_robocasa:provider"\n'
+        'skills = ["carry_x", "grasp_x"]\n')
     runs = tmp_path / "runs"
     runs.mkdir()
     return runs, plugins, lib
@@ -251,8 +257,10 @@ def test_library_record_folds_to_skill_class_nodes(tmp_path):
     assert ("IN_CLASS", "skill:carry_x", "class:carry") in edges
     assert ("IN_CLASS", "skill:grasp_x", "class:grasp") in edges
     assert ("BOUND_TO", "skill:carry_x", "plugins/policy_fake") in edges
-    # nothing in the fold is nameless: every edge endpoint is a node
-    assert {e["src"] for e in g["edges"]} | {e["dst"] for e in g["edges"]} <= set(by_id)
+    # nothing in the fold is nameless: every edge endpoint is a node (BINDS points
+    # at a task NAME, never a node -- same as the live graph)
+    named = [e for e in g["edges"] if e["rel"] != "BINDS"]
+    assert {e["src"] for e in named} | {e["dst"] for e in named} <= set(by_id)
     assert bv.vault_doctor(g, tmp_path / "no-annotations") == []
 
 
@@ -280,11 +288,38 @@ def test_benchmark_card_yields_evidenced_on(tmp_path):
     assert by_id["benchmark:fake_v0"] == {
         "kind": "benchmark", "id": "benchmark:fake_v0", "name": "fake_v0", "embodiment": "robocasa",
         "tasks": ["t1"], "arms": ["scripted", "pi05"], "card": "plugins/benchmark_fake",
-        "annotations": None}
+        "missions": ["plugins/mission_fake"], "annotations": None}
     ev = {e["src"]: e for e in g["edges"] if e["rel"] == "EVIDENCED_ON"}
-    assert set(ev) == {"skill:carry_x"}  # grasp_x: no plan for t1 uses it
+    # carry_x via the plan record; grasp_x via the covered mission's skills line
+    assert set(ev) == {"skill:carry_x", "skill:grasp_x"}
     assert ev["skill:carry_x"]["dst"] == "benchmark:fake_v0"
     assert (ev["skill:carry_x"]["n"], ev["skill:carry_x"]["k"]) == (10, 7)  # verbatim
+    assert "n" not in ev["skill:grasp_x"]  # no evidence -> no invented number
+
+
+def test_mission_card_yields_covers_and_uses(tmp_path):
+    g = _fold(tmp_path)
+    by_id = {n["id"]: n for n in g["nodes"]}
+    assert by_id["plugins/mission_fake"]["tasks"] == ["t1"]
+    assert by_id["plugins/mission_fake"]["skills"] == 2
+    assert "tasks" not in by_id["plugins/policy_fake"]  # not a mission card
+    covers = [e for e in g["edges"] if e["rel"] == "COVERS"]
+    assert [(e["src"], e["dst"], e["rule"], e["via"]) for e in covers] == [
+        ("benchmark:fake_v0", "plugins/mission_fake", "benchmark tasks ∩ task_bindings",
+         "plugins/benchmark_fake/manifest.toml + plugins/mission_fake/manifest.toml")]
+    uses = [e for e in g["edges"] if e["rel"] == "USES"]
+    assert [(e["src"], e["dst"], e["rule"], e["via"]) for e in uses] == [
+        ("plugins/mission_fake", "skill:carry_x", "manifest task_bindings.skills",
+         "plugins/mission_fake/manifest.toml"),
+        ("plugins/mission_fake", "skill:grasp_x", "manifest task_bindings.skills",
+         "plugins/mission_fake/manifest.toml")]
+    # a benchmark on another embodiment covers nothing, whatever the task names
+    (tmp_path / "plugins" / "benchmark_other").mkdir()
+    (tmp_path / "plugins" / "benchmark_other" / "manifest.toml").write_text(
+        '[benchmarks.other_v0]\nembodiment = "libero"\ntasks = ["t1"]\n')
+    g2 = bv.build_graph(tmp_path / "runs", tmp_path / "plugins", annotations=None,
+                        library=tmp_path / "records")
+    assert [e["src"] for e in g2["edges"] if e["rel"] == "COVERS"] == ["benchmark:fake_v0"]
 
 
 def test_library_fold_byte_deterministic(tmp_path):

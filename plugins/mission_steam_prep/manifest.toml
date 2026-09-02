@@ -20,6 +20,14 @@ policy = "plugins.embodiment_robocasa.steam_driver:provider"
 planner = "plugins.mission_steam_prep.planner:provider"
 catalogue = "plugins.mission_steam_prep.planner:CATALOGUE"
 records = "plugins.mission_steam_prep.planner:SKILL_RECORDS"
+# the record names this card's planner selects (== SKILL_RECORDS keys; a
+# base-lane test pins them) -- the vault's USES edges read this line as data
+skills = [
+    "burner_pot", "carry_veg", "faucet_off", "faucet_on", "grasp_pot", "grasp_veg",
+    "plan", "pot_veg", "regrasp_veg", "report", "sink_veg", "survey", "v_at_pot",
+    "v_pot_held", "v_pot_on_burner", "v_veg_grasped", "v_veg_held", "v_veg_in_pot",
+    "v_veg_in_sink", "v_water_off", "v_water_on"
+]
 initial_facts = "plugins.mission_steam_prep.planner:INITIAL_FACTS"
 oracles = "plugins.mission_steam_prep.planner:ORACLES"
 predicates = "plugins.mission_steam_prep.planner:PREDICATES"

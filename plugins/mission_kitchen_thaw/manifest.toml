@@ -32,6 +32,13 @@ policy = "plugins.embodiment_robocasa.kitchen_driver:provider"
 planner = "plugins.mission_kitchen_thaw.planner:provider"
 catalogue = "plugins.mission_kitchen_thaw.planner:CATALOGUE"
 records = "plugins.mission_kitchen_thaw.planner:SKILL_RECORDS"
+# the record names this card's planner selects (== SKILL_RECORDS keys; a
+# base-lane test pins them) -- the vault's USES edges read this line as data
+skills = [
+    "close", "grasp_meat", "nav_fridge", "nav_micro", "place_meat", "plan", "press",
+    "report", "survey", "v_at_fridge", "v_carry", "v_closed", "v_grasped", "v_inside",
+    "v_on"
+]
 initial_facts = "plugins.mission_kitchen_thaw.planner:INITIAL_FACTS"
 oracles = "plugins.mission_kitchen_thaw.planner:ORACLES"
 predicates = "plugins.mission_kitchen_thaw.planner:PREDICATES"

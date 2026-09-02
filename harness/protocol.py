@@ -264,22 +264,62 @@ def skill_instances(records: Any) -> list[tuple[str, str]]:
     return out
 
 
-def skill_benchmarks(records: Any, benchmark_cards: Mapping[str, Mapping[str, Any]]
+def binding_embodiment(binding: Mapping[str, Any]) -> str | None:
+    """The embodiment a ``[task_bindings.<task>]`` rides: the card its ``env``
+    ref names minus the ``embodiment_`` prefix (``plugins.embodiment_robocasa:
+    provider`` -> ``robocasa``); None when the binding rides the folded base."""
+    module = str(binding.get("env") or "").split(":")[0]
+    parts = module.split(".")
+    if len(parts) < 2 or parts[0] != "plugins" or not parts[1].startswith("embodiment_"):
+        return None
+    return parts[1][len("embodiment_"):]
+
+
+def benchmark_coverage(benchmark_cards: Mapping[str, Mapping[str, Any]],
+                       mission_cards: Mapping[str, Mapping[str, Mapping[str, Any]]]
+                       ) -> list[tuple[str, str, str]]:
+    """``(benchmark, card_dir, task)`` when a benchmark task is a mission card's
+    ``task_bindings`` key on the same embodiment. ``mission_cards`` is
+    card_dir -> task -> binding table (manifests read as data)."""
+    out = []
+    for bname, card in sorted(benchmark_cards.items()):
+        for card_dir, bindings in sorted(mission_cards.items()):
+            for task in sorted(set(card.get("tasks") or ()) & set(bindings)):
+                if binding_embodiment(bindings[task]) == card.get("embodiment"):
+                    out.append((bname, card_dir, task))
+    return out
+
+
+def mission_uses(mission_cards: Mapping[str, Mapping[str, Mapping[str, Any]]]
+                 ) -> list[tuple[str, str]]:
+    """``(card_dir, skill)`` from every binding's ``skills`` list, deduped, sorted."""
+    return sorted({(card_dir, str(s)) for card_dir, bindings in mission_cards.items()
+                   for b in bindings.values() for s in (b.get("skills") or ())})
+
+
+def skill_benchmarks(records: Any, benchmark_cards: Mapping[str, Mapping[str, Any]],
+                     mission_cards: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None
                      ) -> dict[str, list[str]]:
     """Skill name -> benchmark names. A skill is in a benchmark when it is bound
-    on the card's ``embodiment`` and a plan record for one of the card's
-    ``tasks`` uses it (or the card lists no tasks)."""
+    on the card's ``embodiment`` and either a plan record for one of the card's
+    ``tasks`` uses it or a mission card the benchmark covers
+    (``benchmark_coverage``) lists it in ``skills`` (or the card lists no tasks)."""
     skills, plans = _skills_and_plans(records)
     used: dict[str, set[str]] = {}
     for _pid, task, nodes in plans:
         used.setdefault(task, set()).update(str(n["skill"]) for n in nodes if n.get("skill"))
+    covered: dict[str, set[str]] = {}
+    for bname, card_dir, task in benchmark_coverage(benchmark_cards, mission_cards or {}):
+        covered.setdefault(bname, set()).update(
+            str(s) for s in (mission_cards[card_dir][task].get("skills") or ()))
     out: dict[str, list[str]] = {}
     for r in skills:
         out[r.name] = []
         for bname, card in sorted(benchmark_cards.items()):
             tasks = card.get("tasks") or ()
             if card.get("embodiment") in r.bindings and (
-                    not tasks or any(r.name in used.get(t, ()) for t in tasks)):
+                    not tasks or r.name in covered.get(bname, ())
+                    or any(r.name in used.get(t, ()) for t in tasks)):
                 out[r.name].append(bname)
     return out
 
