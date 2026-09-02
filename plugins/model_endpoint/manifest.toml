@@ -21,4 +21,4 @@ ref = "plugins.model_endpoint:provider"
 # enter the plan sha, so WHICH endpoint answered is configuration identity --
 # the api key rides an env var name, never a value, keeping secrets out of the
 # hash chain.
-params = { preset = "local_sglang" }
+params = { preset = "deepseek", model = "deepseek-v4-flash-vision-exp" }
