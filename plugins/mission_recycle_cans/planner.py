@@ -139,6 +139,18 @@ def _emit_plan() -> Mapping:
     }, sort_keys=True))
 
 
+#: Stage word of a node id -> the embodiment_robocasa recovery a no_progress
+#: replan inserts before it (keyed by node id, not failure_mode, so a done
+#: recover-<id> re-inserts byte-identically under replan_monotone).
+_RECOVERY: dict[str, str] = {"nav": "redock_retry", "carry": "redock_retry",
+                            "grasp": "regrasp_kitchen", "drop": "reapproach"}
+
+
+def _recover(plan: Mapping, node_id: str) -> Mapping:
+    strategy = _RECOVERY.get(node_id.split("-")[0])
+    return protocol.insert_recovery(plan, node_id, strategy) if strategy else plan
+
+
 class RecycleCansPlanner:
     """Deterministic emitter of the fixed 32-node per-can mission graph; the
     in-episode retry is the base loop re-running a failed node (max_replans)."""
@@ -155,17 +167,17 @@ class RecycleCansPlanner:
         # every done recover-<id> before answering this fault.
         for nid in fault.get("nodes_done") or ():
             if nid.startswith("recover-"):
-                plan = protocol.insert_recovery(plan, nid[len("recover-"):], "reapproach")
+                plan = _recover(plan, nid[len("recover-"):])
         if fault.get("kind") == "no_progress":
             # The loop refused this graph twice at that node: answer with the
-            # card's reach repair (embodiment_robocasa reapproach) before it
-            # instead of a third copy, which would end the task.
-            plan = protocol.insert_recovery(plan, fault["node"], "reapproach")
+            # card's repair for that stage before it instead of a third copy,
+            # which would end the task.
+            plan = _recover(plan, fault["node"])
         return plan
 
     @property
     def identity(self) -> str:
-        return "recycle_cans_planner@v2"  # v2: answers no_progress with a recovery node
+        return "recycle_cans_planner@v3"  # v3: per-stage recovery table
 
 
 def provider(**params: Any) -> RecycleCansPlanner:
