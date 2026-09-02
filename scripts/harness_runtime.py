@@ -607,6 +607,9 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
     # Executor arm (skill_library.ARMS; workload refuses an unknown one): pi05
     # runs each segment its record binds to the policy card, scripted elsewhere.
     wbrief["arm"] = brief.get("arm", "scripted")
+    # Segment clips (harness.media): opt-in on a task brief, on for suite/evolve.
+    if brief.get("media"):
+        wbrief["media_dir"] = str(rt.inbox.parent / "media")
     return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations,
                         segment_retries=int(binding.get("segment_retries", 0)),
@@ -880,7 +883,7 @@ _CANCEL_GRACE_S = 10.0
 
 
 def _run_watched(cmd: list[str], env: dict, rt: Runtime, brief_id: str,
-                 out: Path, what: str) -> tuple[int, str]:
+                 out: Path, what: str, tick=None) -> tuple[int, str]:
     """``subprocess.run`` for a campaign/rsi chain, plus operator cancellation.
 
     ``start_new_session=True`` puts the child in its OWN process group, which is
@@ -897,6 +900,9 @@ def _run_watched(cmd: list[str], env: dict, rt: Runtime, brief_id: str,
     seals ``runtime.task_cancelled`` rather than ``runtime.task_error``. The
     pgid is also dropped beside the claimed brief so a boot after a SIGKILL can
     reap the orphan (``_reap_orphan``) before re-queueing.
+
+    ``tick`` (optional, zero-arg) runs on every poll while the child is alive --
+    the evolve loop seals its finished rounds off campaign.json as they land.
     """
     proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -912,6 +918,8 @@ def _run_watched(cmd: list[str], env: dict, rt: Runtime, brief_id: str,
                 _, err = proc.communicate(timeout=_CANCEL_POLL_S)
                 return proc.returncode, err
             except subprocess.TimeoutExpired:
+                if tick is not None:
+                    tick()
                 if _cancel_requested(rt, brief_id):
                     raise RuntimeError(f"{what} cancelled by the operator")
     except BaseException:
@@ -1034,6 +1042,61 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
     })
 
 
+def _seal_rounds(rt: Runtime, brief_id: str, task: str, path: Path) -> None:
+    """Seal one ``rsi_step`` row per campaign.json round not yet in the chain.
+    Idempotent by (task, round): a resumed campaign seals only its new rounds."""
+    if not path.exists():
+        return
+    try:
+        doc = json.loads(path.read_text())
+    except json.JSONDecodeError:  # mid-rename never happens (tmp+rename), but stay tolerant
+        return
+    sealed = {r["data"].get("round") for r in rt.log.rows()
+              if r["kind"] == "rsi_step" and r["data"].get("task") == task}
+    for rd in doc.get("rounds") or ():
+        if rd["round"] not in sealed:
+            if rd.get("proposal"):   # the inbox entry this round consumed, sealed first
+                rt.log.append("rsi_proposal_applied", {"brief": brief_id, "task": task,
+                                                       "round": rd["round"], **rd["proposal"]})
+            rt.log.append("rsi_step", {"brief": brief_id, "task": task,
+                                       **{k: rd[k] for k in ("round", "tried", "before", "after",
+                                                             "best", "published", "suite_sha")}})
+
+
+def _run_evolve(brief: dict, rt: Runtime, brief_id: str) -> None:
+    """The LIGHTWEIGHT evolution loop: `{"kind":"evolve","task":"<task>","seeds":[lo,hi],
+    "rounds":N,"arm":"auto"}` spawns scripts/evolve.py as a watched subprocess (same
+    cancel/killpg as the campaign paths). Rounds land in
+    ``campaigns/evolve-<task>/campaign.json``; every finished round is sealed here
+    as an ``rsi_step`` row (on each poll and at exit, cancel included). A cancel
+    the loop sees at a round boundary exits nonzero -> the marker makes it
+    ``runtime.task_cancelled``. Resubmitting the same task resumes from cursor."""
+    task = brief["task"]
+    if task not in rt.task_bindings:
+        raise ValueError(f"no task binding for {task!r}; install a plugin that "
+                         f"declares it (known: {sorted(rt.task_bindings)})")
+    out = rt.inbox.parent / "campaigns" / f"evolve-{task}"
+    cmd = [sys.executable, str(REPO_ROOT / "scripts/evolve.py"), "--mode", "evolution",
+           "--task", task, "--session", str(rt.inbox.parent),
+           "--skills-root", str(rt.skills_root),
+           "--rounds", str(int(brief.get("rounds", 3))),
+           "--arm", str(brief.get("arm", "auto")),
+           "--cancel-marker", str(_cancel_marker(rt, brief_id))]
+    if brief.get("seeds"):
+        cmd += ["--seeds", str(int(brief["seeds"][0])), str(int(brief["seeds"][1]))]
+    for k in ("max_replans", "max_actuations"):   # budgets: brief > binding > workload default
+        if brief.get(k) is not None:
+            cmd += [f"--{k.replace('_', '-')}", str(int(brief[k]))]
+    seal = lambda: _seal_rounds(rt, brief_id, task, out / "campaign.json")
+    try:
+        code, err = _run_watched(cmd, {**os.environ, "MUJOCO_GL": "egl"}, rt, brief_id,
+                                 out, f"evolve {task!r}", tick=seal)
+    finally:
+        seal()
+    if code != 0:
+        raise RuntimeError(f"evolve {task!r} exited {code}: {err.strip()[-500:]}")
+
+
 def _find_key(obj, key: str) -> str | None:
     """First value under ``key`` anywhere inside a nested row payload, or None."""
     if isinstance(obj, dict):
@@ -1094,7 +1157,7 @@ def _run_suite(brief: dict, rt: Runtime, brief_id: str, cancelled) -> bool:
         first_death = None
         for seed in range(lo, hi + 1):
             at = len(rt.log.rows())
-            out = _run_task({"kind": "task", "task": task, "seed": seed,
+            out = _run_task({"kind": "task", "task": task, "seed": seed, "media": True,
                              "max_replans": max_replans, "arm": arm, **budget},
                             rt, cancelled=cancelled)
             if cancelled_run(out):
@@ -1134,11 +1197,12 @@ def _run_suite(brief: dict, rt: Runtime, brief_id: str, cancelled) -> bool:
 #: the verdict), ``cal``/``dev``/``heldout`` pin a block instead of allocating.
 _BRIEF_KEYS = {
     "task": {"kind", "task", "instruction", "seed", "max_replans",
-             "max_actuations", "arm"},
+             "max_actuations", "arm", "media"},
     "campaign": {"kind", "campaign", "dev", "heldout"},
     "suite": {"kind", "suite", "arm", "seeds", "max_replans", "max_actuations"},
     "rsi": {"kind", "task", "node", "cal", "dev", "heldout", "workers", "floor"},
     "mission": {"kind", "mission", "seed", "arm", "max_replans", "max_actuations"},
+    "evolve": {"kind", "task", "seeds", "rounds", "arm", "max_replans", "max_actuations"},
 }
 _MAX_INSTRUCTION_CHARS = 4000
 
@@ -1231,7 +1295,7 @@ def _process(rt: Runtime, path: Path) -> None:
         elif kind == "suite":
             stopped = _run_suite(brief, rt, brief_id,
                                  cancelled=lambda: _cancel_requested(rt, brief_id))
-        elif kind in ("campaign", "rsi"):
+        elif kind in ("campaign", "rsi", "evolve"):
             # v4.1 hard rule: an evolution brief is accepted ONLY in evolution
             # mode. Rejection, not neutralization -- same pattern as the
             # injected-key defense: a real task run provably triggers no RSI.
@@ -1239,7 +1303,8 @@ def _process(rt: Runtime, path: Path) -> None:
                 raise ValueError(
                     f"{kind} briefs are accepted only in evolution mode "
                     f"(session mode is {rt.mode!r})")
-            (_run_campaign if kind == "campaign" else _run_rsi)(brief, rt, brief_id)
+            {"campaign": _run_campaign, "rsi": _run_rsi,
+             "evolve": _run_evolve}[kind](brief, rt, brief_id)
         else:
             raise ValueError(f"unknown brief kind {kind!r}")
     except Exception as exc:  # noqa: BLE001 -- escape hatch: crash-safety lives here

@@ -70,7 +70,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
              after: int = 0, relation: str | None = None, after_ts: float = 0.0,
              wait_ms: int = 0, brief: str | None = None,
              session: str | None = None, seq: int = 0, out: Path | None = None,
-             sha: str | None = None):
+             sha: str | None = None, round: int = 0):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -93,6 +93,30 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
             raise ValueError(f"{fn} needs a brief id as the name argument")
         return (bs.brief_status(path, name, wait_ms) if fn == "brief_status"
                 else bs.cancel_brief(path, name))
+    if fn in ("submit_proposal", "proposals"):
+        # The session is the addressed thing (shared guard); submit_proposal's
+        # raw JSON rides --brief into the ONE shared store write.
+        path = bs.safe_child(runs, session or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        if fn == "proposals":
+            return bs.proposals(path)
+        if brief is None:
+            raise ValueError("submit_proposal needs --brief (the proposal JSON)")
+        return bs.submit_proposal(path, brief)
+    if fn in ("rsi_run", "rsi_series", "rsi_frames"):
+        # The TASK rides the `name` slot; the session is the addressed thing
+        # (the brief_status pattern) and goes through the shared guard.
+        path = bs.safe_child(runs, session or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        if not name:
+            raise ValueError(f"{fn} needs a task as the name argument")
+        if fn == "rsi_run":
+            return bs.rsi_run(path, name)
+        if fn == "rsi_series":
+            return bs.rsi_series(path, name)
+        return bs.rsi_frames(path, name, round)
     if fn == "list_stores":
         return bs.list_stores(runs)
     if fn == "cards":
@@ -196,6 +220,11 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         if path is None:
             raise ValueError("unknown session")
         return bs.skill_evidence(path)
+    if fn == "skills":
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        return bs.skills(path)
     raise KeyError(fn)
 
 
@@ -220,7 +249,8 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
                               int(req.get("after", 0)), req.get("relation"),
                               float(req.get("after_ts", 0.0)), int(req.get("wait_ms", 0)),
                               req.get("brief"), req.get("session"),
-                              int(req.get("seq", 0)), sha=req.get("sha"))
+                              int(req.get("seq", 0)), sha=req.get("sha"),
+                              round=int(req.get("round", 0)))
         except KeyError:
             result = {"error": f"unknown fn: {req.get('fn', '')}"}
         except Exception as exc:  # bad JSON / rejected name / anything: reply, keep serving
@@ -231,10 +261,10 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|skill_evidence|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
-    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the model_server action (status|start|stop, default status), or the console port for health")
-    parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
-    parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, and whose brief brief_status/cancel_brief names (default: session-main)")
+    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|submit_proposal|proposals|rsi_run|rsi_series|rsi_frames|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|skill_evidence|skills|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the task for rsi_run/rsi_series/rsi_frames, the model_server action (status|start|stop, default status), or the console port for health")
+    parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority); submit_proposal: the raw proposal JSON {task, kind, payload, note}")
+    parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, whose brief brief_status/cancel_brief names, and whose evolve campaign rsi_run/rsi_series/rsi_frames reads (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None, help="STATUS.md (display-only prose; the ledger fn derives from runs/)")
@@ -244,6 +274,7 @@ def main(argv=None) -> int:
     parser.add_argument("--wait-ms", type=int, default=0, help="long poll: runtime_frame blocks up to WAIT_MS for the frame to change past --after-ts, brief_status for the brief's STATE to change; either way the answer is the current state, never a timeout error (capped board-side)")
     parser.add_argument("--seq", type=int, default=0, help="runtime_keyframe: the runtime_events seq whose pinned still to fetch")
     parser.add_argument("--sha", default=None, help="suite_result: the suite artifact sha to read (default: the session's newest suite.sealed row)")
+    parser.add_argument("--round", type=int, default=0, help="rsi_frames: the evolve round whose kept media paths to list")
     parser.add_argument("--out", type=Path, default=None, help="trajectories: write <OUT>/dev.jsonl and heldout.jsonl (split by burned block role) and print the counts")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
@@ -254,7 +285,7 @@ def main(argv=None) -> int:
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
                           args.after_ts, args.wait_ms, args.brief, args.session, args.seq,
-                          args.out, args.sha)
+                          args.out, args.sha, args.round)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2

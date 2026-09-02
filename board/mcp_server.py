@@ -154,6 +154,54 @@ def suite_result(name: str = _DEFAULT_SESSION, sha: str | None = None) -> dict |
 
 
 @mcp.tool()
+def rsi_run(task: str, name: str = _DEFAULT_SESSION) -> dict | None:
+    """One evolve campaign's state (campaigns/evolve-<task>/campaign.json: task,
+    session, seeds, arm, rounds[], best, cursor, status) plus ``latest`` round.
+    null when the session runs no campaign for that task."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.rsi_run(path, task) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def rsi_series(task: str, name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Per-round {round, before, after, best} of one evolve campaign (the
+    line-chart feed); [] when none exists."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.rsi_series(path, task) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def rsi_frames(task: str, round: int, name: str = _DEFAULT_SESSION) -> list[str]:
+    """Kept keyframe/video paths (session-relative) one evolve round recorded;
+    [] when the campaign or round is absent. Paths only, never bytes."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.rsi_frames(path, task, round) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def submit_proposal(proposal: dict, session: str = _DEFAULT_SESSION) -> dict:
+    """Drop one proposal for the lightweight evolve loop into
+    ``runs/<session>/proposals/``: ``{"task": <task>, "kind": "tunables"|"executor"|"card",
+    "payload": {...}, "note": <why>}``. scripts/evolve.py consumes the oldest pending
+    one for its task at the start of each round (sealed as ``rsi_proposal_applied``)
+    and tries it INSTEAD of its built-in proposer; it still publishes only when the
+    same-seed success count improves. Payloads: tunables ``{ref, path:[...], to,
+    node?}``; executor ``{to, node?}``; card ``{path: plugins/candidates/<name>, to:
+    <executor key>, ref: "module:attr", params?, node?}``. ``node`` defaults to the
+    suite's commonest first-death node. Records are never written here."""
+    path = bs.safe_child(_Cfg.runs, session, bs.is_session)
+    return bs.submit_proposal(path, json.dumps(proposal)) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def proposals(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """The session's proposal inbox, oldest first: ``{id, task, kind, payload,
+    note, applied}`` (``applied`` = null while pending, else ``{round, ts}``)."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.proposals(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
     """Protocol-v0 trajectory samples projected from one session's chain: one
     per plan/replan decision (x: mission/sigma0/skills/done/fault, y: graph id +
@@ -179,6 +227,15 @@ def skill_evidence(name: str = _DEFAULT_SESSION) -> list[dict]:
     seal only driver). ``name`` defaults to session-main."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.skill_evidence(path) if path else {"error": "unknown session"}
+
+@mcp.tool()
+def skills(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Records overview, one row per skill: name, kind, bindings (embodiment ->
+    executor keys), evidence (embodiment -> {n, k, by_executor}), limits,
+    failure_modes, and whether the row is the library record or the session's
+    published copy. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.skills(path) if path else {"error": "unknown session"}
 
 @mcp.tool()
 def trajectories_split(name: str = _DEFAULT_SESSION) -> dict:

@@ -53,6 +53,7 @@ physical-harness/
 │     embodiment_robocasa/     厨房机器人（独立 venv）
 │     embodiment_libero/       LIBERO（脚手架）
 │     mission_*/               任务图 + planner（纯数据 manifest）
+│     candidates/<name>/       候选卡：不进 base fold，evolve 经 PH_PLUGINS_EXTRA 按提案挂载
 │     task/                    通用任务机器：workload、validate
 │     rsi/                     进化引擎：gate、配对检验、campaign
 │     policies/                策略驱动
@@ -103,6 +104,8 @@ ph-station/
 │     ui-ph-livegraph/      执行图谱 + 过程流 + 取景窗/视频下载
 │     ui-ph-panels/         RSI 总览 + 迭代记录 + 能力卡 + 账本 + Run RSI 按钮
 │     ui-ph-ops/            运行体征侧栏：主机资源、本地模型开关
+│                            + `skills` 页（`skills(session)` 记录表，展开看 by_executor 证据）
+│                            + `evolve` 页（campaign 列表/轮次表/rsiSeries 折线/rsiFrames 路径；Start=submitBrief `{kind:evolve}`，Stop=cancelBrief）
 │     ui-ph-vault/          技能库
 │     ui-ph-battle/         Held-out 战报
 │     ui-ph-dash/           实验台（面板布局）
@@ -141,8 +144,7 @@ ph-station 从不直接读 `runs/`。它只会调 dsh-ph-board，后者 exec sto
 gateway 在 `trusted-host` 栅栏后自动暴露 `POST /api/board/<fn>`。三个 face
 （MCP tool / CLI / 面板）调的是同一个函数，并有逐字节等价测试钉住。
 
-**没有写路径的面板按钮**：投 brief 只有 `submit_brief` 一条路，进 runtime 校验过的
-inbox。**没有认证层**：`trusted-host` 防的是 DNS rebinding，不是身份；服务绑
+**面板只有两条写路径**：`submit_brief`（原子落 runtime 校验过的 inbox）和 `cancel_brief`（落取消标记，runtime 在下一个轮边界处理）；桥（dsh-ph-board）白名单里除此之外全是只读。**没有认证层**：`trusted-host` 防的是 DNS rebinding，不是身份；服务绑
 `127.0.0.1`，`/api/board/*` 只读封存的 `runs/`。
 
 **天花板（已标注）**：每个面板请求一个 Python 子进程，冷导入
@@ -440,6 +442,42 @@ clone 合法地显示**更多跳过，绝不是失败**：
 实现：`scripts/rsi_campaign.py`（链本体）+ `scripts/harness_runtime.py`（brief 面）。
 通用路径里**没有任何任务名 if 分支**——任务是参数，加任务仍然是装一张卡。
 
+### 4.0 轻量 evolve 循环
+
+`kind:"rsi"` 是重链（下面 4.1–4.5）。旁边还有一条**轻量**循环，不做候选分类、不做晋级状态机、不加门禁，harness 不训练：
+
+```
+{"kind":"evolve","task":"kitchen_thaw","seeds":[lo,hi],"rounds":N,"arm":"auto"}
+```
+
+只在进化态被接受（与 campaign/rsi 同一道拒绝）；runtime `_run_evolve` 起 `scripts/evolve.py` 子进程（走 `_run_watched`，取消/killpg 复用）。`rounds` 是**总目标**，`seeds`/`arm` 续投时可省（取 campaign.json 里的）。
+
+一轮：
+1. **看**：同种子 suite（与 task brief 同一条 `_mount_plan → workload.run` 路径）→ 每种子首死节点、fault `{kind,node,msg}`、每节点 executor。
+2. **试**（内置 proposer，按序取第一个可行的）：① 首死节点换 executor —— 绑定 policy 的 record `evidence.by_executor` 成功率高于实测才换；② 该节点驱动 mount 参数一维 ±20% 扰动（`[tunables]` 表或顶层数值；键按轮次轮转、符号交替，经 `PH_MOUNT_PARAMS_OVERRIDE` 并进 `manifest.mount_params`）；③ 都没有 → `kind:"none"` 并写明原因。
+3. **同种子再跑**，试验已应用（executor 经 `scripts.evolve:planner_provider` 盖进 `node.executor`）。
+4. **成功种子数变好才发布**：带实测 `by_executor` 行（tunables 还有新值）的 record 走 `InMemorySkillGraph.publish` —— 与 `publish_plans` 同一道进化态专用门；否则不发布。试验抛异常 → 记 `tried.detail.error`，after=before，不崩。
+
+每轮封存一行 `rsi_step {brief,task,round,tried,before,after,best,published,suite_sha}`（按 (task,round) 幂等，2 s 轮询时实时封存，退出时兜底），并 tmp+rename 写 `runs/<session>/campaigns/evolve-<task>/campaign.json`：
+`{task,session,seeds,arm,rounds:[{round,tried:{kind,node,detail},before,after,best,suite_sha,published,media:[路径],ts}],best,cursor,status:running|cancelled|done,applied:{executors,tunables}}`。
+`applied` 是已接受的状态，后续每轮重新应用；下一轮的 before 直接沿用上一轮保留的结果，不重测。
+
+**停/续**：`cancel_brief` 落标记 → evolve.py 在轮边界退出（状态 `cancelled`，exit 3；轮中则 killpg）→ `runtime.task_cancelled`，brief 进 `cancelled/`。同 task 再投 evolve → 从 `cursor` 继续；已 `done` 且 rounds 不变 → 空操作。
+
+**媒体规则**（`harness/media.py`）：段级节点每 4 步录一帧 128px 到内存（来源 `driver.frame()` 否则 `env.frame()`，都没有就不录）；verify 成功才落 `media/<task>/<seed>/<node>.mp4`（无 imageio 则 .gif），失败即丢；>1 MB 降 fps/抽帧重编；同节点重跑覆盖；任何录制/编码失败静默。帧永不进链，链和 campaign.json 只存路径。
+
+**三面** `skills(session)`（逐字节等价）：records 概览，每技能一行 `{name, kind, bindings: {emb: [executor 键]}, evidence: {emb: {n, k, by_executor}}, limits, failure_modes, source}`——库记录被会话 `skills/` 下发布的同名副本覆盖（`source: session`）。ph-station 桥（dsh-ph-board）白名单同步加 `skills` / `rsiRun` / `rsiSeries` / `rsiFrames`，写路径只有 `submitBrief` / `cancelBrief`。
+
+**提案与候选卡**：`runs/<session>/proposals/<id>.json` 是 evolve 的收件箱，条目 `{task, kind: tunables|executor|card, payload, note}`（三面 `submit_proposal` 校验形状后原子落盘（store/CLI 收 JSON 字符串，MCP 面收 `proposal: dict`）、`proposals(session)` 列出，`applied` 为 null 表示待处理）。evolve 每轮开头取该 task 最旧的待处理条目，就地盖 `applied:{round,ts}`，封存 `rsi_proposal_applied {brief,task,round,id,kind,note}`，并把它当作本轮的「试」——取代内置 proposer，发布规则不变（同种子成功数变好才写回 record）。payload：
+- `tunables`：`{ref, path:[...], to, node?}`（与内置 ② 同一条 `PH_MOUNT_PARAMS_OVERRIDE` 路径）；
+- `executor`：`{to, node?}`（record 里已绑定的 executor 键）；
+- `card`：`{path: plugins/candidates/<name>, to: <executor 键>, ref: "module:attr", params?, node?}`——该轮 suite 把候选目录追加进 `PH_PLUGINS_EXTRA`（`discover` 接受单卡目录），绑定只注入内存里的 records/segment_specs；变好才把 `bindings[emb].policies[<键>] = {ref, params, transport}` 写进发布的 record。
+`node` 缺省为最常见首死节点；缺字段或节点未跑过 → `tried.kind:"none"` 并写明原因（提案照样盖 `applied`）。campaign.json 每轮多一项 `proposal: {id,kind,note}|null`，`applied` 多一项 `cards`。
+候选卡 `plugins/candidates/<name>/` 与普通卡同一 manifest 形状，不被 base fold 扫到；`[executors.<键>] skill=, embodiment=, ref=, transport?` 由 `discover` 折进 `Registry.executors`，`skill_library.bind_executors` 在加载时把它盖到 `bindings.<本体>.policies.<键>`（只在挂载时可见，record 文件不动）。首张代码候选 `grasp_geometric_robocasa`：executor 键 `geometric`，code-as-policy `hover→descend→close→lift`，自带 `[tunables]`，provider 参数 `{tunables:{...}}` 覆盖（`mount_params` 只扫 `plugins/*/`，不扫 PH_PLUGINS_EXTRA）；`KitchenThawDriver` 对有 `bind(env, target=)` 的 executor 走原生路径（raw obs 进，12 维 env action 出）。`scripts/plugin_doctor.py plugins/candidates/<name>` 可直接体检（今天报 claim-only SKIP）。
+提案人：ph-station 的 `skill-author` preset 只读 `rsi_run/rsi_series/rsi_frames` 与链，唯一写口是 `submit_proposal`。
+
+**三面**（store / storecli / mcp 逐字节等价，只读 campaign.json）：`rsi_run(task, session)` = campaign.json + `latest`；`rsi_series(task, session)` = 每轮 `{round,before,after,best}`；`rsi_frames(task, round, session)` = 那一轮的 `media` 路径列表。没有 campaign → `None` / `[]`。
+
 ### 4.1 brief 形状
 
 ```
@@ -734,6 +772,7 @@ kernel**。插入点的封闭清单在 ARCHITECTURE.md §3.1。
 | 会写任务图的 VLM | `task.planner`，经 `[task_bindings.*]` 的 planner ref | §6.1 |
 | 会出动作的 VLA | `policy.driver`，走 websocket policy server | §6.2 |
 | 本体特有的修复动作 | 你自己本体卡里的 `[recoveries.*]` | §6.3 |
+| 不改 kernel 的一次实验（换 executor / 调 tunable / 挂候选卡） | `submit_proposal`（三面同名；MCP 面收 dict）→ evolve 下一轮消费 | §4.0 |
 
 ### 6.1 把 planner 换成你的 VLM
 
@@ -1361,6 +1400,7 @@ runtime 的机器上会替错的 session 作保。这与 `store._model_identity`
 | 17 | **session 休眠**：runtime 没跑、inbox 也空 | `health()` | ✅ `state: dormant`，不算 problem（`--status` 折成一行 `dormant`）；有 brief 排队才升级为 `stalled` |
 | 18 | **模型服务停了** | llama.cpp :30001 | ✅ `health().model.running: false`，`--status` 的 STOPPED 行带启动命令；只有 `PH_WITH_MODEL=1`（`scripts/cockpit --with-model` 会导出）时才计为 problem，免得为省显存停模型的机器常年红 |
 | 19 | **campaign 子进程在 stop / boot 时残留** | `_run_watched` / `_requeue` | ✅ 任何退出（cancel、SIGTERM、Ctrl-C、崩溃）都按 `processing/<brief>.pgid` 杀整个进程组（TERM，宽限后 KILL）并落 `CANCELLED`；`cockpit --stop` 中途的 brief 进 `cancelled/`（stage `runtime_stopped`），boot 时发现活着的孤儿组先杀再重排队，写 `runtime.orphan_killed {brief,pgid}` |
+| 20 | **evolve 中途停/死** | `_run_evolve` / `evolve.py` | ✅ cancel 标记在轮边界生效（`campaign.json.status: cancelled`，exit 3；轮中走第 19 行的 killpg）→ `runtime.task_cancelled`；已封存轮次的 `rsi_step` 行不重复；同 task 再投 `evolve` 从 `cursor` 续跑。执行态投 evolve → 同第 5 行 |
 
 ### 8.4 仍然开着的口子
 

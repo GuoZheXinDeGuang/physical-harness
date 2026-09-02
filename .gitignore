@@ -6,6 +6,8 @@
 # per-sim interpreters + third-party sim checkouts (docs/project-documentation.md §5);
 # venvs and cloned sim repos never enter git
 sims/
+# the worktree's sims may be a symlink to the main checkout's; `sims/` alone does not match one
+sims
 __pycache__/
 *.pyc
 runs

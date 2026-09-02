@@ -19,6 +19,7 @@ from pathlib import Path
 from test_read_session import _session
 from test_store import _campaign, _mkstore, _paired
 
+from board import mcp_server as ms
 from board import store as bs
 from board import storecli
 
@@ -62,6 +63,7 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
         (["ledger"], bs.burned_blocks(runs)),
         (["plan_index", "session-main"], bs.plan_index(runs / "session-main")),
         (["skill_evidence", "session-main"], bs.skill_evidence(runs / "session-main")),
+        (["skills", "session-main"], bs.skills(runs / "session-main")),
         (["rounds"], bs.parse_rounds(progress.read_text())),
     ]
     for argv, expected in cases:
@@ -100,6 +102,64 @@ def test_submit_brief_unknown_session_drops_nothing(tmp_path, capsys):
     assert not list(runs.rglob("brief-*.json"))
 
 
+_CAMPAIGN = {
+    "task": "kitchen_thaw", "session": "session-main", "seeds": [1, 2], "arm": "auto",
+    "rounds": [
+        {"round": 1, "tried": {"kind": "executor", "node": "grasp", "detail": "scripted->geometric"},
+         "before": 0, "after": 1, "best": 1, "suite_sha": "a" * 64, "published": True,
+         "media": ["media/kitchen_thaw/1/grasp.gif"], "ts": 1.0},
+        {"round": 2, "tried": {"kind": "tunables", "node": "grasp", "detail": "hover_z*1.2"},
+         "before": 1, "after": 1, "best": 1, "suite_sha": "b" * 64, "published": False,
+         "media": [], "ts": 2.0},
+    ],
+    "best": 1, "cursor": 2, "status": "running",
+}
+
+
+def test_rsi_faces_are_byte_identical(tmp_path, capsys):
+    """rsi_run / rsi_series / rsi_frames: the same object on the CLI, MCP and
+    library faces (fixture campaign.json in the spec's shape); absent campaign
+    -> null / [] / []; the task rides the shared safe_child guard."""
+    runs, status, progress = _fixture(tmp_path)
+    camp = runs / "session-main" / "campaigns" / "evolve-kitchen_thaw"
+    camp.mkdir(parents=True)
+    (camp / "campaign.json").write_text(json.dumps(_CAMPAIGN))
+    sd = runs / "session-main"
+    base = ["--runs", str(runs), "--session", "session-main"]
+    ms.configure(runs)
+    cases = [
+        (["rsi_run", "kitchen_thaw"], bs.rsi_run(sd, "kitchen_thaw"),
+         ms.rsi_run("kitchen_thaw")),
+        (["rsi_series", "kitchen_thaw"], bs.rsi_series(sd, "kitchen_thaw"),
+         ms.rsi_series("kitchen_thaw")),
+        (["rsi_frames", "kitchen_thaw", "--round", "1"], bs.rsi_frames(sd, "kitchen_thaw", 1),
+         ms.rsi_frames("kitchen_thaw", 1)),
+        (["rsi_frames", "kitchen_thaw", "--round", "9"], bs.rsi_frames(sd, "kitchen_thaw", 9),
+         ms.rsi_frames("kitchen_thaw", 9)),
+        (["rsi_run", "nope"], bs.rsi_run(sd, "nope"), ms.rsi_run("nope")),
+        (["rsi_series", "nope"], bs.rsi_series(sd, "nope"), ms.rsi_series("nope")),
+    ]
+    for argv, lib, mcp in cases:
+        code, out = _run(capsys, *argv, *base)
+        assert code == 0, argv
+        assert out == json.dumps(lib) == json.dumps(mcp), argv
+    # non-trivial: the fixture rounds actually flow through each face
+    run = bs.rsi_run(sd, "kitchen_thaw")
+    assert run["status"] == "running" and run["cursor"] == 2 and run["latest"]["round"] == 2
+    assert bs.rsi_series(sd, "kitchen_thaw") == [
+        {"round": 1, "before": 0, "after": 1, "best": 1},
+        {"round": 2, "before": 1, "after": 1, "best": 1}]
+    assert bs.rsi_frames(sd, "kitchen_thaw", 1) == ["media/kitchen_thaw/1/grasp.gif"]
+    assert bs.rsi_frames(sd, "kitchen_thaw", 9) == [] and bs.rsi_run(sd, "nope") is None
+    # traversal: a ../ task never leaves the session; a ../ session is refused
+    assert bs.rsi_run(sd, "../../session-main") is None
+    assert ms.rsi_run("kitchen_thaw", "../session-main") == {"error": "unknown session"}
+    code, out = _run(capsys, "rsi_run", "kitchen_thaw", "--runs", str(runs), "--session", "../x")
+    assert code == 3 and json.loads(out) == {"error": "unknown session"}
+    code, out = _run(capsys, "rsi_run", "--runs", str(runs))
+    assert code == 3 and "task" in json.loads(out)["error"]
+
+
 def test_traversal_name_rejected_by_shared_guard(tmp_path, capsys):
     runs, status, progress = _fixture(tmp_path)
     base = ["--runs", str(runs), "--status", str(status), "--progress", str(progress)]
@@ -116,3 +176,32 @@ def test_unknown_fn_is_a_nonzero_error(tmp_path, capsys):
     runs, status, progress = _fixture(tmp_path)
     code, out = _run(capsys, "nope", "--runs", str(runs))
     assert code == 2 and json.loads(out)["error"].startswith("unknown fn")
+
+
+def test_skills_face_is_byte_identical(tmp_path, capsys):
+    """skills: the records overview on the CLI, MCP and library faces; a copy
+    the session published (evolution write path) overlays the library record
+    of the same name, and the row carries by_executor counts per embodiment."""
+    runs, status, progress = _fixture(tmp_path)
+    sd = runs / "session-main"
+    lib = bs.skills(sd)
+    assert lib and all(r["source"] == "library" for r in lib)
+    name = lib[0]["name"]
+    (sd / "skills").mkdir()
+    (sd / "skills" / "deadbeef.json").write_text(json.dumps({
+        "name": name, "kind": "segment", "limits": {"reach_m": 0.6},
+        "failure_modes": ["reach_stall"],
+        "bindings": {"fake": {"task": name, "policies": {"pi05": {"transport": "ssp"}}}},
+        "evidence": {"fake": {"n": 4, "k": 3, "by_executor": {"pi05": {"n": 4, "k": 3}}}}}))
+    (sd / "skills" / "cap.json").write_text(json.dumps({"kind": "capability", "ref": "x:y"}))
+    ms.configure(runs)
+    direct = bs.skills(sd)
+    assert direct == ms.skills("session-main")
+    code, out = _run(capsys, "skills", "session-main", "--runs", str(runs))
+    assert code == 0 and out == json.dumps(direct)
+    row = next(r for r in direct if r["name"] == name)
+    assert row["source"] == "session" and row["bindings"] == {"fake": ["pi05", "scripted"]}
+    assert row["evidence"] == {"fake": {"n": 4, "k": 3, "by_executor": {"pi05": {"n": 4, "k": 3}}}}
+    assert row["limits"] == {"reach_m": 0.6} and row["failure_modes"] == ["reach_stall"]
+    assert len(direct) == len(lib)  # overlay, not a duplicate; the capability row is skipped
+    assert ms.skills("../x") == {"error": "unknown session"}

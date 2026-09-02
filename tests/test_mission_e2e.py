@@ -176,7 +176,7 @@ class _Runtime:
     task card, fake-endpoint reply (a list = a reply sequence) and extra env."""
 
     def __init__(self, runs: Path, card: str | None = None, canned=None,
-                 env: dict | None = None):
+                 env: dict | None = None, mode: str = "execution"):
         self.runs = runs
         self.session = runs / SESSION
         (runs / "plugins" / "e2e").mkdir(parents=True)
@@ -191,7 +191,7 @@ class _Runtime:
         self.stderr = runs / "runtime.stderr"
         self.proc = subprocess.Popen(
             [sys.executable, str(RUNTIME), "--session-dir", str(self.session),
-             "--poll-interval", "0.1"],
+             "--poll-interval", "0.1", "--mode", mode],
             cwd=str(REPO), env=env, stdout=subprocess.DEVNULL,
             stderr=self.stderr.open("w"))
         _wait(lambda: (self.session / "runtime_status.json").exists() or self.proc.poll() is not None,

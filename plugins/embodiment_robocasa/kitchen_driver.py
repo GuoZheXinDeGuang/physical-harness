@@ -64,6 +64,11 @@ class KitchenThawDriver(InprocExecutor):
         #: segment by the base's ``enter_segment(..., executor=)``; None -> the
         #: stage driver acts. Either way the stage's done() is the sub-goal truth.
         self._executor: Any = None
+        #: True when the executor's handshake says transport ``inproc`` (a
+        #: code-as-policy candidate): it binds the live env itself
+        #: (``bind(env, target=)``), raw obs in, 12-dim env action out -- no
+        #: lerobot contract in between (``ssp`` = the pi0.5 chunk driver).
+        self._native: bool = False
         self._prompt: str = ""
         #: policy-owned step clock the base loop reads (``getattr(driver, "k", k)``)
         #: and the segment cap counts against.
@@ -78,7 +83,9 @@ class KitchenThawDriver(InprocExecutor):
     def act(self, obs) -> np.ndarray:
         """Relay one control step to the active stage driver on the bound env --
         or to the bound executor, through the pi0.5 obs/action contract."""
-        if self._executor is not None:
+        if self._native:
+            a = self._executor.act(obs)
+        elif self._executor is not None:
             a = vla_io.lerobot_to_env(self._executor.act(vla_io.build_obs(obs, self._prompt)))
         else:
             a = self._stage.act(self._env, obs)
@@ -135,9 +142,12 @@ class KitchenThawDriver(InprocExecutor):
         self._cap = D.tunables()["segment_cap"] or cap
         self.k = 0
         self._executor = executor
+        self._native = executor is not None and executor.handshake()["transport"] == "inproc"
         if executor is not None:
             executor.reset()  # a chunk computed for another situation is stale
             self._prompt = str(env.get_ep_meta().get("lang") or task)
+        if self._native:  # the stage's target (make_recovery's seam) is the executor's too
+            executor.bind(env, target=getattr(self._stage, "obj_name", None))
 
     def segment_success(self, env) -> bool:
         """The sub-goal truth: the stage driver's OWN live-state predicate (arrived
@@ -149,6 +159,12 @@ class KitchenThawDriver(InprocExecutor):
         keys every robocasa segment seals (CompositeStageDriver seals the same)."""
         return {"failure_mode": getattr(self._stage, "failure_mode", None),
                 "tunables_sha": D.tunables_sha()}
+
+    def frame(self):
+        """harness.media's camera source: the bound env's head-cam render."""
+        from plugins.embodiment_robocasa import env as _env
+
+        return None if self._env is None else _env.frame(self._env)
 
 
 class KitchenThawPolicies:

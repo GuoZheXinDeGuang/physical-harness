@@ -20,6 +20,7 @@ folds it while ``harness`` stays plugin-free (``tests/test_kernel.py``).
 
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -60,6 +61,12 @@ class Registry:
     #: ``[benchmarks.<name>]`` pure-data suite cards (tasks, arms, max_replans):
     #: the runtime's ``suite`` brief selector, folded exactly like campaigns.
     benchmarks: dict[str, dict] = field(default_factory=dict)
+    #: ``[executors.<key>] skill = ..., embodiment = ..., ref = ..., transport?``:
+    #: a card (typically a candidate mounted through PH_PLUGINS_EXTRA) binding an
+    #: executor key onto a skill record for as long as it is mounted --
+    #: ``harness.skill_library.bind_executors`` folds each into
+    #: ``bindings.<emb>.policies.<key>``; the record file itself is untouched.
+    executors: tuple[dict, ...] = ()
 
 
 PROVIDES_KINDS = frozenset({"embodiment", "predicate", "recovery", "skill", "planner",
@@ -95,7 +102,11 @@ def card_provides(data: dict, plugin: str) -> list[dict]:
 
 
 def _load(root: Path) -> list[tuple[str, dict]]:
-    """(plugin dir name, parsed manifest), in a deterministic scan order."""
+    """(plugin dir name, parsed manifest), in a deterministic scan order. A root
+    that is itself ONE card (``plugins/candidates/<name>`` via PH_PLUGINS_EXTRA)
+    loads as that single card."""
+    if (root / "manifest.toml").is_file():
+        return [(root.name, tomllib.loads((root / "manifest.toml").read_text()))]
     return [(mf.parent.name, tomllib.loads(mf.read_text()))
             for mf in sorted(root.glob("*/manifest.toml"))]
 
@@ -119,11 +130,14 @@ def mount_params(ref: str, root: Path = PLUGINS_ROOT) -> dict:
     """The params the card declaring provider ``ref`` mounts it with, enabled or
     not: a segment an arm routes to an unmounted card's provider still runs under
     that card's declared contract. ``{}`` when no card mounts the ref."""
-    for _, data in _load(root):
-        for m in card_mounts(data):
-            if m.provider == ref:
-                return dict(m.params)
-    return {}
+    params: dict = next((dict(m.params) for _, data in _load(root)
+                         for m in card_mounts(data) if m.provider == ref), {})
+    # PH_MOUNT_PARAMS_OVERRIDE: {ref: {param: value}} -- an evolve trial's tunables
+    # perturbation reaching the driver (scripts/evolve.py); one level of nesting
+    # merges ([tunables] tables), anything else replaces.
+    for k, v in json.loads(os.environ.get("PH_MOUNT_PARAMS_OVERRIDE") or "{}").get(ref, {}).items():
+        params[k] = {**params[k], **v} if isinstance(v, dict) and isinstance(params.get(k), dict) else v
+    return params
 
 
 def card_bundles(data: dict) -> dict[str, list[Mount]]:
@@ -175,6 +189,7 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     recov_owner: dict = {}
     benchmarks: dict[str, dict] = {}
     bench_owner: dict = {}
+    executors: list[dict] = []
 
     # PH_PLUGINS_EXTRA: colon-separated extra card roots folded after ``root``
     # (a test's tmp card beside the installed ones; same collision rules).
@@ -229,6 +244,11 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, mounts_ in card_bundles(data).items():
             _claim(bundles, bundle_owner, name, tuple(mounts_),
                    kind="bundle", plugin=plugin)
+        for key, spec in data.get("executors", {}).items():
+            executors.append({"key": key, "skill": spec["skill"], "embodiment": spec["embodiment"],
+                              "ref": spec["ref"], "transport": spec.get("transport", "inproc"),
+                              "plugin": plugin})
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
-                    third_party, bundles, recoveries, tuple(provides), benchmarks)
+                    third_party, bundles, recoveries, tuple(provides), benchmarks,
+                    tuple(executors))

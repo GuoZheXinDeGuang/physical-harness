@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from harness import opstream, predicates, protocol
+from harness import media, opstream, predicates, protocol
 from harness.config import sha_json
 from harness.features import privilege_cost
 from harness.kernel import Kernel
@@ -226,6 +226,9 @@ class NodeCtx:
     arm: str = "scripted"
     #: the graph.scene contract: the symbolic ``sigma`` a segment executor is handed.
     scene: Any = None
+    #: harness.media.SegmentRecorder (brief names a media_dir) or None: segment
+    #: clips kept on verify success, dropped on failure; never chain evidence.
+    media: Any = None
 
 
 #: A non-manipulate node seals zero privilege: decide/verify read only sealed
@@ -494,11 +497,15 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
         return {"success": False, "steps": 0, "stages": [], "aborted": "horizon",
                 "governance": _segment_governance(bundle, digests, entered, entered)}
     executor, driver_seal = _executor(node, ep, seg_spec, ctx)
+    if ctx.media is not None:
+        ctx.media.start(ep.env, ep.driver)
     if is_segment(executor):
         seg = _run_segment(executor, node, seg_spec, ep, ctx)
     else:
         seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor,
                                 executor=executor)
+    if ctx.media is not None:
+        ctx.media.finish(node["id"], bool(seg["success"]))
     exited = ep.cursor
     stages = seg.get("stages", [])
     opstream.emit("sub_goal_transition", node=node["id"],
@@ -752,7 +759,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     ctx = NodeCtx(seed=seed, env_ref=env_ref, policy_ref=policy_ref,
                   skills=skills, nodes_out=nodes_out, predicates=predicates,
                   episode=episode, segment_specs=brief.get("segment_specs"), arm=arm,
-                  scene=scene)
+                  scene=scene, media=media.recorder_for(brief, seed))
     # sigma0 for Legal(G): computed ONCE from the reset world (the persistent
     # episode's first obs, else the empty pre-episode snapshot) and the card's
     # declared facts, so Supported/Covered judge against real facts and objects.
