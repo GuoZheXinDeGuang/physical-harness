@@ -103,6 +103,8 @@ ph-station/
 │     ui-ph-livegraph/      执行图谱 + 过程流 + 取景窗/视频下载
 │     ui-ph-panels/         RSI 总览 + 迭代记录 + 能力卡 + 账本 + Run RSI 按钮
 │     ui-ph-ops/            运行体征侧栏：主机资源、本地模型开关
+│                            + `skills` 页（`skills(session)` 记录表，展开看 by_executor 证据）
+│                            + `evolve` 页（campaign 列表/轮次表/rsiSeries 折线/rsiFrames 路径；Start=submitBrief `{kind:evolve}`，Stop=cancelBrief）
 │     ui-ph-vault/          技能库
 │     ui-ph-battle/         Held-out 战报
 │     ui-ph-dash/           实验台（面板布局）
@@ -141,8 +143,7 @@ ph-station 从不直接读 `runs/`。它只会调 dsh-ph-board，后者 exec sto
 gateway 在 `trusted-host` 栅栏后自动暴露 `POST /api/board/<fn>`。三个 face
 （MCP tool / CLI / 面板）调的是同一个函数，并有逐字节等价测试钉住。
 
-**没有写路径的面板按钮**：投 brief 只有 `submit_brief` 一条路，进 runtime 校验过的
-inbox。**没有认证层**：`trusted-host` 防的是 DNS rebinding，不是身份；服务绑
+**面板只有两条写路径**：`submit_brief`（原子落 runtime 校验过的 inbox）和 `cancel_brief`（落取消标记，runtime 在下一个轮边界处理）；桥（dsh-ph-board）白名单里除此之外全是只读。**没有认证层**：`trusted-host` 防的是 DNS rebinding，不是身份；服务绑
 `127.0.0.1`，`/api/board/*` 只读封存的 `runs/`。
 
 **天花板（已标注）**：每个面板请求一个 Python 子进程，冷导入
@@ -463,6 +464,8 @@ clone 合法地显示**更多跳过，绝不是失败**：
 **停/续**：`cancel_brief` 落标记 → evolve.py 在轮边界退出（状态 `cancelled`，exit 3；轮中则 killpg）→ `runtime.task_cancelled`，brief 进 `cancelled/`。同 task 再投 evolve → 从 `cursor` 继续；已 `done` 且 rounds 不变 → 空操作。
 
 **媒体规则**（`harness/media.py`）：段级节点每 4 步录一帧 128px 到内存（来源 `driver.frame()` 否则 `env.frame()`，都没有就不录）；verify 成功才落 `media/<task>/<seed>/<node>.mp4`（无 imageio 则 .gif），失败即丢；>1 MB 降 fps/抽帧重编；同节点重跑覆盖；任何录制/编码失败静默。帧永不进链，链和 campaign.json 只存路径。
+
+**三面** `skills(session)`（逐字节等价）：records 概览，每技能一行 `{name, kind, bindings: {emb: [executor 键]}, evidence: {emb: {n, k, by_executor}}, limits, failure_modes, source}`——库记录被会话 `skills/` 下发布的同名副本覆盖（`source: session`）。ph-station 桥（dsh-ph-board）白名单同步加 `skills` / `rsiRun` / `rsiSeries` / `rsiFrames`，写路径只有 `submitBrief` / `cancelBrief`。
 
 **三面**（store / storecli / mcp 逐字节等价，只读 campaign.json）：`rsi_run(task, session)` = campaign.json + `latest`；`rsi_series(task, session)` = 每轮 `{round,before,after,best}`；`rsi_frames(task, round, session)` = 那一轮的 `media` 路径列表。没有 campaign → `None` / `[]`。
 

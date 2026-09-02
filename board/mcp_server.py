@@ -206,6 +206,15 @@ def skill_evidence(name: str = _DEFAULT_SESSION) -> list[dict]:
     return bs.skill_evidence(path) if path else {"error": "unknown session"}
 
 @mcp.tool()
+def skills(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Records overview, one row per skill: name, kind, bindings (embodiment ->
+    executor keys), evidence (embodiment -> {n, k, by_executor}), limits,
+    failure_modes, and whether the row is the library record or the session's
+    published copy. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.skills(path) if path else {"error": "unknown session"}
+
+@mcp.tool()
 def trajectories_split(name: str = _DEFAULT_SESSION) -> dict:
     """``trajectories`` split ``{"dev": [...], "heldout": [...]}`` by ``o.role``
     (the seed's burned block role) -- the same rows ``storecli trajectories --out``

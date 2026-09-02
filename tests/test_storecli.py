@@ -63,6 +63,7 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
         (["ledger"], bs.burned_blocks(runs)),
         (["plan_index", "session-main"], bs.plan_index(runs / "session-main")),
         (["skill_evidence", "session-main"], bs.skill_evidence(runs / "session-main")),
+        (["skills", "session-main"], bs.skills(runs / "session-main")),
         (["rounds"], bs.parse_rounds(progress.read_text())),
     ]
     for argv, expected in cases:
@@ -175,3 +176,32 @@ def test_unknown_fn_is_a_nonzero_error(tmp_path, capsys):
     runs, status, progress = _fixture(tmp_path)
     code, out = _run(capsys, "nope", "--runs", str(runs))
     assert code == 2 and json.loads(out)["error"].startswith("unknown fn")
+
+
+def test_skills_face_is_byte_identical(tmp_path, capsys):
+    """skills: the records overview on the CLI, MCP and library faces; a copy
+    the session published (evolution write path) overlays the library record
+    of the same name, and the row carries by_executor counts per embodiment."""
+    runs, status, progress = _fixture(tmp_path)
+    sd = runs / "session-main"
+    lib = bs.skills(sd)
+    assert lib and all(r["source"] == "library" for r in lib)
+    name = lib[0]["name"]
+    (sd / "skills").mkdir()
+    (sd / "skills" / "deadbeef.json").write_text(json.dumps({
+        "name": name, "kind": "segment", "limits": {"reach_m": 0.6},
+        "failure_modes": ["reach_stall"],
+        "bindings": {"fake": {"task": name, "policies": {"pi05": {"transport": "ssp"}}}},
+        "evidence": {"fake": {"n": 4, "k": 3, "by_executor": {"pi05": {"n": 4, "k": 3}}}}}))
+    (sd / "skills" / "cap.json").write_text(json.dumps({"kind": "capability", "ref": "x:y"}))
+    ms.configure(runs)
+    direct = bs.skills(sd)
+    assert direct == ms.skills("session-main")
+    code, out = _run(capsys, "skills", "session-main", "--runs", str(runs))
+    assert code == 0 and out == json.dumps(direct)
+    row = next(r for r in direct if r["name"] == name)
+    assert row["source"] == "session" and row["bindings"] == {"fake": ["pi05", "scripted"]}
+    assert row["evidence"] == {"fake": {"n": 4, "k": 3, "by_executor": {"pi05": {"n": 4, "k": 3}}}}
+    assert row["limits"] == {"reach_m": 0.6} and row["failure_modes"] == ["reach_stall"]
+    assert len(direct) == len(lib)  # overlay, not a duplicate; the capability row is skipped
+    assert ms.skills("../x") == {"error": "unknown session"}

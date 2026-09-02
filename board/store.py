@@ -1186,6 +1186,56 @@ def skill_evidence(session_dir: str | Path) -> list[dict]:
     return [keys[k] for k in sorted(keys, key=lambda k: tuple(str(x) for x in k))]
 
 
+def _record_rows(paths) -> dict[str, dict]:
+    """name -> plain SkillRecordV0 dict for every readable record-shaped JSON
+    file (has ``name`` and ``bindings``; capability/plan/recovery rows in the
+    same skills root are skipped). Later paths overwrite earlier same-name rows."""
+    out: dict[str, dict] = {}
+    for path in paths:
+        try:
+            d = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(d, dict) and isinstance(d.get("name"), str) and isinstance(d.get("bindings"), dict):
+            out[d["name"]] = d
+    return out
+
+
+def skills(session_dir: str | Path) -> list[dict]:
+    """Records overview, one row per skill sorted by name: ``{name, kind,
+    description, bindings: {emb: [executor keys]}, evidence: {emb: {n, k,
+    by_executor: {key: {n, k}}}}, limits, failure_modes, source}``.
+
+    The library records (``skill-library/records``, what the runtime mounts)
+    overlaid by the session's published copies (``<session>/skills/*.json``,
+    the evolution-only write path: evidence.by_executor and tunables land
+    there), so ``source`` says which one a row reflects. Executor keys follow
+    protocol.executors_of: ``scripted`` always, plus the binding's ``policies``
+    keys. A pure read; no session -> the library alone."""
+    from harness.skill_library import ROOT as records_root  # loads the library once
+    recs = _record_rows(sorted(records_root.glob("*.json")))
+    session_root = Path(session_dir) / "skills"
+    published = _record_rows(sorted(session_root.glob("*.json"))) if session_root.is_dir() else {}
+    out = []
+    for name in sorted(set(recs) | set(published)):
+        d = published.get(name) or recs[name]
+        bindings = {emb: sorted({"scripted", *((b or {}).get("policies") or {})})
+                    for emb, b in sorted((d.get("bindings") or {}).items())}
+        evidence = {}
+        for emb, ev in sorted((d.get("evidence") or {}).items()):
+            ev = ev or {}
+            evidence[emb] = {"n": ev.get("n", 0), "k": ev.get("k", 0),
+                             "by_executor": {key: {"n": r.get("n", 0), "k": r.get("k", 0)}
+                                             for key, r in sorted((ev.get("by_executor") or {}).items())}}
+        out.append({"name": name, "kind": d.get("kind", "segment"),
+                    "description": d.get("description", ""),
+                    "bindings": bindings, "evidence": evidence,
+                    "limits": d.get("limits") or {},
+                    "failure_modes": list(d.get("failure_modes") or []),
+                    "source": "session" if name in published else "library"})
+    return out
+
+
 def split_trajectories(samples: list[dict]) -> dict[str, list[dict]]:
     """``{"dev": [...], "heldout": [...]}`` by each sample's ``o.role``."""
     return {r: [t for t in samples if t["o"]["role"] == r] for r in ("dev", "heldout")}
