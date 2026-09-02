@@ -55,23 +55,37 @@ NAV_ORI_COS = 0.98
 _MANIFEST = Path(__file__).with_name("manifest.toml")
 
 
+#: The ``tunables`` a provider of this card was mounted with (harness.manifest.
+#: mount_params folds the manifest table + PH_MOUNT_PARAMS_OVERRIDE into every
+#: provider's params; the provider hands it here). One process-wide overlay.
+_MOUNTED: dict = {}
+
+
+def mount_tunables(overlay: dict | None) -> None:
+    """Install the mounted ``tunables`` overlay every stage driver reads."""
+    _MOUNTED.clear()
+    _MOUNTED.update(overlay or {})
+
+
 @cache
-def _tunables(overlay: str) -> dict:
+def _tunables(*overlays: str) -> dict:
     base = tomllib.loads(_MANIFEST.read_text()).get("tunables", {})
-    extra = json.loads(overlay) if overlay else {}
-    if unknown := set(extra) - set(base):
-        raise KeyError(f"PH_TUNABLES names unknown tunables {sorted(unknown)}; "
-                       f"known: {sorted(base)}")
-    return {**base, **{k: type(base[k])(v) for k, v in extra.items()}}
+    for overlay in overlays:
+        extra = json.loads(overlay) if overlay else {}
+        if unknown := set(extra) - set(base):
+            raise KeyError(f"unknown tunables {sorted(unknown)}; known: {sorted(base)}")
+        base = {**base, **{k: type(base[k])(v) for k, v in extra.items()}}
+    return base
 
 
 def tunables() -> dict:
-    """Effective stage tunables: manifest ``[tunables]`` defaults overlaid by the
-    ``PH_TUNABLES`` env var (a JSON object; unknown keys refuse loudly). The env
-    overlay is the knob a suite subprocess turns without editing the card."""
-    # ponytail: a process-wide env overlay, not per-episode; thread through
-    # provider params if two arms ever need different tunables in one process.
-    return _tunables(os.environ.get("PH_TUNABLES", ""))
+    """Effective stage tunables: manifest ``[tunables]`` defaults, overlaid by the
+    mounted ``tunables`` (``mount_tunables``: an evolve trial's perturbation), then
+    by the ``PH_TUNABLES`` env var (a JSON object). Unknown keys refuse loudly."""
+    # ponytail: process-wide overlays, not per-episode; thread through the
+    # driver instance if two arms ever need different tunables in one process.
+    return _tunables(json.dumps(_MOUNTED, sort_keys=True) if _MOUNTED else "",
+                     os.environ.get("PH_TUNABLES", ""))
 
 
 def tunables_sha() -> str:
@@ -297,7 +311,13 @@ class NavigateDriver:
         self.carry = carry          # hold the gripper closed to keep a grasped object
         self._goal = None
         self._stow_left = self.STOW_STEPS if carry else 0
-        self._dist_hist: list = []  # loaded-leg progress window (stall-arrival)
+        # loaded-leg progress watchdog: the base-to-dock distance not improving
+        # by 2 cm for stall_k steps. Near the dock that is a stall-ARRIVAL (done);
+        # farther out it is a "nav_stall" -- the segment fails early for a
+        # redock_retry instead of burning its cap wedged on furniture.
+        self._stall = StallDetector(tunables()["stall_k"], eps=0.02)
+        self._blocked = False
+        self.failure_mode = None
 
     def _target(self, env):
         if self._goal is None:
@@ -370,7 +390,12 @@ class NavigateDriver:
         a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
         a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
         a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
-        self._dist_hist.append(float(np.linalg.norm(vec)))
+        d = float(np.linalg.norm(vec))
+        if self._stall.update(d):
+            if d <= self.CARRY_NEAR:
+                self._blocked = True
+            else:
+                self.failure_mode = "nav_stall"
         # NO z easing while moving: all height changes happen in the
         # stationary stow -- easing the eef down mid-drive was measured to
         # strip the cargo (drops at steps 144-332 on seeds that survived
@@ -391,11 +416,8 @@ class NavigateDriver:
             # would ram the cargo into the appliance -- see act/CARRY_STOP),
             # OR a stall-arrival: progress physically converged near the dock
             # (counter/furniture edge) -- grinding on only strips the cargo.
-            blocked = (len(self._dist_hist) > 40
-                       and max(self._dist_hist[-41:])
-                       - min(self._dist_hist[-41:]) < 0.02)
             return bool(d <= self.CARRY_STOP
-                        or (blocked and d <= self.CARRY_NEAR))
+                        or (self._blocked and d <= self.CARRY_NEAR))
         return bool(d <= NAV_POS_TOL and np.cos(gyaw - psi) >= NAV_ORI_COS)
 
 

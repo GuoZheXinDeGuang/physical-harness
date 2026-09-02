@@ -146,9 +146,9 @@ def test_rsi_faces_are_byte_identical(tmp_path, capsys):
     # non-trivial: the fixture rounds actually flow through each face
     run = bs.rsi_run(sd, "kitchen_thaw")
     assert run["status"] == "running" and run["cursor"] == 2 and run["latest"]["round"] == 2
-    assert bs.rsi_series(sd, "kitchen_thaw") == [
-        {"round": 1, "before": 0, "after": 1, "best": 1},
-        {"round": 2, "before": 1, "after": 1, "best": 1}]
+    assert bs.rsi_series(sd, "kitchen_thaw") == [   # pre-per_seed rounds read as null
+        {"round": 1, "before": 0, "after": 1, "best": 1, "per_seed": None, "needs": None},
+        {"round": 2, "before": 1, "after": 1, "best": 1, "per_seed": None, "needs": None}]
     assert bs.rsi_frames(sd, "kitchen_thaw", 1) == ["media/kitchen_thaw/1/grasp.gif"]
     assert bs.rsi_frames(sd, "kitchen_thaw", 9) == [] and bs.rsi_run(sd, "nope") is None
     # traversal: a ../ task never leaves the session; a ../ session is refused

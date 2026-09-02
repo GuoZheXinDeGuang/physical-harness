@@ -1059,8 +1059,9 @@ def _seal_rounds(rt: Runtime, brief_id: str, task: str, path: Path) -> None:
                 rt.log.append("rsi_proposal_applied", {"brief": brief_id, "task": task,
                                                        "round": rd["round"], **rd["proposal"]})
             rt.log.append("rsi_step", {"brief": brief_id, "task": task,
-                                       **{k: rd[k] for k in ("round", "tried", "before", "after",
-                                                             "best", "published", "suite_sha")}})
+                                       **{k: rd.get(k) for k in ("round", "tried", "before", "after",
+                                                                 "best", "published", "suite_sha",
+                                                                 "per_seed", "needs")}})
 
 
 def _run_evolve(brief: dict, rt: Runtime, brief_id: str) -> None:

@@ -94,21 +94,17 @@ def make_env(spec: EpisodeSpec):
     return create_env(env_name=cfg["env"], robots=ROBOT, seed=spec.seed)
 
 
-#: Offscreen camera preference for ``frame`` (first present wins; None = free cam).
-FRAME_CAMERAS = ("robot0_agentview_left", "agentview", "frontview")
+#: Camera image keys already in every robocasa obs (create_env: use_camera_obs,
+#: 128x128); first present wins. Stored in robosuite's opengl (upside-down)
+#: convention, flipped here like vla_io does.
+FRAME_KEYS = ("robot0_agentview_left_image", "agentview_image", "frontview_image")
 
 
-def frame(env, size: int = 128):
-    """One ``size``x``size`` RGB uint8 frame of the live env for harness.media
-    (scripts/frame_dump's render path, minus the file). Lazy offscreen context;
-    read-only on mjData, so it consumes no rng. None when rendering fails."""
-    try:
-        sim = env.sim
-        if sim._render_context_offscreen is None:
-            from robosuite.utils.binding_utils import MjRenderContextOffscreen
-            MjRenderContextOffscreen(sim, device_id=-1)
-        names = tuple(getattr(sim.model, "camera_names", ()) or ())
-        cam = next((c for c in FRAME_CAMERAS if c in names), None)
-        return sim.render(width=size, height=size, camera_name=cam)[::-1]
-    except Exception:  # noqa: BLE001 -- a lost frame never touches the task
+def frame(obs):
+    """harness.media's embodiment-level frame source: the HxWx3 uint8 camera
+    image of ``obs`` (no offscreen render, no rng), or None when the obs carries
+    none -- the recorder then seals ``no_frames`` rather than staying silent."""
+    if not isinstance(obs, dict):
         return None
+    img = next((obs[k] for k in FRAME_KEYS if k in obs), None)
+    return None if img is None else np.ascontiguousarray(np.asarray(img)[::-1])

@@ -12,7 +12,9 @@ same seeds, and publish when the success count improves: the skill record with
 the measured ``by_executor`` row folded in goes through the evolution-only skills
 root door (``InMemorySkillGraph.publish``, the same one scripts/publish_plans.py
 uses). Every round lands atomically in ``campaigns/evolve-<task>/campaign.json``
-(rounds[], best, cursor, status); the runtime seals the ``rsi_step`` rows off it.
+(rounds[], best, cursor, status) with the kept suite's per-seed summary
+(``per_seed``) and, when nothing was tried, ``needs`` -- what would unblock the
+proposer; the runtime seals the ``rsi_step`` rows off it.
 The ``proposals/`` inbox (board.store.submit_proposal) comes first: a pending entry
 for this task is consumed at the start of the round (``rsi_proposal_applied``) and
 tried instead of the built-in proposer -- a ``card`` proposal mounts its candidate
@@ -156,9 +158,11 @@ def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path
             if r["kind"] == "task.plan" and r["data"].get("graph"):
                 skills.update({n["id"]: n["skill"] for n in r["data"]["graph"].get("nodes") or []})
         nodes, faults = out["nodes"], out.get("faults") or []
+        dead = next((nid for nid, n in nodes.items() if not n["success"]), None)
         per[str(seed)] = {
             "success": bool(out["success"]),
-            "first_death": next((nid for nid, n in nodes.items() if not n["success"]), None),
+            "first_death": dead,
+            "failure_mode": (nodes[dead].get("diagnostics") or {}).get("failure_mode") if dead else None,
             "fault": {k: faults[0].get(k) for k in ("kind", "node", "msg")} if faults else None,
             "nodes": {nid: {"skill": skills.get(nid), "success": bool(n["success"]),
                             "executor": n.get("executor") or "scripted"}
@@ -166,10 +170,19 @@ def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path
     return {"count": sum(s["success"] for s in per.values()), "seeds": per, "sha": sha_json(per)}
 
 
+def per_seed(suite: dict) -> list[dict]:
+    """The operator-facing per-seed summary sealed with every round (rsi_step /
+    campaign.json): ``[{seed, success, first_death, failure_mode}]`` -- the seed
+    detail that otherwise lives only in this process."""
+    return [{"seed": int(seed), **{k: s.get(k) for k in ("success", "first_death", "failure_mode")}}
+            for seed, s in suite["seeds"].items()]
+
+
 # ── try: the proposals inbox first, then the built-in proposer ────────────────────
 
-def _none(reason: str, node=None) -> dict:
-    return {"kind": "none", "node": node, "detail": {"reason": reason}}
+def _none(reason: str, node=None, needs=("proposal",)) -> dict:
+    """``needs`` = what WOULD give the proposer something to try next round."""
+    return {"kind": "none", "node": node, "detail": {"reason": reason, "needs": list(needs)}}
 
 
 def _binding(c: dict) -> dict:
@@ -226,10 +239,12 @@ def _tunables(params: dict) -> tuple[dict, list]:
 
 
 def propose(before: dict, records: dict, emb: str, arm: str, binding: dict,
-            round_no: int, applied: dict) -> dict:
+            round_no: int, applied: dict, history: list | None = None) -> dict:
+    """``history`` = earlier round rows: an executor switch already tried on the
+    first-death node (won or lost) is not proposed again."""
     deaths = Counter(s["first_death"] for s in before["seeds"].values() if s["first_death"])
     if not deaths:
-        return _none("no first death: every seed succeeded")
+        return _none("no first death: every seed succeeded", needs=())
     node = deaths.most_common(1)[0][0]
     runs = [s["nodes"][node] for s in before["seeds"].values() if node in s["nodes"]]
     skill, current = runs[0]["skill"], runs[0]["executor"]
@@ -248,11 +263,20 @@ def propose(before: dict, records: dict, emb: str, arm: str, binding: dict,
             return {"kind": "executor", "node": node,
                     "detail": {"skill": skill, "from": current, "to": best,
                                "evidence": dict(cands[best]), "measured": rate}}
+    # no evidence says another bound executor is better: one honest attempt at any
+    # not yet tried on this node beats none
+    tried = {r["tried"]["detail"].get("to") for r in history or ()
+             if r["tried"]["kind"] in ("executor", "card") and r["tried"]["node"] == node}
+    if untried := sorted(bound - {current} - tried):
+        return {"kind": "executor", "node": node,
+                "detail": {"skill": skill, "from": current, "to": untried[0],
+                           "evidence": dict(cands.get(untried[0]) or {}), "measured": rate}}
     ref = (rearm(spec, arm, current if current in bound else None).get("policy_provider")
            or binding["policy"])
     tun, path = _tunables(mount_params(ref))
     if not tun:
-        return _none(f"no better executor evidence for {skill!r} and no tunables on {ref!r}", node)
+        return _none(f"no untried executor for {skill!r} and no tunables on {ref!r}", node,
+                     needs=(f"tunables on {ref}", "evidence for another executor", "proposal"))
     key = sorted(tun)[round_no % len(tun)]
     return {"kind": "tunables", "node": node,
             "detail": {"skill": skill, "executor": current, "ref": ref, "path": [*path, key],
@@ -311,6 +335,14 @@ def _media(session: Path, task: str, seeds: list) -> list[str]:
             for ent in media.index_of(session / "media", task, seed).values()]
 
 
+def _dropped(session: Path, task: str, seeds: list) -> dict[str, str]:
+    """``{"<seed>/<node>": reason}`` of the segments that left no clip -- the
+    honest side of ``media`` (read via rsi_run's latest round)."""
+    return {f"{seed}/{node}": why
+            for seed in range(int(seeds[0]), int(seeds[1]) + 1)
+            for node, why in media.dropped_of(session / "media", task, seed).items()}
+
+
 # ── the round loop ────────────────────────────────────────────────────────────────
 
 def main(argv=None) -> int:
@@ -355,7 +387,7 @@ def main(argv=None) -> int:
                                      media_dir=args.session / "media", budgets=budgets)
         prop = take_proposal(args.session, args.task, r)
         tried = (from_proposal(prop, before) if prop
-                 else propose(before, records, emb, arm, binding, r, applied))
+                 else propose(before, records, emb, arm, binding, r, applied, doc["rounds"]))
         after, published = before, False
         if tried["kind"] != "none":
             trial = apply(tried, applied)
@@ -377,7 +409,10 @@ def main(argv=None) -> int:
         doc["rounds"].append({
             "round": r, "tried": tried, "before": before["count"], "after": after["count"],
             "best": doc["best"], "suite_sha": after["sha"], "published": published,
-            "media": _media(args.session, args.task, seeds), "ts": time.time(),
+            "per_seed": per_seed(kept),
+            "needs": tried["detail"].get("needs", []) if tried["kind"] == "none" else [],
+            "media": _media(args.session, args.task, seeds),
+            "media_dropped": _dropped(args.session, args.task, seeds), "ts": time.time(),
             "proposal": {k: prop[k] for k in ("id", "kind", "note")} if prop else None})
         doc["cursor"], doc["applied"] = r, applied
         store.save(doc)

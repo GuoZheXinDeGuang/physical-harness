@@ -60,13 +60,15 @@ class RobocasaRecoveryActor:
     the primitives read the env directly (oracle-side, as the drivers do)."""
 
     def __init__(self, env, name: str, steps, *, obj_name=None, fixture_name=None,
-                 target=None) -> None:
+                 target=None, carry=False) -> None:
         self.env = env
         self.name = name
         self.obj_name = obj_name
         self.fixture_name = fixture_name
         #: () -> world xyz the reach phases aim at; default = the live object pose
         self._target = target
+        #: the stage was a loaded leg: keep the grip closed through base phases
+        self.carry = bool(carry)
         self._nudge_from = None
         #: flatten (phase, dur, dx, dy) into a per-step queue, same as RecoveryActor
         self.queue: list[tuple[str, float, float]] = []
@@ -92,7 +94,8 @@ class RobocasaRecoveryActor:
         return cls(env, recovery.name, steps,
                    obj_name=getattr(stage, "obj_name", None),
                    fixture_name=getattr(stage, "fixture_name", None),
-                   target=(lambda: np.asarray(drop(env), float)) if drop else None)
+                   target=(lambda: np.asarray(drop(env), float)) if drop else None,
+                   carry=getattr(stage, "carry", False))
 
     @property
     def done(self) -> bool:
@@ -141,9 +144,9 @@ class RobocasaRecoveryActor:
         return D._arm_action(env, eef, D.GRIP_CLOSE, kp=0.0)
 
     def _grip(self) -> float:
-        """Reach phases keep whatever the stage holds: a place stage (drop-point
-        target) is carrying, a grasp/nav stage is empty-handed."""
-        return D.GRIP_CLOSE if self._target is not None else D.GRIP_OPEN
+        """Phases keep whatever the stage holds: a place stage (drop-point
+        target) or a loaded nav leg is carrying, a grasp/empty nav is not."""
+        return D.GRIP_CLOSE if self._target is not None or self.carry else D.GRIP_OPEN
 
     def _obj_xyz(self) -> np.ndarray:
         """The live reach target (privileged, oracle-side): the stage's drop
@@ -160,7 +163,7 @@ class RobocasaRecoveryActor:
         if phase == "backout":
             a = D._zero()
             a[7] = -0.25  # straight reverse (drivers.py back-out recipe)
-            a[D.GRIP] = D.GRIP_OPEN
+            a[D.GRIP] = self._grip()
             a[D.MODE] = D.GRIP_CLOSE  # +1 == base mode
             return a
         if phase == "nudge":
@@ -178,7 +181,7 @@ class RobocasaRecoveryActor:
         if self._nav is None:
             if self.fixture_name is None:
                 raise ValueError("redock recovery needs the active stage's fixture_name")
-            self._nav = D.NavigateDriver(self.fixture_name)
+            self._nav = D.NavigateDriver(self.fixture_name, carry=self.carry)
         return self._nav.act(env, obs)
 
 
@@ -222,7 +225,7 @@ if __name__ == "__main__":
 
     # base-mode recovery: backout is a real reverse, redock delegates to NavigateDriver
     class _FakeNav:
-        def __init__(self, fx):
+        def __init__(self, fx, carry=False):
             self.fx = fx
 
         def act(self, env, obs):

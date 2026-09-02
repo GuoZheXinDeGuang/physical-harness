@@ -32,7 +32,7 @@ from typing import Any
 
 import numpy as np
 
-from harness import opstream
+from harness import opstream, protocol
 from harness.registry import load_provider
 from harness.skill_library import RECORDS, catalogue_of, segment_specs, select
 
@@ -138,6 +138,21 @@ def _emit_plan() -> Mapping:
     }, sort_keys=True))
 
 
+#: Failed segment's stage word (its node id up to the first "-") -> the recovery
+#: primitive this card's embodiment declares ([recoveries.*], embodiment_robocasa)
+#: that a no_progress replan inserts before it: a stalled base leg redocks, a
+#: grasp re-seats, a placement re-approaches. Keyed by node id (not the fault's
+#: failure_mode) so a done recover-<id> re-inserts byte-identically
+#: (replan_monotone); a stage with no entry is left as-is (nothing to work with).
+_RECOVERY: dict[str, str] = {"nav": "redock_retry", "carry": "redock_retry",
+                            "grasp": "regrasp_kitchen", "pack": "reapproach"}
+
+
+def _recover(plan: Mapping, node_id: str) -> Mapping:
+    strategy = _RECOVERY.get(node_id.split("-")[0])
+    return protocol.insert_recovery(plan, node_id, strategy) if strategy else plan
+
+
 class PackLunchPlanner:
     """Deterministic emitter of the fixed 31-node per-item mission graph."""
 
@@ -146,11 +161,20 @@ class PackLunchPlanner:
         if task != "pack_lunch":
             raise ValueError(
                 f"PackLunchPlanner only plans 'pack_lunch', got {task!r}")
-        return _emit_plan()
+        plan = _emit_plan()
+        fault = brief.get("fault") or {}
+        # Stateless emitter: a recovery node that already RAN sits in done_specs,
+        # so re-insert every done recover-<id> before answering this fault.
+        for nid in fault.get("nodes_done") or ():
+            if nid.startswith("recover-"):
+                plan = _recover(plan, nid[len("recover-"):])
+        if fault.get("kind") == "no_progress":
+            plan = _recover(plan, fault["node"])
+        return plan
 
     @property
     def identity(self) -> str:
-        return "pack_lunch_planner@v1"
+        return "pack_lunch_planner@v2"  # v2: answers no_progress with a recovery node
 
 
 def provider(**params: Any) -> PackLunchPlanner:

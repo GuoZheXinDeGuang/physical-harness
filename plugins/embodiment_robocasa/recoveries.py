@@ -55,7 +55,8 @@ REDOCK_RETRY = Strategy(
     (("backout", 20, 0.0, 0.0), ("redock", 120, 0.0, 0.0)),
     "Kitchen nav/at recovery: back the base straight out, re-drive the fixture "
     "dock (fresh NavigateDriver), then hand back so the stalled segment retries "
-    "from a clean approach. For a loaded-transport stall. Base mode throughout.",
+    "from a clean approach. For a loaded-transport stall (failure_mode "
+    "\"nav_stall\"); a loaded leg keeps its grip. Base mode throughout.",
 )
 
 

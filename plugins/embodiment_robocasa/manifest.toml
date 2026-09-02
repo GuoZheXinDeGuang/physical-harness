@@ -55,7 +55,8 @@ hover_dz = 0.08      # GraspDriver hover height above the object (m)
 reach_tol = 0.03     # xy arrival gate at hover / over the drop point (m)
 standoff = 0.65      # GraspDriver base standoff at the work height (m)
 segment_cap = 0      # per-segment step cap; 0 = the mission's stage table
-stall_k = 40         # StallDetector: steps without eef-to-target progress
+stall_k = 40         # StallDetector: steps without progress (eef->target: reach_stall;
+                     # loaded base->dock: nav_stall)
 
 # Predicates this card provides (the free-oracle factories in predicates.py;
 # harness.predicates folds them). reads = sigma keys, args = factory params.

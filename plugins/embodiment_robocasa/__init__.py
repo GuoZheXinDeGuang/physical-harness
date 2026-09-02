@@ -29,6 +29,11 @@ class RobocasaEmbodiment:
     def success(self, obs: Any, spec: Any, start_z: float) -> bool:
         return _env.lifted(obs, spec, start_z)
 
+    def frame(self, obs: Any):
+        """harness.media's frame source, one for every driver of this embodiment:
+        the camera image already in the obs (env.frame), rendering not required."""
+        return _env.frame(obs)
+
     def terminal_success(self, obs: Any, spec: Any, start_z: float, env: Any = None) -> bool:
         """OPTIONAL contract extension (see harness.contracts.EnvProvider): the
         full-task terminal boolean, the only thing a gate may consume. RoboCasa's

@@ -205,6 +205,11 @@ def test_two_rounds_land_in_campaign_json_and_the_chain(runtime, two_rounds):
     steps = _kinds(rows, "rsi_step")
     assert [(s["round"], s["before"], s["after"], s["published"]) for s in steps] == \
         [(1, 0, 2, True), (2, 2, 2, False)]
+    # per-seed detail of the kept suite rides both the round and its rsi_step row
+    kept = [{"seed": 1, "success": True, "first_death": None, "failure_mode": None},
+            {"seed": 2, "success": True, "first_death": None, "failure_mode": None}]
+    assert [s["per_seed"] for s in steps] == [r1["per_seed"], r2["per_seed"]] == [kept, kept]
+    assert (r1["needs"], r2["needs"]) == ([], []) and steps[1]["needs"] == []   # all seeds pass
     assert all(s["brief"] == name and s["task"] == TASK and s["suite_sha"] for s in steps)
     assert not _kinds(rows, "runtime.task_error")
 
@@ -227,6 +232,8 @@ def test_three_faces_agree_on_the_real_campaign(runtime, two_rounds, capsys):
     doc = _doc(runtime)
     assert bs.rsi_run(sd, TASK) == {**doc, "latest": doc["rounds"][-1]}
     assert [s["after"] for s in bs.rsi_series(sd, TASK)] == [2, 2]
+    assert [(s["per_seed"], s["needs"]) for s in bs.rsi_series(sd, TASK)] == \
+        [(r["per_seed"], r["needs"]) for r in doc["rounds"]]
     assert bs.rsi_frames(sd, TASK, 1) == doc["rounds"][0]["media"]
 
 
@@ -257,3 +264,23 @@ def test_evolve_is_refused_outside_evolution_mode(tmp_path_factory):
         assert "evolution mode" in _kinds(rows, "runtime.task_error")[0]["error"]
     finally:
         rt.stop()
+
+
+def test_proposer_tries_an_unproven_executor_once_then_says_what_it_needs():
+    """No evidence favours ``alt`` -> still one honest switch; once tried on that
+    node the round is ``none`` with ``needs`` naming what would unblock it."""
+    from scripts import evolve
+    recs = {k: protocol.SkillRecordV0.from_dict({**v, "evidence": {}}) for k, v in RECORDS.items()}
+    binding = {"policy": "test_evolve_e2e:policy_provider"}
+    dead = {"success": False, "first_death": "grab-0", "failure_mode": "reach_stall",
+            "nodes": {"reach-0": {"skill": "reach", "success": True, "executor": "scripted"},
+                      "grab-0": {"skill": "grab", "success": False, "executor": "scripted"}}}
+    before = {"count": 0, "seeds": {"1": dead, "2": dead}, "sha": "x"}
+    assert evolve.per_seed(before) == [
+        {"seed": s, "success": False, "first_death": "grab-0", "failure_mode": "reach_stall"} for s in (1, 2)]
+    first = evolve.propose(before, recs, EMB, "auto", binding, 1, {"executors": {}, "tunables": {}}, [])
+    assert (first["kind"], first["node"], first["detail"]["to"]) == ("executor", "grab-0", "alt")
+    again = evolve.propose(before, recs, EMB, "auto", binding, 2, {"executors": {}, "tunables": {}},
+                           [{"round": 1, "tried": first}])
+    assert again["kind"] == "none" and again["detail"]["needs"] == [
+        "tunables on test_evolve_e2e:policy_provider", "evidence for another executor", "proposal"]

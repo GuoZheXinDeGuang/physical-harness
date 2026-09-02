@@ -83,8 +83,8 @@ _STAGES: dict[str, tuple[Any, int]] = {
 }
 
 
-def provider() -> X.CompositePolicies:
-    return X.CompositePolicies(_STAGES, "robocasa_steam_prep@v1")
+def provider(**params: Any) -> X.CompositePolicies:
+    return X.CompositePolicies(_STAGES, "robocasa_steam_prep@v1", **params)
 
 
 if __name__ == "__main__":

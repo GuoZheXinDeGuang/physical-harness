@@ -130,8 +130,16 @@ def mount_params(ref: str, root: Path = PLUGINS_ROOT) -> dict:
     """The params the card declaring provider ``ref`` mounts it with, enabled or
     not: a segment an arm routes to an unmounted card's provider still runs under
     that card's declared contract. ``{}`` when no card mounts the ref."""
-    params: dict = next((dict(m.params) for _, data in _load(root)
+    cards = _load(root)
+    params: dict = next((dict(m.params) for _, data in cards
                          for m in card_mounts(data) if m.provider == ref), {})
+    # The hosting card's top-level ``[tunables]`` table reaches EVERY provider it
+    # hosts (``plugins.<card>.<mod>:factory``) as ``params["tunables"]`` -- one
+    # shared read, never a per-mount copy; an explicit mount table wins.
+    card = ref.partition(":")[0].split(".")[1] if ref.startswith("plugins.") else ""
+    tun = next((data.get("tunables") for name, data in cards if name == card), None)
+    if tun and "tunables" not in params:
+        params["tunables"] = dict(tun)
     # PH_MOUNT_PARAMS_OVERRIDE: {ref: {param: value}} -- an evolve trial's tunables
     # perturbation reaching the driver (scripts/evolve.py); one level of nesting
     # merges ([tunables] tables), anything else replaces.

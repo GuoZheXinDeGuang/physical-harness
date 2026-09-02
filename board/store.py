@@ -1362,8 +1362,9 @@ def _campaign(session_dir: str | Path, task: str) -> dict | None:
 
 def rsi_run(session_dir: str | Path, task: str) -> dict | None:
     """One evolve campaign's state: the campaign.json fields (task, session,
-    seeds, arm, best, cursor, status, rounds) plus ``latest`` (the newest round
-    row, or None before the first lands). None when no campaign exists."""
+    seeds, arm, best, cursor, status, rounds -- each round carrying ``per_seed``
+    and ``needs``) plus ``latest`` (the newest round row, or None before the
+    first lands). None when no campaign exists."""
     doc = _campaign(session_dir, task)
     if doc is None:
         return None
@@ -1372,10 +1373,12 @@ def rsi_run(session_dir: str | Path, task: str) -> dict | None:
 
 
 def rsi_series(session_dir: str | Path, task: str) -> list[dict]:
-    """Per-round {round, before, after, best} of one evolve campaign, in order
-    (the line-chart feed). [] when no campaign exists."""
+    """Per-round {round, before, after, best, per_seed, needs} of one evolve
+    campaign, in order (the line-chart feed; ``per_seed`` = the kept suite's
+    [{seed, success, first_death, failure_mode}], ``needs`` = what would unblock a
+    round that tried nothing). [] when no campaign exists."""
     doc = _campaign(session_dir, task) or {}
-    return [{k: r.get(k) for k in ("round", "before", "after", "best")}
+    return [{k: r.get(k) for k in ("round", "before", "after", "best", "per_seed", "needs")}
             for r in doc.get("rounds") or []]
 
 

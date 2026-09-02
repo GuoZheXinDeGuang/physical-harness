@@ -95,8 +95,8 @@ def _stages() -> dict[str, tuple[Any, int]]:
 _STAGES = _stages()
 
 
-def provider() -> X.CompositePolicies:
-    return X.CompositePolicies(_STAGES, "robocasa_recycle_cans@v1")
+def provider(**params: Any) -> X.CompositePolicies:
+    return X.CompositePolicies(_STAGES, "robocasa_recycle_cans@v1", **params)
 
 
 if __name__ == "__main__":

@@ -156,7 +156,8 @@ def suite_result(name: str = _DEFAULT_SESSION, sha: str | None = None) -> dict |
 @mcp.tool()
 def rsi_run(task: str, name: str = _DEFAULT_SESSION) -> dict | None:
     """One evolve campaign's state (campaigns/evolve-<task>/campaign.json: task,
-    session, seeds, arm, rounds[], best, cursor, status) plus ``latest`` round.
+    session, seeds, arm, rounds[] each with per_seed + needs, best, cursor,
+    status) plus ``latest`` round.
     null when the session runs no campaign for that task."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.rsi_run(path, task) if path else {"error": "unknown session"}
@@ -164,8 +165,10 @@ def rsi_run(task: str, name: str = _DEFAULT_SESSION) -> dict | None:
 
 @mcp.tool()
 def rsi_series(task: str, name: str = _DEFAULT_SESSION) -> list[dict]:
-    """Per-round {round, before, after, best} of one evolve campaign (the
-    line-chart feed); [] when none exists."""
+    """Per-round {round, before, after, best, per_seed, needs} of one evolve
+    campaign (the line-chart feed; per_seed = [{seed, success, first_death,
+    failure_mode}], needs = what would unblock a round that tried nothing);
+    [] when none exists."""
     path = bs.safe_child(_Cfg.runs, name, bs.is_session)
     return bs.rsi_series(path, task) if path else {"error": "unknown session"}
 

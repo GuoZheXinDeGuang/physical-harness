@@ -31,6 +31,7 @@ from typing import ClassVar, Protocol
 
 import numpy as np
 
+from harness.manifest import mount_params
 from harness.registry import load_provider
 from harness.skill_executor import InprocExecutor
 from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT, STACK_SCHEDULE, EpisodeSpec
@@ -457,6 +458,6 @@ def make_driver(spec: EpisodeSpec) -> PolicyDriver:
     """
     ref = spec.policy_provider
     if ref is not None:
-        provider = load_provider(ref)
+        provider = load_provider(ref, mount_params(ref))
         return provider.make_driver(spec)
     return _default_make_driver(spec)

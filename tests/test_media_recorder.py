@@ -142,3 +142,84 @@ def test_ctx_default_has_no_recorder():
     ctx = workload.NodeCtx(seed=0, env_ref="e", policy_ref="p", skills=(),
                            nodes_out={}, predicates={})
     assert ctx.media is None and replace(ctx, media=None).media is None
+
+
+# -- never silent: the reason a node left no clip ----------------------------------
+
+def test_finish_seals_no_frame_source_when_nothing_can_frame(tmp_path):
+    class _Blind:
+        def reset(self):
+            return {}
+
+        def step(self, a):
+            return {}, 0.0, False, {}
+
+    rec = media.SegmentRecorder(tmp_path, "t", 1, every=1)
+    driver = _Driver(True)
+    rec.start(_Blind(), driver)
+    _drive(_Blind(), driver, 8)
+    out = rec.finish("n", True)
+    assert out == {"kept": False, "reason": "no_frame_source"}
+    assert media.dropped_of(tmp_path, "t", 1) == {"n": "no_frame_source"}
+    assert media.index_of(tmp_path, "t", 1) == {}
+
+
+def test_finish_seals_no_frames_when_the_source_yields_none_and_names_the_error(tmp_path):
+    class _Emb:
+        def frame(self, obs):
+            raise RuntimeError("camera off")
+
+    rec = media.SegmentRecorder(tmp_path, "t", 2, every=1)
+    env, driver = _FakeEnvHandle(), _Driver(True)
+    rec.start(env, driver, _Emb())          # embodiment wins over env.frame
+    _drive(env, driver, 8)
+    out = rec.finish("n", True)
+    assert out["kept"] is False and out["reason"] == "no_frames"
+    assert "camera off" in out["error"]
+    assert media.dropped_of(tmp_path, "t", 2) == {"n": "no_frames"}
+
+    class _Silent:
+        def frame(self, obs):
+            return None
+
+    rec.start(env, driver, _Silent())
+    _drive(env, driver, 8)
+    assert rec.finish("m", True) == {"kept": False, "reason": "no_frames"}
+
+
+def test_embodiment_frame_reads_the_obs_and_a_kept_node_leaves_dropped(tmp_path):
+    seen = []
+
+    class _Emb:
+        def frame(self, obs):
+            seen.append(obs)
+            return b"\x10\x20\x30" * (media.SIZE * media.SIZE)
+
+    rec = media.SegmentRecorder(tmp_path, "t", 3, every=1)
+    env, driver = _FakeEnvHandle(), _Driver(True)
+    rec.start(env, driver, _Emb())
+    _drive(env, driver, 6)
+    assert len(seen) == 6 and all(isinstance(o, dict) for o in seen)
+    assert rec.finish("n", False) == {"kept": False, "reason": "verify_failed"}
+    assert media.dropped_of(tmp_path, "t", 3) == {"n": "verify_failed"}
+    rec.start(env, driver, _Emb())
+    _drive(env, driver, 6)
+    out = rec.finish("n", True)
+    assert out["kept"] is True and out["file"].startswith("t/3/n.")
+    assert media.dropped_of(tmp_path, "t", 3) == {} and set(media.index_of(tmp_path, "t", 3)) == {"n"}
+
+
+def test_robocasa_embodiment_frame_is_the_obs_camera_image_flipped():
+    """The embodiment-level source every robocasa driver shares: no renderer,
+    the obs image (opengl convention) flipped upright; None on an image-less obs."""
+    import numpy as np
+
+    from plugins.embodiment_robocasa import env as renv
+    from plugins.embodiment_robocasa import provider
+
+    img = np.zeros((128, 128, 3), np.uint8)
+    img[0, :, 0] = 255                    # top row red in obs -> bottom row in the frame
+    out = provider().frame({"robot0_agentview_left_image": img, "robot0_eef_pos": [0, 0, 0]})
+    assert out.shape == (128, 128, 3) and out[-1, 0, 0] == 255 and out[0, 0, 0] == 0
+    assert media._to_image(out).size == (media.SIZE, media.SIZE)
+    assert renv.frame({"robot0_eef_pos": [0, 0, 0]}) is None and renv.frame(None) is None

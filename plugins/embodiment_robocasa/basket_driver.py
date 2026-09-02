@@ -64,5 +64,5 @@ for _item in ITEMS:
         lambda item=_item: X.ReceptaclePlaceDriver(item, "basket"), 450)
 
 
-def provider() -> X.CompositePolicies:
-    return X.CompositePolicies(_STAGES, "robocasa_basket_smoke@v2")
+def provider(**params: Any) -> X.CompositePolicies:
+    return X.CompositePolicies(_STAGES, "robocasa_basket_smoke@v2", **params)

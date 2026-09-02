@@ -160,12 +160,6 @@ class KitchenThawDriver(InprocExecutor):
         return {"failure_mode": getattr(self._stage, "failure_mode", None),
                 "tunables_sha": D.tunables_sha()}
 
-    def frame(self):
-        """harness.media's camera source: the bound env's head-cam render."""
-        from plugins.embodiment_robocasa import env as _env
-
-        return None if self._env is None else _env.frame(self._env)
-
 
 class KitchenThawPolicies:
     """Layer 3 ``harness.contracts.PolicyFactory``: one mount, the composite driver.
@@ -177,7 +171,8 @@ class KitchenThawPolicies:
         return KitchenThawDriver()
 
 
-def provider() -> KitchenThawPolicies:
+def provider(**params: Any) -> KitchenThawPolicies:
+    D.mount_tunables(params.get("tunables"))  # the card's [tunables] (+ an evolve trial's overlay)
     return KitchenThawPolicies()
 
 

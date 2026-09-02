@@ -498,14 +498,15 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
                 "governance": _segment_governance(bundle, digests, entered, entered)}
     executor, driver_seal = _executor(node, ep, seg_spec, ctx)
     if ctx.media is not None:
-        ctx.media.start(ep.env, ep.driver)
+        ctx.media.start(ep.env, ep.driver, ep.embodiment)
     if is_segment(executor):
         seg = _run_segment(executor, node, seg_spec, ep, ctx)
     else:
         seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor,
                                 executor=executor)
-    if ctx.media is not None:
-        ctx.media.finish(node["id"], bool(seg["success"]))
+    if ctx.media is not None:   # kept file or the honest reason, never silence
+        seg["diagnostics"] = {**seg.get("diagnostics", {}),
+                              "media": ctx.media.finish(node["id"], bool(seg["success"]))}
     exited = ep.cursor
     stages = seg.get("stages", [])
     opstream.emit("sub_goal_transition", node=node["id"],

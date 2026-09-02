@@ -1,14 +1,19 @@
 """Segment media recorder: 128px frames in memory, on disk only after verify.
 
 One ``SegmentRecorder`` per (session media root, task, seed). ``start(env,
-driver)`` taps ``driver.act`` so every EVERY-th driver step grabs one frame from
-the duck-typed source (``driver.frame()`` else ``env.frame()``; neither ->
-nothing recorded). ``keep(node)`` encodes ``media/<task>/<seed>/<node>.mp4``
-(imageio+ffmpeg importable) else ``.gif`` (PIL), re-encoding at a lower fps
-until under MAX_BYTES, and updates the seed's ``index.json``; ``drop()``
-discards. Frames are live state like scripts/frame_dump: they never enter the
-session-log chain (only the index/paths reach the board's rsi_frames face), and
-every capture/encode failure is swallowed -- a lost clip never fails a task.
+driver, embodiment)`` taps ``driver.act`` so every EVERY-th driver step grabs one
+frame from the first duck-typed source present: ``embodiment.frame(obs)`` (the
+camera image already in the obs -- every driver of that embodiment gets it for
+free, no renderer needed), else ``driver.frame()``, else ``env.frame()``.
+``keep(node)`` encodes ``media/<task>/<seed>/<node>.mp4`` (imageio+ffmpeg
+importable) else ``.gif`` (PIL), re-encoding at a lower fps until under
+MAX_BYTES, and updates the seed's ``index.json``; ``drop()`` discards. Frames
+are live state like scripts/frame_dump: they never enter the session-log chain
+(only the index/paths reach the board's rsi_frames face). A lost clip never
+fails a task, but it is never silent either: ``finish`` returns
+``{kept, reason|file}`` for the node's diagnostics and writes the reason under
+``index.json["dropped"]`` (no_frame_source / no_frames / verify_failed /
+encode_failed).
 """
 
 from __future__ import annotations
@@ -37,33 +42,37 @@ class SegmentRecorder:
         self._src = None
         self._untap = None
         self._n = 0
+        self.error: str | None = None   # last capture/encode failure, for the reason
 
     # -- recording -------------------------------------------------------------
-    def start(self, env: Any, driver: Any) -> None:
+    def start(self, env: Any, driver: Any, embodiment: Any = None) -> None:
         self.stop()
-        self.frames, self._n = [], 0
-        self._src = getattr(driver, "frame", None) or getattr(env, "frame", None)
+        self.frames, self._n, self.error = [], 0, None
+        emb = getattr(embodiment, "frame", None)
+        src = getattr(driver, "frame", None) or getattr(env, "frame", None)
+        # one callable(obs): the embodiment reads the obs, the legacy sources ignore it
+        self._src = emb if emb is not None else (src and (lambda obs: src()))
         if self._src is None:
             return
         orig = driver.act
 
         def act(obs):
-            self.capture()
+            self.capture(obs)
             return orig(obs)
 
         driver.act = act   # instance attr shadows the class method; stop() removes it
         self._untap = lambda: driver.__dict__.pop("act", None)
 
-    def capture(self) -> None:
+    def capture(self, obs: Any = None) -> None:
         self._n += 1
         if self._n % self.every or self._src is None:
             return
         try:
-            img = _to_image(self._src())
+            img = _to_image(self._src(obs))
             if img is not None:
                 self.frames.append(img)
-        except Exception:  # noqa: BLE001, S110 -- a lost frame never touches the task
-            pass
+        except Exception as exc:  # noqa: BLE001 -- a lost frame never touches the task
+            self.error = repr(exc)
 
     def stop(self) -> None:
         if self._untap is not None:
@@ -83,21 +92,42 @@ class SegmentRecorder:
         frames, self.frames = self.frames, []
         if not frames:
             return None
-        seed_dir = self.root / self.task / str(self.seed)
         try:
-            seed_dir.mkdir(parents=True, exist_ok=True)
-            path, fps, n = _encode(frames, seed_dir / str(node))
-            _index(seed_dir, node, path, fps, n)
+            self.seed_dir.mkdir(parents=True, exist_ok=True)
+            path, fps, n = _encode(frames, self.seed_dir / str(node))
+            _index(self.seed_dir, node, {"file": path.name, "bytes": path.stat().st_size,
+                                         "frames": n, "fps": fps, "ts": time.time()})
             return path
-        except Exception:  # noqa: BLE001 -- a lost clip never touches the task
+        except Exception as exc:  # noqa: BLE001 -- a lost clip never touches the task
+            self.error = repr(exc)
             return None
 
-    def finish(self, node: str, ok: bool) -> Path | None:
-        """The workload's one call: keep on verify success, drop otherwise."""
-        if ok:
-            return self.keep(node)
+    @property
+    def seed_dir(self) -> Path:
+        return self.root / self.task / str(self.seed)
+
+    def finish(self, node: str, ok: bool) -> dict:
+        """The workload's one call: keep on verify success, drop otherwise. Returns
+        the node's ``diagnostics.media``: ``{"kept": True, "file": "<task>/<seed>/
+        <node>.mp4"}`` or ``{"kept": False, "reason": ...[, "error": ...]}`` -- the
+        same reason is indexed under ``index.json["dropped"]`` so a run with no
+        clip at all still leaves a readable trace under media/."""
+        had_src, had_frames = self._src is not None, bool(self.frames)
+        path = self.keep(node) if ok else None
+        if path is not None:
+            return {"kept": True, "file": str(path.relative_to(self.root))}
         self.drop()
-        return None
+        reason = ("verify_failed" if not ok else "no_frame_source" if not had_src
+                  else "no_frames" if not had_frames else "encode_failed")
+        out = {"kept": False, "reason": reason}
+        if self.error:
+            out["error"] = self.error
+        try:
+            self.seed_dir.mkdir(parents=True, exist_ok=True)
+            _index(self.seed_dir, node, None, reason)
+        except OSError:
+            pass
+        return out
 
 
 def recorder_for(brief: Any, seed: int) -> SegmentRecorder | None:
@@ -170,15 +200,21 @@ def _encode(frames: list, stem: Path) -> tuple[Path, int, int]:
     return path, fps, len(sub)
 
 
-def _index(seed_dir: Path, node: str, path: Path, fps: int, n: int) -> None:
+def _index(seed_dir: Path, node: str, entry: dict | None, reason: str | None = None) -> None:
+    """Atomically move ``node`` to ``files`` (kept, ``entry``) or ``dropped``
+    (``reason``) in the seed's index.json -- a node is in exactly one of them."""
     idx = seed_dir / "index.json"
     try:
         data = json.loads(idx.read_text())
     except (OSError, ValueError):
         data = {}
-    files = data.setdefault("files", {})
-    files[str(node)] = {"file": path.name, "bytes": path.stat().st_size,
-                        "frames": n, "fps": fps, "ts": time.time()}
+    files, dropped = data.setdefault("files", {}), data.setdefault("dropped", {})
+    if entry is not None:
+        files[str(node)] = entry
+        dropped.pop(str(node), None)
+    else:
+        dropped[str(node)] = reason
+        files.pop(str(node), None)
     tmp = idx.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, sort_keys=True, indent=1))
     os.replace(tmp, idx)
@@ -187,8 +223,18 @@ def _index(seed_dir: Path, node: str, path: Path, fps: int, n: int) -> None:
 def index_of(root: str | os.PathLike, task: str, seed: int) -> dict:
     """The kept files for one (task, seed): ``{node: {file, bytes, frames, fps, ts}}``
     -- what the board's rsi_frames face lists. Empty when nothing was kept."""
+    return _read_index(root, task, seed, "files")
+
+
+def dropped_of(root: str | os.PathLike, task: str, seed: int) -> dict:
+    """``{node: reason}`` of the segments that left no clip (verify_failed /
+    no_frame_source / no_frames / encode_failed). Empty when nothing was dropped."""
+    return _read_index(root, task, seed, "dropped")
+
+
+def _read_index(root, task, seed, key: str) -> dict:
     idx = Path(root) / str(task) / str(seed) / "index.json"
     try:
-        return dict(json.loads(idx.read_text()).get("files") or {})
+        return dict(json.loads(idx.read_text()).get(key) or {})
     except (OSError, ValueError):
         return {}

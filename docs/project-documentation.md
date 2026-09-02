@@ -454,17 +454,17 @@ clone 合法地显示**更多跳过，绝不是失败**：
 
 一轮：
 1. **看**：同种子 suite（与 task brief 同一条 `_mount_plan → workload.run` 路径）→ 每种子首死节点、fault `{kind,node,msg}`、每节点 executor。
-2. **试**（内置 proposer，按序取第一个可行的）：① 首死节点换 executor —— 绑定 policy 的 record `evidence.by_executor` 成功率高于实测才换；② 该节点驱动 mount 参数一维 ±20% 扰动（`[tunables]` 表或顶层数值；键按轮次轮转、符号交替，经 `PH_MOUNT_PARAMS_OVERRIDE` 并进 `manifest.mount_params`）；③ 都没有 → `kind:"none"` 并写明原因。
+2. **试**（内置 proposer，按序取第一个可行的）：① 首死节点换 executor —— 绑定 policy 的 record `evidence.by_executor` 成功率高于实测者优先，否则 record 上任一本轮之前没试过的其它绑定 executor（无证据也诚实试一次）；② 该节点驱动 mount 参数一维 ±20% 扰动（`[tunables]` 表或顶层数值；键按轮次轮转、符号交替，经 `PH_MOUNT_PARAMS_OVERRIDE` 并进 `manifest.mount_params`）；③ 都没有 → `kind:"none"` 并写明原因，`detail.needs` 列出能解锁的项（`tunables on <ref>` / `evidence for another executor` / `proposal`）。
 3. **同种子再跑**，试验已应用（executor 经 `scripts.evolve:planner_provider` 盖进 `node.executor`）。
 4. **成功种子数变好才发布**：带实测 `by_executor` 行（tunables 还有新值）的 record 走 `InMemorySkillGraph.publish` —— 与 `publish_plans` 同一道进化态专用门；否则不发布。试验抛异常 → 记 `tried.detail.error`，after=before，不崩。
 
-每轮封存一行 `rsi_step {brief,task,round,tried,before,after,best,published,suite_sha}`（按 (task,round) 幂等，2 s 轮询时实时封存，退出时兜底），并 tmp+rename 写 `runs/<session>/campaigns/evolve-<task>/campaign.json`：
-`{task,session,seeds,arm,rounds:[{round,tried:{kind,node,detail},before,after,best,suite_sha,published,media:[路径],ts}],best,cursor,status:running|cancelled|done,applied:{executors,tunables}}`。
+每轮封存一行 `rsi_step {brief,task,round,tried,before,after,best,published,suite_sha,per_seed,needs}`（`per_seed` = 保留 suite 的 `[{seed,success,first_death,failure_mode}]`，`needs` 只在 `tried.kind:none` 时非空）（按 (task,round) 幂等，2 s 轮询时实时封存，退出时兜底），并 tmp+rename 写 `runs/<session>/campaigns/evolve-<task>/campaign.json`：
+`{task,session,seeds,arm,rounds:[{round,tried:{kind,node,detail},before,after,best,suite_sha,published,per_seed,needs,media:[路径],media_dropped:{"种子/节点":原因},ts}],best,cursor,status:running|cancelled|done,applied:{executors,tunables}}`。
 `applied` 是已接受的状态，后续每轮重新应用；下一轮的 before 直接沿用上一轮保留的结果，不重测。
 
 **停/续**：`cancel_brief` 落标记 → evolve.py 在轮边界退出（状态 `cancelled`，exit 3；轮中则 killpg）→ `runtime.task_cancelled`，brief 进 `cancelled/`。同 task 再投 evolve → 从 `cursor` 继续；已 `done` 且 rounds 不变 → 空操作。
 
-**媒体规则**（`harness/media.py`）：段级节点每 4 步录一帧 128px 到内存（来源 `driver.frame()` 否则 `env.frame()`，都没有就不录）；verify 成功才落 `media/<task>/<seed>/<node>.mp4`（无 imageio 则 .gif），失败即丢；>1 MB 降 fps/抽帧重编；同节点重跑覆盖；任何录制/编码失败静默。帧永不进链，链和 campaign.json 只存路径。
+**媒体规则**（`harness/media.py`）：段级节点每 4 步录一帧 128px 到内存，来源按序取第一个存在的：`embodiment.frame(obs)`（robocasa：obs 里已有的 `robot0_agentview_left_image`，不需要渲染器，所有驱动免费得到）→ `driver.frame()` → `env.frame()`；verify 成功才落 `media/<task>/<seed>/<node>.mp4`（无 imageio 则 .gif），失败即丢；>1 MB 降 fps/抽帧重编；同节点重跑覆盖。录制失败不影响任务但绝不静默：该节点 `diagnostics.media` 封 `{kept:true,file}` 或 `{kept:false,reason:verify_failed|no_frame_source|no_frames|encode_failed[,error]}`，同一原因写进 `index.json["dropped"]`（evolve 轮行 `media_dropped`）。帧永不进链，链和 campaign.json 只存路径。
 
 **三面** `skills(session)`（逐字节等价）：records 概览，每技能一行 `{name, kind, bindings: {emb: [executor 键]}, evidence: {emb: {n, k, by_executor}}, limits, failure_modes, source}`——库记录被会话 `skills/` 下发布的同名副本覆盖（`source: session`）。ph-station 桥（dsh-ph-board）白名单同步加 `skills` / `rsiRun` / `rsiSeries` / `rsiFrames`，写路径只有 `submitBrief` / `cancelBrief`。
 
@@ -476,7 +476,7 @@ clone 合法地显示**更多跳过，绝不是失败**：
 候选卡 `plugins/candidates/<name>/` 与普通卡同一 manifest 形状，不被 base fold 扫到；`[executors.<键>] skill=, embodiment=, ref=, transport?` 由 `discover` 折进 `Registry.executors`，`skill_library.bind_executors` 在加载时把它盖到 `bindings.<本体>.policies.<键>`（只在挂载时可见，record 文件不动）。首张代码候选 `grasp_geometric_robocasa`：executor 键 `geometric`，code-as-policy `hover→descend→close→lift`，自带 `[tunables]`，provider 参数 `{tunables:{...}}` 覆盖（`mount_params` 只扫 `plugins/*/`，不扫 PH_PLUGINS_EXTRA）；`KitchenThawDriver` 对有 `bind(env, target=)` 的 executor 走原生路径（raw obs 进，12 维 env action 出）。`scripts/plugin_doctor.py plugins/candidates/<name>` 可直接体检（今天报 claim-only SKIP）。
 提案人：ph-station 的 `skill-author` preset 只读 `rsi_run/rsi_series/rsi_frames` 与链，唯一写口是 `submit_proposal`。
 
-**三面**（store / storecli / mcp 逐字节等价，只读 campaign.json）：`rsi_run(task, session)` = campaign.json + `latest`；`rsi_series(task, session)` = 每轮 `{round,before,after,best}`；`rsi_frames(task, round, session)` = 那一轮的 `media` 路径列表。没有 campaign → `None` / `[]`。
+**三面**（store / storecli / mcp 逐字节等价，只读 campaign.json）：`rsi_run(task, session)` = campaign.json + `latest`；`rsi_series(task, session)` = 每轮 `{round,before,after,best,per_seed,needs}`；`rsi_frames(task, round, session)` = 那一轮的 `media` 路径列表。没有 campaign → `None` / `[]`。
 
 ### 4.1 brief 形状
 
@@ -1520,6 +1520,7 @@ workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 acto
 - tunables：robocasa 段驱动的常量（`hover_dz`、`reach_tol`、`standoff`、`segment_cap`、`stall_k`）是卡 manifest `[tunables]` 的数据，
   `drivers.tunables()` 读默认值并按进程用 `PH_TUNABLES='{"stall_k":20}'` 覆盖（未知键拒绝）；`drivers.tunables_sha()` 随每个 robocasa 段的
   `diagnostics.tunables_sha` 封入节点/`task.plan_complete.nodes`/`actuation_end`，同处 `diagnostics.failure_mode`（`"reach_stall"` = eef 到目标距离 K=stall_k 步不降，段提前失败）。
+  `[tunables]` 经 `manifest.mount_params` 到达该卡每个 driver provider（`params["tunables"]`，evolve 的 `PH_MOUNT_PARAMS_OVERRIDE` 同路并入，`drivers.mount_tunables` 一处共享读）；载物 nav 段底盘到 dock 距离 K 步不降且离 dock > CARRY_NEAR → `failure_mode "nav_stall"`。pack_lunch / kitchen_thaw planner 同 recycle_cans：对 `no_progress` 按首死节点的阶段词插入本体声明的修复（nav/carry → `redock_retry`，grasp → `regrasp_kitchen`，pack/place → `reapproach`；载物段修复保持夹持）。
 
 ### 9.7 Plan library and mission briefs
 

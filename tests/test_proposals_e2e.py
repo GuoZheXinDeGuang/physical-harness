@@ -123,7 +123,7 @@ def env_provider():
     return _Env()
 
 
-def policy_provider():
+def policy_provider(**params):  # mounted under its card's params (mount_params)
     return _Policy()
 
 
