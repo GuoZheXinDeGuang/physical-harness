@@ -1,0 +1,27 @@
+{
+ "id": "drop_can1",
+ "name": "drop_can1",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(can1)",
+  "at(bin)"
+ ],
+ "ensures": [
+  "inside(can1,bin)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(can1)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "drop_can1"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the drop_can1 sub-goal in the persistent episode."
+}

@@ -20,6 +20,7 @@ from harness.config import sha_json
 #: (Legal.Grounded); ``str`` is a free string (a location label, a template).
 TYPES: dict[str, type] = {"entity": str, "str": str, "int": int,
                           "float": float, "bool": bool}
+TYPES_BY_PY: dict[type, str] = {float: "float", bool: "bool", int: "int", str: "str"}
 
 _PRED = re.compile(r"^\s*([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*$")
 
@@ -409,3 +410,57 @@ def replan_monotone(old_graph: Any, new_graph: Any, done_ids: Collection[str]
             problems.append(f"replan rewrote done node {d!r}: {nw[d].skill}{dict(nw[d].args)} "
                             f"!= {o[d].skill}{dict(o[d].args)}")
     return not problems, problems
+
+
+# ------------------------------------------------------------ VLM projection
+
+#: The exact reply shape a VLM planner must emit (the validate_plan dialect:
+#: node keys are exactly id/skill/args/after, ``after`` names EARLIER ids).
+VLM_OUTPUT_SCHEMA: dict[str, Any] = {
+    "goal": "<string>",
+    "nodes": [{"id": "<unique string>", "skill": "<a skill name from skills>",
+               "args": {"<arg>": "<value of the declared type>"},
+               "after": ["<id of an EARLIER node>"]}],
+    "verify": [{"after": "<node id>", "predicate": "<an oracle name>"}],
+    "rationale": "<string: why this graph is legal and sufficient>",
+}
+
+
+def evidence_interval(ev: Evidence, z: float = 1.96) -> list[float]:
+    """Wilson 95% interval on k/n; ``[0, 1]`` when n == 0."""
+    if ev.n <= 0:
+        return [0.0, 1.0]
+    p, n = ev.k / ev.n, ev.n
+    d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5) / d
+    return [round(max(0.0, c - h), 4), round(min(1.0, c + h), 4)]
+
+
+def vlm_projection(records: Mapping[str, Any], sigma0_facts: Collection[Any],
+                   sigma0_objects: Collection[str], done: Collection[Any],
+                   fault: Any, *, show_evidence: bool = False) -> dict[str, Any]:
+    """The planner-facing view of the library + start state: compact skill
+    cards, facts, objects, done ids, last fault and the output schema. Pure and
+    deterministic (sorted, plain JSON types) so ``content_id`` of it is stable."""
+    cards = []
+    for name in sorted(records):
+        r = records[name]
+        rec = r if isinstance(r, SkillRecordV0) else SkillRecordV0.from_dict(r)
+        card: dict[str, Any] = {"name": name, "kind": rec.kind,
+                                "args": dict(sorted(rec.args.items())),
+                                "requires": list(rec.requires),
+                                "ensures": list(rec.ensures)}
+        if rec.clobbers:
+            card["clobbers"] = list(rec.clobbers)
+        if rec.description:
+            card["description"] = rec.description
+        if show_evidence:
+            card["evidence"] = {emb: evidence_interval(ev)
+                                for emb, ev in sorted(rec.evidence.items())}
+        cards.append(card)
+    return {"skills": cards,
+            "facts": sorted(pred_ref_str(f) for f in sigma0_facts),
+            "objects": sorted(str(o) for o in sigma0_objects),
+            "done": to_plain(list(done)), "fault": to_plain(fault),
+            "output_schema": VLM_OUTPUT_SCHEMA}

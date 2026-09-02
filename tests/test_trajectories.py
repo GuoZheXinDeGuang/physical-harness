@@ -40,6 +40,7 @@ def _chain(runs) -> None:
 def test_one_sample_per_decision_with_L_and_success(tmp_path):
     _chain(tmp_path)
     ts = bs.trajectories(tmp_path / "session-main", role_of_seed=lambda s: "dev")
+    assert ts[0]["o"]["role_source"] == "caller"
     assert len(ts) == 2
     assert [t["o"]["L"] for t in ts] == [1, 2]
     assert all(t["o"]["success"] is True and t["o"]["replans"] == 1 for t in ts)
@@ -61,3 +62,34 @@ def test_three_faces_are_byte_identical(tmp_path, capsys):
     assert capsys.readouterr().out.rstrip("\n") == json.dumps(expected)       # CLI
     assert json.dumps(ms.trajectories("session-main")) == json.dumps(expected)  # MCP
     assert ms.trajectories("../session-main") == {"error": "unknown session"}
+    assert expected[0]["o"]["role_source"] == "no_store"
+
+
+def _burn_heldout(runs, seeds) -> None:
+    store = runs / "session-main" / "campaigns" / "c"
+    (store / "artifacts").mkdir(parents=True)
+    (store / "artifacts" / "abc.json").write_text(json.dumps({"heldout": seeds}))
+    (store / "index.jsonl").write_text(json.dumps(
+        {"seq": 0, "kind": "preregistration", "sha": "abc", "time": 0}) + "\n")
+
+
+def test_role_from_burned_heldout_block_and_out_split(tmp_path, capsys):
+    runs = tmp_path / "runs"
+    _chain(runs)                       # seed 7 on both samples
+    _burn_heldout(runs, [7, 8])
+    ts = bs.trajectories(runs / "session-main")
+    assert [t["o"]["role"] for t in ts] == ["heldout", "heldout"]
+    assert ts[0]["o"]["role_source"] == "burned_blocks"
+    out = tmp_path / "out"
+    code = storecli.main(["trajectories", "session-main", "--runs", str(runs), "--out", str(out)])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {"dev": 0, "heldout": 2}
+    held = [json.loads(l) for l in (out / "heldout.jsonl").read_text().splitlines()]
+    assert held == ts and (out / "dev.jsonl").read_text() == ""
+    ms.configure(runs)
+    assert json.dumps(ms.trajectories_split("session-main")) == json.dumps(
+        bs.split_trajectories(ts))                                            # MCP == lib
+    assert ms.trajectories_split("session-main")["heldout"] == held           # MCP == CLI files
+    (runs / "session-main" / "campaigns" / "c" / "artifacts" / "abc.json").write_text(
+        json.dumps({"heldout": [9]}))
+    assert [t["o"]["role"] for t in bs.trajectories(runs / "session-main")] == ["dev", "dev"]

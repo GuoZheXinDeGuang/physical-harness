@@ -155,6 +155,15 @@ def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
 
 
 @mcp.tool()
+def trajectories_split(name: str = _DEFAULT_SESSION) -> dict:
+    """``trajectories`` split ``{"dev": [...], "heldout": [...]}`` by ``o.role``
+    (the seed's burned block role) -- the same rows ``storecli trajectories --out``
+    writes as dev.jsonl / heldout.jsonl, without touching disk."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.split_trajectories(bs.trajectories(path)) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def runtime_status(name: str = _DEFAULT_SESSION) -> dict | None:
     """One runtime session's LIVE status (pid/render/mode/boot_ts/display), or null
     when it has not booted since the file existed. Live state, not sealed evidence.

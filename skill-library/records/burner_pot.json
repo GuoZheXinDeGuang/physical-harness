@@ -1,0 +1,26 @@
+{
+ "id": "burner_pot",
+ "name": "burner_pot",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(pot)"
+ ],
+ "ensures": [
+  "on(pot,burner)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(pot)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "burner_pot"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the burner_pot sub-goal in the persistent episode."
+}

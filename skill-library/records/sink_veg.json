@@ -1,0 +1,27 @@
+{
+ "id": "sink_veg",
+ "name": "sink_veg",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(vegetable1)",
+  "water_on()"
+ ],
+ "ensures": [
+  "inside(vegetable1,sink)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(vegetable1)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "sink_veg"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the sink_veg sub-goal in the persistent episode."
+}

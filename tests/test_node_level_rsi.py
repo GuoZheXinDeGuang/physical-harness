@@ -79,7 +79,7 @@ def test_unknown_recovery_phase_fails_loud():
 # ── c5. node-level recovery-primitive gate ────────────────────────────────────
 
 def test_recovery_support_kitchen_grasp_is_governable():
-    grasp = {"id": "grasp", "skill": "grasp", "kind": "segment",
+    grasp = {"id": "grasp", "skill": "grasp_meat", "kind": "segment",
              "after": ["at-fridge"], "args": {}}
     s = recovery_support("kitchen_thaw", grasp)
     assert s["supported"] and s["card"] == "embodiment_robocasa"
@@ -115,7 +115,7 @@ _KITCHEN_GRAPH = [
     {"id": "plan", "skill": "plan", "kind": "decide", "after": ["survey"], "args": {}},
     {"id": "nav-fridge", "skill": "nav_fridge", "kind": "segment", "after": ["plan"], "args": {}},
     {"id": "at-fridge", "skill": "v_at_fridge", "kind": "verify", "after": ["nav-fridge"], "args": {}},
-    {"id": "grasp", "skill": "grasp", "kind": "segment", "after": ["at-fridge"], "args": {}},
+    {"id": "grasp", "skill": "grasp_meat", "kind": "segment", "after": ["at-fridge"], "args": {}},
     {"id": "grasped", "skill": "v_grasped", "kind": "verify", "after": ["grasp"], "args": {}},
 ]
 _GRASP = _KITCHEN_GRAPH[4]

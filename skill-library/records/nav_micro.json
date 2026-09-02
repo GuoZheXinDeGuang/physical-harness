@@ -1,0 +1,23 @@
+{
+ "id": "nav_micro",
+ "name": "nav_micro",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(meat)"
+ ],
+ "ensures": [
+  "at(microwave)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "nav_micro"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the nav_micro sub-goal in the persistent episode."
+}

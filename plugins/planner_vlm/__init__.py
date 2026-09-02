@@ -1,8 +1,10 @@
 """planner_vlm card: a VLM-backed ``harness.contracts.TaskPlanner`` (plan §1).
 
-The empty VLM seat filled: the provider prompts a model with (goal, catalogue,
-oracles, scene, budget, last fault) and parses a strict-JSON graph
-``{goal, nodes[], verify[]}``. Everything the model may NOT do is enforced
+The empty VLM seat filled: the provider prompts a model with the SkillRecord
+projection (``harness.protocol.vlm_projection``: skill cards, facts, objects,
+done, fault, output schema) plus goal/oracles/scene/budget and parses a
+strict-JSON graph ``{goal, nodes[], verify[], rationale}``; the returned dict
+carries ``planner: {provider, endpoint, prompt_sha}`` for task.plan. Everything the model may NOT do is enforced
 OUTSIDE this card, by ``plugins.task.validate.validate_plan`` -- this card never
 pre-repairs a graph, never invents one silently: an unparseable reply (after
 one re-ask carrying the parse error) returns a graph the validator is
@@ -33,7 +35,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from harness import opstream
+from harness import opstream, protocol
 from harness.registry import load_provider
 
 #: Process-lifetime frozen-graph cache: canonical-JSON key -> canonical-JSON
@@ -60,27 +62,25 @@ CATALOGUE: dict[str, dict[str, type]] = {"stack": {"object": str, "target": str}
 ORACLES: tuple[str, ...] = ("stack_success",)
 
 _RULES = """You are a robot task planner. Reply with ONE JSON object and nothing else \
-(no prose, no code fences):
-{"goal": "<string>", "nodes": [{"id": "<string>", "skill": "<string>", \
-"kind": "<declared kind>", "args": {...}, "after": ["<earlier id>", ...]}, ...], \
-"verify": [{"after": "<node id>", \
-"predicate": "<string>"}, ...]}
+(no prose, no code fences), exactly the shape of planning input's output_schema.
 Hard rules -- a violation gets the whole plan rejected:
-- Select skills ONLY from the catalogue, passing EXACTLY the declared args with the \
-declared types. Never invent a skill, an arg, or a predicate.
-- If skill_docs is present, obey each skill's requires/ensures and copy its declared \
-kind into the node. Every node carries id, skill, args, after and optionally kind \
-(all ids unique, non-empty strings).
+- Select skills ONLY from skills, passing EXACTLY the declared args with the declared \
+types. Never invent a skill, an arg, or a predicate.
+- Supported: every predicate in a node's requires must be in facts or in the ensures of \
+a node it is (transitively) after, and not clobbered in between. Grounded: every object \
+argument names an entry of objects (or one produced by an earlier node's ensures).
 - Ground every object and target in planning_context. If planning_context declares a \
 target_by_object mapping, use that exact target for each object.
 - "after" lists only ids of nodes EARLIER in the list (the list is the execution order).
 - nodes must be NON-EMPTY (an empty plan is always rejected): plan the minimal \
-graph that achieves the goal with the catalogue's skills.
+graph that achieves the goal with the listed skills.
 - Every action node must be covered by at least one verify entry ({"after": its id, \
 "predicate": <a declared oracle>}); verify must be non-empty.
-- On a replan (a fault and completed_nodes are given): keep every completed node in the \
+- On a replan (fault and completed_nodes are given): keep every completed node in the \
 plan with its id, skill and args EXACTLY as listed -- byte-identical -- and only \
-re-plan the remaining work."""
+re-plan the remaining work.
+- rationale: one short paragraph on why the graph is legal (which facts / ensures \
+support each requires) and sufficient."""
 
 
 class VlmPlanner:
@@ -127,22 +127,31 @@ class VlmPlanner:
         catalogue = brief.get("catalogue") or {}
         if not isinstance(catalogue, Mapping):  # the doctor's canned brief carries []
             catalogue = {}
+        # Records: the card's protocol dicts when the brief carries them, else
+        # lifted from the catalogue + the card's skill_docs (planner_docs shape).
+        docs = brief.get("skill_docs") or {}
+        records = brief.get("records") or {
+            skill: {"id": skill, "name": skill, "kind": docs.get(skill, {}).get("kind", "segment"),
+                    "args": {a: protocol.TYPES_BY_PY.get(t, "str") for a, t in schema.items()},
+                    **{k: docs.get(skill, {}).get(k, ()) for k in ("requires", "ensures", "clobbers")},
+                    "description": docs.get(skill, {}).get("description", "")}
+            for skill, schema in catalogue.items()}
         fault = brief.get("fault")
         done_ids = tuple((fault or {}).get("nodes_done", ()))
         completed = [n for n in (self._last_plan or {}).get("nodes", ())
                      if n["id"] in done_ids]
+        proj = protocol.vlm_projection(
+            records, brief.get("facts") or (), brief.get("objects") or (),
+            done_ids, fault, show_evidence=bool(brief.get("show_evidence")))
         return {
+            **proj,
             "goal": (brief.get("instruction")
                      or brief.get("default_instruction")
                      or brief.get("task")),
-            "catalogue": {skill: {arg: t.__name__ for arg, t in schema.items()}
-                          for skill, schema in catalogue.items()},
-            "skill_docs": brief.get("skill_docs") or {},
             "planning_context": brief.get("planning_context") or {},
             "oracles": list(brief.get("oracles") or ()),
             "scene": brief.get("scene") or {},
             "budget": brief.get("budget"),
-            "fault": fault,
             "completed_nodes": [{"id": n["id"], "skill": n["skill"],
                                  "args": dict(n["args"])} for n in completed],
         }
@@ -170,18 +179,19 @@ class VlmPlanner:
             raise ValueError("reply is a JSON object but not a plan (no 'nodes' key)")
         return plan
 
-    def _generate(self, brief: Mapping) -> Mapping:
+    def _generate(self, brief: Mapping) -> tuple[Mapping, str]:
         messages = [{"role": "system", "content": _RULES},
                     {"role": "user", "content":
                      "Planning input:\n"
                      + json.dumps(self._payload(brief), sort_keys=True)
                      + "\n\nOutput ONLY the plan JSON object for this input now."}]
+        prompt_sha = protocol.content_id(messages)
         json_mode = {"type": "json_object"}
         reply = self._endpoint().chat(messages, temperature=0.0,
                                       max_tokens=self._max_tokens,
                                       response_format=json_mode)
         try:
-            return self._parse(reply)
+            return self._parse(reply), prompt_sha
         except ValueError as first:
             # ONE re-ask, carrying the parse error verbatim.
             messages += [{"role": "assistant", "content": reply},
@@ -192,7 +202,7 @@ class VlmPlanner:
                                           max_tokens=self._max_tokens,
                                           response_format=json_mode)
             try:
-                return self._parse(retry)
+                return self._parse(retry), prompt_sha
             except ValueError as second:
                 # NEVER silently invent a graph: return one validate_plan is
                 # guaranteed to refuse (empty nodes), so the failure folds back
@@ -201,7 +211,7 @@ class VlmPlanner:
                 opstream.emit("planner_vlm_unparseable", error=str(second))
                 return {"goal": f"planner_vlm: model reply unparseable "
                                 f"after one retry ({second})",
-                        "nodes": [], "verify": []}
+                        "nodes": [], "verify": []}, prompt_sha
 
     # -- the seam -----------------------------------------------------------
     def plan(self, brief: Mapping) -> Mapping:
@@ -214,7 +224,12 @@ class VlmPlanner:
                           brief.get("fault")], sort_keys=True, default=str)
         frozen = _FROZEN.get(key)
         if frozen is None:
-            plan = self._generate(brief)
+            plan, prompt_sha = self._generate(brief)
+            # provenance the workload seals in task.plan: WHICH endpoint saw
+            # WHICH prompt bytes (the prompt is a pure function of the brief).
+            plan = {**plan, "planner": {"provider": self._endpoint_ref,
+                                        "endpoint": self._endpoint().identity,
+                                        "prompt_sha": prompt_sha}}
             # canonical byte form (the planner_stack round-trip stance): only
             # pure JSON types leave this seam, byte-stable on replay.
             frozen = _FROZEN[key] = json.dumps(plan, sort_keys=True)

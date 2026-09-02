@@ -1,0 +1,23 @@
+{
+ "id": "carry_can2",
+ "name": "carry_can2",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(can2)"
+ ],
+ "ensures": [
+  "at(bin)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "carry_can2"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the carry_can2 sub-goal in the persistent episode."
+}

@@ -24,7 +24,10 @@ from harness.skill_library import RECORDS, catalogue_of, select
 
 #: skill name -> {arg name: required python type}. Authored on the skill side
 #: (skill-library/records), never by the planner, which only selects and parameterizes.
-CATALOGUE: dict[str, dict[str, type]] = catalogue_of(select(RECORDS, "robosuite", ("stack", "pick")))
+SKILL_RECORDS = select(RECORDS, "robosuite", ("stack", "pick"))
+CATALOGUE: dict[str, dict[str, type]] = catalogue_of(SKILL_RECORDS)
+#: sigma0 facts declared true at reset: the objects each planned scene presents.
+INITIAL_FACTS: tuple[str, ...] = ("present(cubeA)", "present(cubeB)", "present(can)", "present(milk)")
 
 #: Verify predicates a plan may name. Each is the embodiment's terminal
 #: success boolean for that skill, reached at dispatch time through the

@@ -1,0 +1,26 @@
+{
+ "id": "grasp_hot1",
+ "name": "grasp_hot1",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "at(hot1)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(hot1)"
+ ],
+ "clobbers": [
+  "gripper_free()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "grasp_hot1"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the grasp_hot1 sub-goal in the persistent episode."
+}

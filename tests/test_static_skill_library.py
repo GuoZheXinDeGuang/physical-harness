@@ -59,7 +59,8 @@ def test_contracts_are_shared_but_only_admitted_bindings_are_planner_visible():
             select(RECORDS, "libero", (name,))
     assert set(segment_specs(RECORDS, "libero")) == set()
     assert set(segment_specs(RECORDS, "robosuite")) == {"grasp", "place_on"}
-    assert set(segment_specs(RECORDS, "robocasa")) == {"navigate", "grasp", "carry", "place"}
+    # the four deterministic robocasa cards add their stage-bound segments on top
+    assert {"navigate", "grasp", "carry", "place"} <= set(segment_specs(RECORDS, "robocasa"))
 
 
 def test_records_roundtrip_and_catalogue_matches_stack_vocabulary():
@@ -68,7 +69,7 @@ def test_records_roundtrip_and_catalogue_matches_stack_vocabulary():
 
     for rec in RECORDS.values():
         assert rec.ensures, rec.name                         # library rule
-        assert rec.args and set(rec.args) <= {"object", "target"}
+        assert set(rec.args) <= {"object", "target"}
     assert CATALOGUE == {"stack": {"object": str, "target": str}, "pick": {"object": str}}
     assert set(SKILL_SPECS) == {"stack", "pick", "grasp"}
     assert SKILL_SPECS["grasp"]["task"] == "lift"
@@ -96,7 +97,8 @@ def test_vlm_receives_instruction_contracts_and_grounded_scene():
     content = endpoint.messages[1]["content"]
     payload = json.loads(content[content.find("{"):content.rfind("}") + 1])
     assert payload["goal"] == brief["instruction"]
-    assert payload["skill_docs"]["place"]["kind"] == "segment"
+    place = next(c for c in payload["skills"] if c["name"] == "place")
+    assert place["kind"] == "segment" and place["requires"] == list(M.SKILL_DOCS["place"]["requires"])
     assert payload["planning_context"]["target_by_object"] == M.TARGET_BY_OBJECT
 
 

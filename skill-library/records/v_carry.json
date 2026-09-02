@@ -1,0 +1,23 @@
+{
+ "id": "v_carry",
+ "name": "v_carry",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(meat)",
+  "at(microwave)"
+ ],
+ "ensures": [
+  "holding(meat)",
+  "at(microwave)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify holding(meat), at(microwave) on the live state."
+}

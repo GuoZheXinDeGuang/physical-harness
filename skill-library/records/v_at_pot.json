@@ -1,0 +1,21 @@
+{
+ "id": "v_at_pot",
+ "name": "v_at_pot",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "at(pot)"
+ ],
+ "ensures": [
+  "at(pot)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify at(pot) on the live state."
+}

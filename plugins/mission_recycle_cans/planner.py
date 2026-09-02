@@ -39,6 +39,7 @@ import numpy as np
 
 from harness import opstream
 from harness.registry import load_provider
+from harness.skill_library import RECORDS, catalogue_of, segment_specs, select
 
 # ── card constants ────────────────────────────────────────────────────────────
 #: RecycleSodaCans's own object names (its _check_success reads them).
@@ -66,11 +67,16 @@ _SEG_IDS: tuple[str, ...] = tuple(seg for seg, *_ in _CHAIN)
 
 # ── symbolic layer ────────────────────────────────────────────────────────────
 
-CATALOGUE: dict[str, dict[str, type]] = {
-    "survey": {}, "plan_order": {}, "sweep": {}, "report": {},
-    **{skill: {} for _, skill, _, _ in _CHAIN},
-    **{vskill: {} for _, _, _, vskill in _CHAIN if vskill},
-}
+#: The card's slice of the static skill library (skill-library/records): the
+#: symbolic contracts Supported/Covered judge; CATALOGUE is its typed view.
+SKILL_RECORDS = select(RECORDS, "robocasa", (
+    "survey", "plan_order", "sweep", "report",
+    *(skill for _, skill, _, _ in _CHAIN),
+    *(vskill for _, _, _, vskill in _CHAIN if vskill)))
+CATALOGUE: dict[str, dict[str, type]] = catalogue_of(SKILL_RECORDS)
+#: sigma0 facts the card declares true at reset (no live predicate binding
+#: exists for the library vocabulary yet), the base of every Supported chain.
+INITIAL_FACTS: tuple[str, ...] = tuple([*(f"present({c})" for c in CANS), "gripper_free()"])
 
 ORACLES: tuple[str, ...] = ("staged", "reported")
 
@@ -94,9 +100,7 @@ EPISODE: dict[str, Any] = {
     "horizon": 8000,
 }
 
-SEGMENT_SPECS: dict[str, dict[str, Any]] = {
-    skill: {"task": skill} for _, skill, _, _ in _CHAIN
-}
+SEGMENT_SPECS: dict[str, dict[str, Any]] = segment_specs(SKILL_RECORDS, "robocasa")
 
 
 def _emit_plan() -> Mapping:

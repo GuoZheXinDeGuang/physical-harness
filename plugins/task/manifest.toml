@@ -7,12 +7,16 @@
 policy = "plugins.policies:stack_scripted_provider"
 planner = "plugins.task.planner_stack:provider"
 catalogue = "plugins.task.planner_stack:CATALOGUE"
+records = "plugins.task.planner_stack:SKILL_RECORDS"
+initial_facts = "plugins.task.planner_stack:INITIAL_FACTS"
 oracles = "plugins.task.planner_stack:ORACLES"
 
 [task_bindings.clear_table]
 policy = "plugins.policies:provider"
 planner = "plugins.task.planner_stack:provider"
 catalogue = "plugins.task.planner_stack:CATALOGUE"
+records = "plugins.task.planner_stack:SKILL_RECORDS"
+initial_facts = "plugins.task.planner_stack:INITIAL_FACTS"
 oracles = "plugins.task.planner_stack:ORACLES"
 
 [campaigns]

@@ -1,0 +1,21 @@
+{
+ "id": "v_grasped_cold0",
+ "name": "v_grasped_cold0",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(cold0)"
+ ],
+ "ensures": [
+  "holding(cold0)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify holding(cold0) on the live state."
+}

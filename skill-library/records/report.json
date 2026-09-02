@@ -1,0 +1,21 @@
+{
+ "id": "report",
+ "name": "report",
+ "kind": "decide",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "planned()"
+ ],
+ "ensures": [
+  "reported()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Seal the machine report."
+}

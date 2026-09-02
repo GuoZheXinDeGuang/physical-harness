@@ -1,0 +1,21 @@
+{
+ "id": "plan",
+ "name": "plan",
+ "kind": "decide",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "surveyed()"
+ ],
+ "ensures": [
+  "planned()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Decide the sub-goal path from the survey."
+}

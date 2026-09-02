@@ -1,0 +1,26 @@
+{
+ "id": "grasp_pot",
+ "name": "grasp_pot",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "present(pot)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(pot)"
+ ],
+ "clobbers": [
+  "gripper_free()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "grasp_pot"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the grasp_pot sub-goal in the persistent episode."
+}

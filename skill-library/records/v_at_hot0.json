@@ -1,0 +1,21 @@
+{
+ "id": "v_at_hot0",
+ "name": "v_at_hot0",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "at(hot0)"
+ ],
+ "ensures": [
+  "at(hot0)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify at(hot0) on the live state."
+}

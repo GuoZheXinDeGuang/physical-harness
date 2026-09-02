@@ -40,6 +40,7 @@ import numpy as np
 
 from harness import opstream
 from harness.registry import load_provider
+from harness.skill_library import RECORDS, catalogue_of, segment_specs, select
 
 # ── card constants ────────────────────────────────────────────────────────────
 #: The robocasa card names the frozen food "meat" (MicrowaveThawingFridge's own
@@ -51,9 +52,9 @@ _POS_KEY = "meat_pos"
 #: verify skill resolves (PREDICATES) to a robocasa live-state predicate wrapper.
 _CHAIN: tuple[tuple[str, str, str, str], ...] = (
     ("nav-fridge", "nav_fridge", "at-fridge", "v_at_fridge"),
-    ("grasp",      "grasp",      "grasped",   "v_grasped"),
+    ("grasp",      "grasp_meat", "grasped",   "v_grasped"),
     ("nav-micro",  "nav_micro",  "at-micro",  "v_carry"),
-    ("place",      "place",      "inside",    "v_inside"),
+    ("place",      "place_meat", "inside",    "v_inside"),
     ("close",      "close",      "closed",    "v_closed"),
     ("press",      "press",      "on",        "v_on"),
 )
@@ -65,16 +66,16 @@ _SEG_IDS: tuple[str, ...] = tuple(seg for seg, *_ in _CHAIN)
 #: skill name -> {arg name: required python type}. Every node is arg-free: a
 #: segment's behaviour is fixed by its skill (routed through SEGMENT_SPECS), not by
 #: a runtime arg, and the verifies name their object implicitly (the one meat).
-CATALOGUE: dict[str, dict[str, type]] = {
-    "survey": {}, "plan": {},
-    "nav_fridge": {}, "v_at_fridge": {},
-    "grasp": {}, "v_grasped": {},
-    "nav_micro": {}, "v_carry": {},
-    "place": {}, "v_inside": {},
-    "close": {}, "v_closed": {},
-    "press": {}, "v_on": {},
-    "report": {},
-}
+#: The card's slice of the static skill library (skill-library/records): the
+#: symbolic contracts Supported/Covered judge; CATALOGUE is its typed view.
+SKILL_RECORDS = select(RECORDS, "robocasa", (
+    "survey", "plan", "report",
+    *(skill for _, skill, _, _ in _CHAIN),
+    *(vskill for _, _, _, vskill in _CHAIN if vskill)))
+CATALOGUE: dict[str, dict[str, type]] = catalogue_of(SKILL_RECORDS)
+#: sigma0 facts the card declares true at reset (no live predicate binding
+#: exists for the library vocabulary yet), the base of every Supported chain.
+INITIAL_FACTS: tuple[str, ...] = tuple(["present(meat)", "gripper_free()"])
 
 #: Verify predicates a plan's ``verify`` LIST may name (symbolic labels the loop
 #: folds into a failed node's attribution; the kindful verify NODES carry the real
@@ -128,14 +129,7 @@ EPISODE: dict[str, Any] = {
 #: base re-tasks the persistent spec per node (ep.spec.child(task=...)) and the
 #: composite driver's enter_segment reads spec.task. No stages overlay (these
 #: sub-goals are scored by the driver's own done(), not a StageSpec chain).
-SEGMENT_SPECS: dict[str, dict[str, Any]] = {
-    "nav_fridge": {"task": "nav_fridge"},
-    "grasp":      {"task": "grasp_meat"},
-    "nav_micro":  {"task": "nav_micro"},
-    "place":      {"task": "place_meat"},
-    "close":      {"task": "close_door"},
-    "press":      {"task": "press_start"},
-}
+SEGMENT_SPECS: dict[str, dict[str, Any]] = segment_specs(SKILL_RECORDS, "robocasa")
 
 
 def _emit_plan() -> Mapping:

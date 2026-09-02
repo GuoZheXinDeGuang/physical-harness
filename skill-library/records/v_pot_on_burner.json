@@ -1,0 +1,21 @@
+{
+ "id": "v_pot_on_burner",
+ "name": "v_pot_on_burner",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "on(pot,burner)"
+ ],
+ "ensures": [
+  "on(pot,burner)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify on(pot,burner) on the live state."
+}

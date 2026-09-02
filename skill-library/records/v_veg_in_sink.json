@@ -1,0 +1,21 @@
+{
+ "id": "v_veg_in_sink",
+ "name": "v_veg_in_sink",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "inside(vegetable1,sink)"
+ ],
+ "ensures": [
+  "inside(vegetable1,sink)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify inside(vegetable1,sink) on the live state."
+}

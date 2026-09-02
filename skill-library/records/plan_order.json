@@ -1,0 +1,21 @@
+{
+ "id": "plan_order",
+ "name": "plan_order",
+ "kind": "decide",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "surveyed()"
+ ],
+ "ensures": [
+  "planned()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Decide the can visiting order."
+}

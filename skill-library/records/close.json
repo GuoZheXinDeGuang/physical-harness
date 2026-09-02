@@ -1,0 +1,23 @@
+{
+ "id": "close",
+ "name": "close",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "inside(meat,microwave)"
+ ],
+ "ensures": [
+  "closed(microwave)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "close_door"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the close_door sub-goal in the persistent episode."
+}

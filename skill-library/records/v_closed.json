@@ -1,0 +1,21 @@
+{
+ "id": "v_closed",
+ "name": "v_closed",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "closed(microwave)"
+ ],
+ "ensures": [
+  "closed(microwave)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify closed(microwave) on the live state."
+}

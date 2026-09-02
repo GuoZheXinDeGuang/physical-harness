@@ -69,7 +69,7 @@ def _read(path: Path) -> str:
 def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path,
              after: int = 0, relation: str | None = None, after_ts: float = 0.0,
              wait_ms: int = 0, brief: str | None = None,
-             session: str | None = None, seq: int = 0):
+             session: str | None = None, seq: int = 0, out: Path | None = None):
     """Return the same object the matching board/mcp_server.py tool returns.
 
     Raises KeyError for an unknown fn and ValueError for a rejected name, so
@@ -179,7 +179,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         path = bs.safe_child(runs, name or "session-main", bs.is_session)
         if path is None:
             raise ValueError("unknown session")
-        return bs.trajectories(path)
+        return bs.export_trajectories(path, out) if out else bs.trajectories(path)
     raise KeyError(fn)
 
 
@@ -227,6 +227,7 @@ def main(argv=None) -> int:
     parser.add_argument("--after-ts", type=float, default=0.0, help="runtime_frame cursor: the ts last displayed; unchanged file -> short {unchanged} reply")
     parser.add_argument("--wait-ms", type=int, default=0, help="long poll: runtime_frame blocks up to WAIT_MS for the frame to change past --after-ts, brief_status for the brief's STATE to change; either way the answer is the current state, never a timeout error (capped board-side)")
     parser.add_argument("--seq", type=int, default=0, help="runtime_keyframe: the runtime_events seq whose pinned still to fetch")
+    parser.add_argument("--out", type=Path, default=None, help="trajectories: write <OUT>/dev.jsonl and heldout.jsonl (split by burned block role) and print the counts")
     args = parser.parse_args(argv)
     runs = args.runs.resolve()
     status = args.status.resolve() if args.status else runs.parent / "STATUS.md"
@@ -235,7 +236,8 @@ def main(argv=None) -> int:
         return serve(sys.stdin, sys.stdout, runs, status, progress)
     try:
         result = dispatch(args.fn, args.name, runs, status, progress, args.after, args.relation,
-                          args.after_ts, args.wait_ms, args.brief, args.session, args.seq)
+                          args.after_ts, args.wait_ms, args.brief, args.session, args.seq,
+                          args.out)
     except KeyError:
         print(json.dumps({"error": f"unknown fn: {args.fn}"}))
         return 2

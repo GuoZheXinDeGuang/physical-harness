@@ -37,7 +37,7 @@ def load_records(root: Path = ROOT) -> dict[str, SkillRecordV0]:
 
 def _binding(rec: SkillRecordV0, embodiment: str) -> dict[str, Any] | None:
     b = rec.bindings.get(embodiment)
-    return b if b and b.get("implemented", True) else None
+    return b if b is not None and b.get("implemented", True) else None
 
 
 def select(records: Mapping[str, SkillRecordV0], embodiment: str,
@@ -68,13 +68,13 @@ def planner_docs(records: Mapping[str, SkillRecordV0]) -> dict[str, dict[str, An
 
 def segment_specs(records: Mapping[str, SkillRecordV0], embodiment: str
                   ) -> dict[str, dict[str, Any]]:
-    """``{skill: {task_template}}`` for the persistent-segment bindings (fresh dicts:
+    """``{skill: {task | task_template}}`` for the persistent-segment bindings (fresh dicts:
     mission cards add their ``allowed_args`` grounding on top)."""
     out = {}
     for name, rec in records.items():
         b = _binding(rec, embodiment)
-        if b and "task_template" in b:
-            out[name] = {"task_template": b["task_template"]}
+        if b and ("task" in b or "task_template" in b):
+            out[name] = {k: b[k] for k in ("task", "task_template") if k in b}
     return out
 
 

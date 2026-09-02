@@ -1,0 +1,21 @@
+{
+ "id": "sort_temp",
+ "name": "sort_temp",
+ "kind": "decide",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "surveyed()"
+ ],
+ "ensures": [
+  "planned()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Decide the temperature->container assignment."
+}

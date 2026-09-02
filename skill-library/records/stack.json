@@ -7,7 +7,10 @@
   "object": "str",
   "target": "str"
  },
- "requires": [],
+ "requires": [
+  "present(object)",
+  "present(target)"
+ ],
  "ensures": [
   "on(object,target)"
  ],

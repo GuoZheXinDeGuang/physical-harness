@@ -1077,7 +1077,19 @@ def trajectories(session_dir: str | Path, *, role_of_seed=None) -> list[dict]:
     ``task.verify`` results folded into ``o.verify`` and the episode's
     ``task.plan_complete`` stamping success/replans on every sample it closes.
     ``o.L`` = nodes done before the decision + nodes verified all-true under it.
-    ``role_of_seed(seed) -> "dev" | "heldout"`` fills ``o.role`` when given."""
+    ``role_of_seed(seed) -> "dev" | "heldout"`` fills ``o.role`` when given;
+    otherwise the role is derived from ``burned_blocks(session_dir.parent)``
+    (heldout iff the seed sits in a burned heldout block), and ``o.role_source``
+    says which (``caller`` / ``burned_blocks`` / ``no_store`` -> all dev)."""
+    role_source = "caller"
+    if role_of_seed is None:
+        try:
+            held = [(lo, hi) for lo, hi, role, _ in burned_blocks(Path(session_dir).parent)
+                    if role == "heldout"]
+            role_source = "burned_blocks"
+        except ValueError:
+            held, role_source = [], "no_store"
+        role_of_seed = lambda s: "heldout" if any(lo <= s <= hi for lo, hi in held) else "dev"
     episode: list[Trajectory] = []
     out: list[Trajectory] = []
     for row in chain_rows(session_dir):
@@ -1086,12 +1098,14 @@ def trajectories(session_dir: str | Path, *, role_of_seed=None) -> list[dict]:
             seed = d.get("seed")
             x = {"mission": d.get("mission"), "sigma0": d.get("sigma0"),
                  "skills": list(d.get("skills") or []),
+                 "visible": list(d.get("visible") or []),
                  "show_evidence": bool(d.get("show_evidence")),
                  "done": list(d.get("done") or []), "fault": d.get("fault")}
             y = {"graph": d.get("graph_id"), "rationale": d.get("rationale") or ""}
             o = {"legal": bool(d.get("legal")), "verify": {}, "L": len(x["done"]),
                  "success": None, "replans": None, "seed": seed, "block": d.get("block"),
-                 "role": role_of_seed(seed) if role_of_seed and seed is not None else None}
+                 "role": role_of_seed(seed) if seed is not None else None,
+                 "role_source": role_source}
             episode.append(Trajectory(x, y, o))
         elif kind == "task.verify" and episode:
             o = episode[-1].o
@@ -1105,6 +1119,23 @@ def trajectories(session_dir: str | Path, *, role_of_seed=None) -> list[dict]:
             out += episode
             episode = []
     return [{"id": t.id, **to_plain(t)} for t in out + episode]
+
+
+def split_trajectories(samples: list[dict]) -> dict[str, list[dict]]:
+    """``{"dev": [...], "heldout": [...]}`` by each sample's ``o.role``."""
+    return {r: [t for t in samples if t["o"]["role"] == r] for r in ("dev", "heldout")}
+
+
+def export_trajectories(session_dir: str | Path, out_dir: str | Path) -> dict[str, int]:
+    """Write ``<out_dir>/dev.jsonl`` and ``heldout.jsonl`` (one sample per line,
+    ids stable) from ``trajectories(session_dir)``; returns the per-role counts."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    counts = {}
+    for role, rows in split_trajectories(trajectories(session_dir)).items():
+        (out_dir / f"{role}.jsonl").write_text("".join(json.dumps(t) + "\n" for t in rows))
+        counts[role] = len(rows)
+    return counts
 
 
 def cancelled_run(row: dict) -> bool:

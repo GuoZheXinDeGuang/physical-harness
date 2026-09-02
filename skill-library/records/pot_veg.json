@@ -1,0 +1,27 @@
+{
+ "id": "pot_veg",
+ "name": "pot_veg",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(vegetable1)",
+  "at(pot)"
+ ],
+ "ensures": [
+  "inside(vegetable1,pot)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(vegetable1)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "pot_veg"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the pot_veg sub-goal in the persistent episode."
+}

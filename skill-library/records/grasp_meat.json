@@ -1,0 +1,26 @@
+{
+ "id": "grasp_meat",
+ "name": "grasp_meat",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "at(fridge)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(meat)"
+ ],
+ "clobbers": [
+  "gripper_free()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "grasp_meat"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the grasp_meat sub-goal in the persistent episode."
+}

@@ -1,0 +1,24 @@
+{
+ "id": "nav_fridge",
+ "name": "nav_fridge",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "planned()",
+  "present(meat)"
+ ],
+ "ensures": [
+  "at(fridge)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "nav_fridge"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the nav_fridge sub-goal in the persistent episode."
+}

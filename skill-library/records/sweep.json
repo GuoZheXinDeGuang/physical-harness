@@ -1,0 +1,21 @@
+{
+ "id": "sweep",
+ "name": "sweep",
+ "kind": "perceive",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "planned()"
+ ],
+ "ensures": [
+  "swept()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Re-read the scene for stragglers."
+}

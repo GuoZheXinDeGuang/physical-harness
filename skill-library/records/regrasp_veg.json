@@ -1,0 +1,27 @@
+{
+ "id": "regrasp_veg",
+ "name": "regrasp_veg",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "inside(vegetable1,sink)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(vegetable1)"
+ ],
+ "clobbers": [
+  "gripper_free()",
+  "inside(vegetable1,sink)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "regrasp_veg"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the regrasp_veg sub-goal in the persistent episode."
+}

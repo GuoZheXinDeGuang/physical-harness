@@ -1,0 +1,21 @@
+{
+ "id": "v_placed_can1",
+ "name": "v_placed_can1",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "inside(can1,bin)"
+ ],
+ "ensures": [
+  "inside(can1,bin)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify inside(can1,bin) on the live state."
+}

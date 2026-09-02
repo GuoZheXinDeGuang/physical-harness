@@ -1,0 +1,21 @@
+{
+ "id": "v_water_off",
+ "name": "v_water_off",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "water_off()"
+ ],
+ "ensures": [
+  "water_off()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify water_off() on the live state."
+}

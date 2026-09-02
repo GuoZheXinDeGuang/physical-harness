@@ -1,0 +1,27 @@
+{
+ "id": "pack_hot0",
+ "name": "pack_hot0",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(hot0)",
+  "at(tupperware0)"
+ ],
+ "ensures": [
+  "inside(hot0,tupperware0)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(hot0)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "pack_hot0"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the pack_hot0 sub-goal in the persistent episode."
+}

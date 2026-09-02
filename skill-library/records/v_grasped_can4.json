@@ -1,0 +1,21 @@
+{
+ "id": "v_grasped_can4",
+ "name": "v_grasped_can4",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(can4)"
+ ],
+ "ensures": [
+  "holding(can4)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify holding(can4) on the live state."
+}

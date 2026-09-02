@@ -20,11 +20,12 @@ planner is mounted behind the seam.
 from __future__ import annotations
 
 import importlib
+import itertools
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from harness import opstream, protocol
+from harness import opstream, predicates, protocol
 from harness.config import sha_json
 from harness.features import privilege_cost
 from harness.kernel import Kernel
@@ -467,6 +468,53 @@ def _graph(plan: Mapping, seed: int) -> dict:
                       for n in plan.get("nodes") or []]}
 
 
+def _records(brief: Mapping, catalogue: Mapping) -> dict[str, protocol.SkillRecordV0]:
+    """The brief's SkillRecordV0 map keyed by BOTH id and name (protocol dicts or
+    records); a brief without records gets typed-only ones from the catalogue."""
+    recs = brief.get("records")
+    if not recs:
+        return {name: protocol.SkillRecordV0(
+                    id=name, name=name,
+                    args={k: _TYPE_NAMES.get(t, "str") for k, t in schema.items()})
+                for name, schema in catalogue.items()}
+    out = {}
+    for v in recs.values():
+        r = v if isinstance(v, protocol.SkillRecordV0) else protocol.SkillRecordV0.from_dict(v)
+        out[r.id] = out[r.name] = r
+    return out
+
+
+def _sigma0(brief: Mapping, snapshot: Mapping, sigma: Mapping,
+            records: Mapping[str, protocol.SkillRecordV0]) -> tuple[list[str], list[str]]:
+    """``(facts, objects)`` at reset. Objects: the scene snapshot's object names,
+    the planning context's inventory, and every entity the declared facts name.
+    Facts: the card's ``initial_facts`` plus every predicate the records mention
+    that has a registered binding and evaluates True on ``sigma`` (the live obs)."""
+    objects = set(snapshot.get("objects") or ())
+    objects |= {n["id"] for n in snapshot.get("nodes") or () if n.get("kind") == "object"}
+    pc = brief.get("planning_context") or {}
+    for key in ("objects", "receptacles", "supports"):
+        objects |= set(pc.get(key) or ())
+    facts = {protocol.pred_ref_str(f) for f in brief.get("initial_facts") or ()}
+    for f in facts:
+        objects |= set(protocol.parse_pred_ref(f)[1])
+    try:
+        known = predicates.records()
+    except Exception:  # noqa: BLE001 -- no registry here: declared facts only
+        known = {}
+    names = {protocol.parse_pred_ref(p)[0] for r in records.values()
+             for p in (*r.requires, *r.ensures, *r.clobbers)}
+    for name in sorted(names & set(known)):
+        for combo in itertools.product(sorted(objects), repeat=len(known[name].args)):
+            try:
+                truth = predicates.evaluate((name, *combo), sigma, recs=known)
+            except ValueError:      # ambiguous card binding: not a sigma0 fact
+                truth = None
+            if truth:
+                facts.add(protocol.pred_ref_str((name, *combo)))
+    return sorted(facts), sorted(objects)
+
+
 def _graph_problems(plan: Mapping, prev_plan: Mapping | None, done_ids,
                     brief: Mapping, catalogue: Mapping, seed: int) -> list[str]:
     """Protocol gate on a validate_plan-accepted graph: replan monotonicity
@@ -477,12 +525,7 @@ def _graph_problems(plan: Mapping, prev_plan: Mapping | None, done_ids,
     graph = _graph(plan, seed)
     if prev_plan is not None:
         problems += protocol.replan_monotone(_graph(prev_plan, seed), graph, done_ids)[1]
-    recs = brief.get("records")
-    records = ({k: protocol.SkillRecordV0.from_dict(v) for k, v in recs.items()} if recs
-               else {name: protocol.SkillRecordV0(
-                         id=name, name=name,
-                         args={k: _TYPE_NAMES.get(t, "str") for k, t in schema.items()})
-                     for name, schema in catalogue.items()})
+    records = _records(brief, catalogue)
     problems += protocol.validate_graph(graph, records, brief.get("facts") or (),
                                         brief.get("objects") or ())[1]
     return problems
@@ -573,6 +616,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     ctx = NodeCtx(seed=seed, env_ref=env_ref, policy_ref=policy_ref,
                   skills=skills, nodes_out=nodes_out, predicates=predicates,
                   episode=episode, segment_specs=brief.get("segment_specs"))
+    # sigma0 for Legal(G): computed ONCE from the reset world (the persistent
+    # episode's first obs, else the empty pre-episode snapshot) and the card's
+    # declared facts, so Supported/Covered judge against real facts and objects.
+    sigma = episode.obs if episode is not None else {}
+    records = _records(brief, catalogue)
+    facts, objects = _sigma0(brief, scene.snapshot(sigma), sigma, records)
+    visible = sorted({r.name for r in records.values()})  # the planner-visible skill set
+    brief = {**brief, "facts": facts, "objects": objects}
     while True:
         # Pre-episode there is no obs; the empty snapshot is the honest scene
         # until M2's World bridge feeds a live one. seed rides the brief so a
@@ -606,6 +657,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 "graph": plan if isinstance(plan, Mapping) else None,
                 "graph_id": protocol.content_id(plan) if isinstance(plan, Mapping) else None,
                 "rationale": plan.get("rationale", "") if isinstance(plan, Mapping) else "",
+                "facts": facts, "objects": objects, "visible": visible,
                 "legal": ok, "problems": [] if ok else [msg], "block": brief.get("block")})
             if not ok and replans:
                 kernel.note("task.replan_rejected", {"replan": replans, "problems": [msg]})

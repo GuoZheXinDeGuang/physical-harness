@@ -1,0 +1,24 @@
+{
+ "id": "nav_can1",
+ "name": "nav_can1",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "planned()",
+  "present(can1)"
+ ],
+ "ensures": [
+  "at(can1)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "nav_can1"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the nav_can1 sub-goal in the persistent episode."
+}

@@ -1,0 +1,27 @@
+{
+ "id": "pack_cold0",
+ "name": "pack_cold0",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(cold0)",
+  "at(tupperware1)"
+ ],
+ "ensures": [
+  "inside(cold0,tupperware1)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(cold0)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "pack_cold0"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the pack_cold0 sub-goal in the persistent episode."
+}

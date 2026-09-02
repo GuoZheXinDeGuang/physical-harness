@@ -1,0 +1,24 @@
+{
+ "id": "nav_cold1",
+ "name": "nav_cold1",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "planned()",
+  "present(cold1)"
+ ],
+ "ensures": [
+  "at(cold1)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "nav_cold1"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the nav_cold1 sub-goal in the persistent episode."
+}

@@ -1,0 +1,21 @@
+{
+ "id": "v_packed_hot1",
+ "name": "v_packed_hot1",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "inside(hot1,tupperware0)"
+ ],
+ "ensures": [
+  "inside(hot1,tupperware0)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify inside(hot1,tupperware0) on the live state."
+}

@@ -1,0 +1,19 @@
+{
+ "id": "survey",
+ "name": "survey",
+ "kind": "perceive",
+ "lineage": {},
+ "args": {},
+ "requires": [],
+ "ensures": [
+  "surveyed()"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Read the live kitchen scene once."
+}

@@ -1,0 +1,23 @@
+{
+ "id": "carry_hot1",
+ "name": "carry_hot1",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(hot1)"
+ ],
+ "ensures": [
+  "at(tupperware0)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "carry_hot1"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the carry_hot1 sub-goal in the persistent episode."
+}

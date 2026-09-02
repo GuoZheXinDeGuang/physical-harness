@@ -1434,6 +1434,20 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 - 不要在卡里再写一份 catalogue/segment 表：`select(RECORDS, 本体, names)` +
   `catalogue_of` / `planner_docs` / `segment_specs` / `skill_specs` 就是那张表。
 
+### 9.5 σ₀、VLM 投影、轨迹导出
+
+- σ₀ 怎么到 validate：卡 manifest 的 task binding 带 `records = ...:SKILL_RECORDS` 与
+  `initial_facts = ...:INITIAL_FACTS`；`task_brief` 穿到 brief，`workload.run()` 用
+  `_records` / `_sigma0`（episode obs + 声明 facts + 已注册谓词求值）算出 facts/objects，
+  一并传给 `validate_graph`（Supported/Covered 非空判），封在 `task.plan {facts, objects, visible}`。
+- VLM：`harness.protocol.vlm_projection(records, facts, objects, done, fault)` 生成 prompt 卡片
+  + `VLM_OUTPUT_SCHEMA`；`planner_vlm` 只从这份投影建 prompt，`task.plan.planner.prompt_sha =
+  content_id(messages)`。端点经 registry ref 到达，无 GPU 用 `plugins.model_endpoint:fake_provider`
+  （`PH_MODEL_ENDPOINT_FAKE=<graph.json>`）。
+- 导出：`python -m board.storecli trajectories <session> --out DIR` 写 `dev.jsonl` / `heldout.jsonl`，
+  按 seed 落在 `burned_blocks` 的 role 分（无 store → 全 dev，`o.role_source` 记来源）。
+  e2e：`tests/test_mission_e2e.py`（G1–G4，真 runtime + 真 CLI）、`tests/test_mission_sim_e2e.py`（G5，robosuite）。
+
 测试：`tests/test_protocol.py`（Legal 四条 + 单调 + 三值 + 稳定 id）、`tests/test_predicates.py`、
 `tests/test_static_skill_library.py`、`tests/test_task_protocol_events.py`、
 `tests/test_trajectories.py`、`tests/test_store.py::*burned_blocks*`。

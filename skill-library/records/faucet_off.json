@@ -1,0 +1,25 @@
+{
+ "id": "faucet_off",
+ "name": "faucet_off",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "water_on()"
+ ],
+ "ensures": [
+  "water_off()"
+ ],
+ "clobbers": [
+  "water_on()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "faucet_off"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the faucet_off sub-goal in the persistent episode."
+}

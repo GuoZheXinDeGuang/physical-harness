@@ -1,0 +1,26 @@
+{
+ "id": "grasp_veg",
+ "name": "grasp_veg",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "present(vegetable1)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(vegetable1)"
+ ],
+ "clobbers": [
+  "gripper_free()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "grasp_veg"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the grasp_veg sub-goal in the persistent episode."
+}

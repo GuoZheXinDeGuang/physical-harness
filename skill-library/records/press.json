@@ -1,0 +1,23 @@
+{
+ "id": "press",
+ "name": "press",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "closed(microwave)"
+ ],
+ "ensures": [
+  "on(microwave)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "press_start"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the press_start sub-goal in the persistent episode."
+}

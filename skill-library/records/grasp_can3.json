@@ -1,0 +1,26 @@
+{
+ "id": "grasp_can3",
+ "name": "grasp_can3",
+ "kind": "segment",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "at(can3)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(can3)"
+ ],
+ "clobbers": [
+  "gripper_free()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "task": "grasp_can3"
+  }
+ },
+ "evidence": {},
+ "description": "Drive the grasp_can3 sub-goal in the persistent episode."
+}

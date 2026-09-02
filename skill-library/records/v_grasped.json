@@ -1,0 +1,21 @@
+{
+ "id": "v_grasped",
+ "name": "v_grasped",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "holding(meat)"
+ ],
+ "ensures": [
+  "holding(meat)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify holding(meat) on the live state."
+}

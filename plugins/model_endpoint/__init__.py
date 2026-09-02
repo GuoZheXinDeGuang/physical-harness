@@ -155,3 +155,29 @@ class OpenAICompatEndpoint:
 
 def provider(**params: Any) -> OpenAICompatEndpoint:
     return OpenAICompatEndpoint(**params)
+
+
+class FakeEndpoint:
+    """Test-only ``ModelEndpoint``: every chat() returns one canned reply read
+    from ``path`` (default: env ``PH_MODEL_ENDPOINT_FAKE``). Reached by the same
+    registry-ref seam (``plugins.model_endpoint:fake_provider``) so a GPU-less
+    e2e drives the real planner_vlm prompt path with a fixed graph."""
+
+    def __init__(self, *, path: str | None = None, **_: Any) -> None:
+        self._path = path or os.environ.get("PH_MODEL_ENDPOINT_FAKE")
+        if not self._path:
+            raise ValueError("fake endpoint needs path= or PH_MODEL_ENDPOINT_FAKE")
+
+    @property
+    def identity(self) -> str:
+        return f"fake({self._path})"
+
+    def available(self, timeout: float = 0.0) -> bool:
+        return Path(self._path).is_file()
+
+    def chat(self, messages: Sequence[Mapping], **opts: Any) -> str:
+        return Path(self._path).read_text()
+
+
+def fake_provider(**params: Any) -> FakeEndpoint:
+    return FakeEndpoint(**params)

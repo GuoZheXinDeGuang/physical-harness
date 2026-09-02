@@ -544,7 +544,8 @@ def task_brief(task: str, binding: dict) -> dict:
     # Optional planner-only, server-authored context. The natural-language
     # instruction may be supplied by the task brief, but the skill semantics and
     # scene inventory remain manifest refs -- a caller cannot redefine either.
-    for key in ("skill_docs", "planning_context", "default_instruction"):
+    for key in ("skill_docs", "planning_context", "default_instruction", "records",
+                "initial_facts"):
         if key in binding:
             wbrief[key] = _load_attr(binding[key])
     # A heterogeneous mission (perceive/decide/verify nodes) declares a PREDICATES

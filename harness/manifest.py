@@ -20,6 +20,7 @@ folds it while ``harness`` stays plugin-free (``tests/test_kernel.py``).
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -156,7 +157,10 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     bundle_owner: dict = {}
     recov_owner: dict = {}
 
-    for plugin, data in _load(root):
+    # PH_PLUGINS_EXTRA: colon-separated extra card roots folded after ``root``
+    # (a test's tmp card beside the installed ones; same collision rules).
+    extra = [Path(r) for r in os.environ.get("PH_PLUGINS_EXTRA", "").split(":") if r]
+    for plugin, data in [c for r in (root, *extra) for c in _load(r)]:
         if data.get("actuation", "sim") == "real":
             raise ValueError(
                 f"plugin {plugin!r} declares actuation:real; the sim runtime "

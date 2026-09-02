@@ -6,7 +6,9 @@
  "args": {
   "object": "str"
  },
- "requires": [],
+ "requires": [
+  "present(object)"
+ ],
  "ensures": [
   "holding(object)"
  ],

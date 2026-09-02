@@ -1,0 +1,21 @@
+{
+ "id": "v_at_can3",
+ "name": "v_at_can3",
+ "kind": "verify",
+ "lineage": {},
+ "args": {},
+ "requires": [
+  "at(can3)"
+ ],
+ "ensures": [
+  "at(can3)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {}
+ },
+ "evidence": {},
+ "description": "Machine-verify at(can3) on the live state."
+}
