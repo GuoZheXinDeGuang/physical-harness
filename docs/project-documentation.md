@@ -382,38 +382,40 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 `PYTHONPATH=. .venv/bin/python -m pytest -m "not robosuite and not robocasa"`。
 它比隔离快照多 3 个 pass（那 3 个 camera-env 跳过项在卡在场时变成通过）。
 
-### 3.2 当前快照（2026-09-02，隔离，robosuite 被挡）
+### 3.2 隔离底座车道：命令与跳过清单
+
+这一节**不写数字**。计数每加一个测试就飘，手抄三处必然落后（一天内飘过两次）；
+不变量只有一条：**仿真卡片零安装时，底座车道全绿**。取数用命令，不抄结果：
 
 ```
-pass       : 846 passed
-skips      : 31 skipped
-             [2] test_grasp_geometric.py:141  camera env unavailable
-             [1] test_grasp_geometry.py:231   camera env unavailable
-             [1] test_reducers.py:171         cloned weights not present
-             [1] test_plugin_doctor.py:307    robocasa unimportable (robocasa venv only)
-             [5] test_robocasa_card.py         robocasa unimportable (robocasa venv only)
-             [12] test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
-             [1] test_robocasa_marker.py:11   robocasa unimportable (robocasa venv only)
-             [4] test_robocasa_missions.py     robocasa unimportable (robocasa venv only)
-             [1] test_runtime_frame.py         robocasa unimportable (robocasa venv only)
-             [1] test_libero_marker.py:15     libero unimportable (libero venv only)
-             (policy_remote extra now installed -- its 2 live-socket tests run)
-             [2] test_rsi_workload.py:592,609 runs/campaign-pj-scripted not present
-wall time  : ~18.8s
-AST green  : 17 passed (test_boundaries + test_kernel)
-deselected : 28 robosuite-marked items
+PYTHONPATH=. .venv/bin/python -m pytest -o addopts="" -q -m "not robosuite and not robocasa"
 ```
 
-798 → 806 是快照写下之后攒的 8 个底座项（7 个来自其间的提交，+1 是 grasp 谓词审计
-这一轮的 `test_mission_kitchen_thaw.py::test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch`）；
-806 → 824 是 PR #2（静态技能库 + 三张 basket/pack/stack 任务卡）带进来的 18 个底座项；
-824 → 846 是 skill graph protocol（§9：protocol / predicates / records / trajectories / 派生账本）的 22 个底座项。
+隔离复现（robosuite 被挡）按 §3.1 的两条路之一。隔离跑里**预期的跳过**（文件与原因，
+不是数量）：
 
-**全量对照（卡在场）**：实测 `876 passed, 28 skipped`（2026-09-02，harness `.venv`，
-robosuite 在场，skill graph protocol 之后）。它和上面的 824 不构成同一轮的算术，
-别拿两者相减。隔离快照少掉的 pass 是：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
-而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
-只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
+```
+test_grasp_geometric.py      camera env unavailable
+test_grasp_geometry.py       camera env unavailable
+test_reducers.py             cloned weights not present
+test_plugin_doctor.py        robocasa unimportable (robocasa venv only)
+test_robocasa_card.py        robocasa unimportable (robocasa venv only)
+test_robocasa_drivers.py     robocasa unimportable (robocasa venv only)
+test_robocasa_marker.py      robocasa unimportable (robocasa venv only)
+test_robocasa_missions.py    robocasa unimportable (robocasa venv only)
+test_runtime_frame.py        robocasa unimportable (robocasa venv only)
+test_libero_marker.py        libero unimportable (libero venv only)
+test_rsi_workload.py         runs/campaign-pj-scripted not present
+AST green                    test_boundaries + test_kernel
+deselected                   robosuite-marked items
+```
+
+（policy_remote extra 已安装时，其 2 个 live-socket 测试参与运行。）
+
+**全量对照（卡在场）**：同一条命令在 harness `.venv` 里跑，robosuite 在场。区别只在于
+robocasa 标记项没有 robocasa 可导入而跳过，只在 `sims/robocasa-venv` 里经
+`pytest -m robocasa` 跑；libero 标记项同理只在 `sims/libero-venv` 里跑；camera-env 跳过项
+在卡在场时变成通过。跳过清单之外出现新的跳过或任何失败，才是需要看的信号。
 
 ### 3.3 fresh clone 的合法差异
 
@@ -429,18 +431,6 @@ clone 合法地显示**更多跳过，绝不是失败**：
   测试要的 `mcp`）
 
 全新 clone 上出现 **FAILURE**（不是跳过）就是真回归。
-
-### 3.4 纪律：计数变了，同一个 commit 刷三处
-
-这个数飘过：robocasa 标记项的计数曾从 5 滑到 6（commit `38fe596`），事后才被追回来。
-所以这是一条**常设**规则：任何动 `tests/` 的 commit 都要重跑隔离底座车道，并在**同一个
-commit** 里更新 (1) §3.2 的 `pass` 行、(2) §3.2 的全量对照行、(3) README 的全量计数、
-(4) README.zh 的底座快道计数。快照落后于测试，正是这一节存在的意义。
-
-> 每一次增量"这 +N 是哪个测试文件、钉住了什么"的流水账是开发史，不随仓库发布，
-> 存在本地归档 `local-archive/docs/retired-from-public/base-gate.md`。
-
----
 
 ## 4. 通用 RSI 机制
 
@@ -596,7 +586,7 @@ board submit_brief(session=…) ── 路由：写哪个 session 的 inbox（�
   是防权限洗白的设计，runtime 仍是唯一权威；任何读不出来的情形（绑定无 `env`、
   runtime 已死、pid 被回收）一律**不给** `warning` 键，错的警告和错的文档一样坏。
 * **测试 marker 镜像 robosuite 模式**：新 marker + conftest 同款 `find_spec` 自动跳过。
-  base lane 会多出跳过项——§3.2 快照 + 两个 README 计数**同 commit 刷**。sim 自己的
+  base lane 会多出跳过项——§3.2 的跳过清单**同 commit 更新**。sim 自己的
   venv 里只跑 `pytest -m <marker>`（那里的 robosuite 是 master，不许跑 robosuite lane）。
 
 ### 5.3 卡片要提供什么（以 `plugins/embodiment_robocasa/` 为例）
@@ -656,7 +646,7 @@ verify + 回合内 replan 在 UI 图谱实时可见），不是成功率——�
 ### 5.5 落地顺序（每步有机械验收）
 
 1. **接线**：sim venv 里 `pip install -e $REPO`（底座）+ 新 marker + conftest 钩子 +
-   §3.2 快照刷新。验收：venv 里 kernel 可导入，base lane 绿。
+   §3.2 跳过清单更新。验收：venv 里 kernel 可导入，base lane 绿。
 2. **卡片**：env/percept provider + doctor 绿（sim venv 里 `-m <marker>`）。
 3. **驱动**：navigate + 各 arm 阶段 driver，逐阶段独立冒烟（从 reset 驱动到该阶段
    谓词为真）。
@@ -1364,6 +1354,9 @@ runtime 的机器上会替错的 session 作保。这与 `store._model_identity`
 | 14 | **模型端点挂了** | llama.cpp :30001 | ✅ 折进 `health().model` |
 | 15 | **一个 session 上两个 runtime** | `_claim_session` flock | ✅ 第二个拒绝启动并报出持锁 pid |
 | 16 | **最后那次改名到 `done/` 失败** | `_process` 末尾 | ✅ `runtime.task_error` 行；brief 留在 `processing/` 下次 boot 重排队，由第 3 行封顶 |
+| 17 | **session 休眠**：runtime 没跑、inbox 也空 | `health()` | ✅ `state: dormant`，不算 problem（`--status` 折成一行 `dormant`）；有 brief 排队才升级为 `stalled` |
+| 18 | **模型服务停了** | llama.cpp :30001 | ✅ `health().model.running: false`，`--status` 的 STOPPED 行带启动命令；只有 `PH_WITH_MODEL=1`（`scripts/cockpit --with-model` 会导出）时才计为 problem，免得为省显存停模型的机器常年红 |
+| 19 | **campaign 子进程在 stop / boot 时残留** | `_run_watched` / `_requeue` | ✅ 任何退出（cancel、SIGTERM、Ctrl-C、崩溃）都按 `processing/<brief>.pgid` 杀整个进程组（TERM，宽限后 KILL）并落 `CANCELLED`；`cockpit --stop` 中途的 brief 进 `cancelled/`（stage `runtime_stopped`），boot 时发现活着的孤儿组先杀再重排队，写 `runtime.orphan_killed {brief,pgid}` |
 
 ### 8.4 仍然开着的口子
 

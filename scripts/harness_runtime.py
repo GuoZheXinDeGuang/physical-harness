@@ -252,6 +252,7 @@ def _requeue(processing: Path, inbox: Path, failed: Path, session_dir: Path,
         counts = {}
     fresh: dict[str, int] = {}
     for p in sorted(processing.glob("*.json")):
+        _reap_orphan(_pgid_marker(processing, p.name), p.name, log)
         n = int(counts.get(p.name, 0)) + 1
         if n > _MAX_REQUEUES:
             log.append("runtime.task_error", {
@@ -264,6 +265,57 @@ def _requeue(processing: Path, inbox: Path, failed: Path, session_dir: Path,
         fresh[p.name] = n
         os.replace(p, inbox / p.name)
     drop(session_dir, REQUEUE_FILE, json.dumps(fresh))
+
+
+def _pgid_marker(processing: Path, brief_id: str) -> Path:
+    """Live state next to the claimed brief: the pgid of its campaign/rsi group.
+    Not ``*.json``, so the requeue glob never mistakes it for a brief."""
+    return processing / (brief_id + ".pgid")
+
+
+def _group_alive(pgid: int) -> bool:
+    """Any non-zombie process whose pgrp (/proc/*/stat field 5) is ``pgid``."""
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            state, _, pgrp = stat.read_text().rsplit(")", 1)[1].split()[:3]
+            if state != "Z" and int(pgrp) == pgid:
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _stop_group(pgid: int, proc: subprocess.Popen | None = None) -> None:
+    """SIGTERM a campaign/rsi group, SIGKILL whatever is still alive after
+    ``_CANCEL_GRACE_S``. ``proc`` (when this runtime is the parent) is drained
+    and reaped at the end so it never lingers as a zombie."""
+    for sig, wait in ((signal.SIGTERM, _CANCEL_GRACE_S), (signal.SIGKILL, 1.0)):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            break
+        deadline = time.monotonic() + wait
+        while _group_alive(pgid) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if not _group_alive(pgid):
+            break
+    if proc is not None:
+        proc.communicate()
+
+
+def _reap_orphan(marker: Path, brief_id: str, log: SessionLog) -> None:
+    """A campaign/rsi group is its OWN session (never in the runtime's group), so a
+    runtime that died holding a brief (SIGKILL, crash, OOM) leaves it running and
+    still writing campaigns/<stem>. Kill-then-requeue: the re-run starts clean
+    instead of racing a ghost writer into the same store (2026-08-28 shape); an
+    operator who would rather refuse the requeue can add that later."""
+    if not marker.exists():
+        return
+    pgid = int(marker.read_text())
+    if _group_alive(pgid):
+        log.append("runtime.orphan_killed", {"brief": brief_id, "pgid": pgid})
+        _stop_group(pgid)
+    marker.unlink()
 
 
 def _prepare_render(fps: float) -> None:
@@ -640,6 +692,10 @@ def _campaign_cmd(name: str, script: Path, out: Path) -> list[str]:
     ponytail: branch on the script basename; a per-script arg schema in the
     manifest would generalize only once a third campaign CLI shape appears.
     """
+    if os.environ.get("PH_CAMPAIGN_ARGV"):
+        # test seam: tests/test_runtime_killpg_e2e.py runs a long `sleep` as the
+        # campaign so the group teardown is driven end to end without a sim.
+        return json.loads(os.environ["PH_CAMPAIGN_ARGV"])
     cmd = [sys.executable, str(script), "--out", str(out)]
     if script.name == "acceptance_campaign.py":
         card = _campaign_card_dir(name)
@@ -679,34 +735,40 @@ def _run_watched(cmd: list[str], env: dict, rt: Runtime, brief_id: str,
     the stop is ``os.killpg`` over the group -- and because the group is NEW, the
     runtime's own process is never in the blast radius.
 
-    On cancel the half-written store is marked ``CANCELLED`` before raising: a
-    truncated dev sweep must never be readable as a result (two-state law). The
-    raise lands in ``_process``'s crash-safety wrap, which sees the marker and
-    seals ``runtime.task_cancelled`` rather than ``runtime.task_error``.
+    The group never outlives the brief: cancel, SIGTERM (``cockpit --stop`` ->
+    SystemExit), Ctrl-C or any crash of this frame kills it by pgid first, and
+    the half-written store is marked ``CANCELLED`` before the raise continues: a
+    truncated dev sweep must never be readable as a result (two-state law). A
+    cancel lands in ``_process``'s crash-safety wrap, which sees the marker and
+    seals ``runtime.task_cancelled`` rather than ``runtime.task_error``. The
+    pgid is also dropped beside the claimed brief so a boot after a SIGKILL can
+    reap the orphan (``_reap_orphan``) before re-queueing.
     """
     proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, start_new_session=True)
-    while True:
-        try:
-            # communicate() drains both pipes while it waits, so a chatty
-            # campaign can never deadlock on a full stderr buffer; retrying
-            # after a timeout loses no output (documented contract).
-            _, err = proc.communicate(timeout=_CANCEL_POLL_S)
-            return proc.returncode, err
-        except subprocess.TimeoutExpired:
-            if not _cancel_requested(rt, brief_id):
-                continue
-            os.killpg(proc.pid, signal.SIGTERM)  # pgid == pid (start_new_session)
+    marker = _pgid_marker(rt.processing, brief_id)
+    marker.write_text(str(proc.pid))  # pgid == pid (start_new_session)
+    try:
+        while True:
             try:
-                proc.communicate(timeout=_CANCEL_GRACE_S)
+                # communicate() drains both pipes while it waits, so a chatty
+                # campaign can never deadlock on a full stderr buffer; retrying
+                # after a timeout loses no output (documented contract).
+                _, err = proc.communicate(timeout=_CANCEL_POLL_S)
+                return proc.returncode, err
             except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.communicate()
-            out.mkdir(parents=True, exist_ok=True)
-            drop(out, "CANCELLED", json.dumps(
-                {"brief": brief_id, "what": what, "ts": time.time()}))
-            raise RuntimeError(f"{what} cancelled by the operator")
+                if _cancel_requested(rt, brief_id):
+                    raise RuntimeError(f"{what} cancelled by the operator")
+    except BaseException:
+        if proc.poll() is None:
+            _stop_group(proc.pid, proc)
+        out.mkdir(parents=True, exist_ok=True)
+        drop(out, "CANCELLED", json.dumps(
+            {"brief": brief_id, "what": what, "ts": time.time()}))
+        raise
+    finally:
+        marker.unlink(missing_ok=True)
 
 
 def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
@@ -846,7 +908,8 @@ def _seal_cancelled(rt: Runtime, brief_id: str, brief: dict, claimed: Path,
     stopping a run and a run crashing must stay separable in the evidence
     forever, or a later audit reads the human's decision as a capability the
     harness lacks. ``stage`` records which boundary caught it -- ``queued`` (the
-    brief never started) or ``running`` (stopped at a node/subprocess boundary).
+    brief never started), ``running`` (stopped at a node/subprocess boundary) or
+    ``runtime_stopped`` (the runtime itself was told to exit mid-brief).
     """
     rt.log.append("runtime.task_cancelled",
                   {"brief": brief_id, "task": brief.get("task") or brief.get("campaign"),
@@ -943,6 +1006,11 @@ def _process(rt: Runtime, path: Path) -> None:
                       error=repr(exc))
         os.replace(claimed, rt.failed / brief_id)
         return
+    except BaseException:
+        # SIGTERM (cockpit --stop) / Ctrl-C mid-brief: the operator's stop, not
+        # a fault, and never left in processing/ for the next boot to re-run.
+        _seal_cancelled(rt, brief_id, brief, claimed, "runtime_stopped")
+        raise
     if stopped:
         _seal_cancelled(rt, brief_id, brief, claimed, "running")
         return

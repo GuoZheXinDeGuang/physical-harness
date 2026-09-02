@@ -1320,6 +1320,9 @@ _MODEL_PORT = 30001
 #: and that wait must not stall the operator's 5s poll behind it.
 _MODEL_PROBE_TIMEOUT_S = 1.5
 _MODEL_ACTIONS = ("status", "start", "stop")
+#: The exact command an operator types when health says the model is STOPPED.
+_MODEL_START_HINT = ("start it with `scripts/cockpit --with-model` (or set PH_WITH_MODEL=1 "
+                     "in .env) or `python -m board.storecli model_server start`")
 
 
 def _model_identity(pid: int) -> bool:
@@ -1505,9 +1508,16 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
       reason}``.
     * ``console`` -- ``{port, serving}``: is the UI the operator actually uses up?
       The 2026-08-28 incident was live runtimes behind a dead console.
-    * ``model`` -- ``_model_state()`` verbatim (running/healthy/vram). Reported,
-      never flagged: stopping the model to hand ~19 GB back to the simulator is a
-      normal operator move, not a fault.
+    * ``model`` -- ``_model_state()`` verbatim (running/healthy/vram). Flagged
+      ONLY when ``PH_WITH_MODEL=1`` is in the environment (cockpit exports it
+      from .env): stopping the model to hand ~19 GB back to the simulator is a
+      normal operator move, not a fault -- unless the operator declared the VLM
+      part of the stack, in which case a stopped server is the silent failure.
+
+    Each session row also carries ``state``: ``up`` (runtime alive), ``dormant``
+    (dead runtime, nothing queued -- evidence left in place, never a problem),
+    ``stalled`` (dead runtime WITH queued/claimed briefs) or ``wedged`` (alive
+    but no beat while idle). The last two are always in ``problems``.
 
     ``problems`` (the thing to read) flags exactly what needs a hand NOW:
 
@@ -1539,18 +1549,20 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
     for p in entries:
         live = runtime_liveness(p)
         queued, processing = _count(p / "inbox"), _count(p / "processing")
+        state = "up" if live["alive"] else "stalled" if queued + processing else "dormant"
+        if state == "up" and processing == 0 and (live["heartbeat_age_s"] or 0) > _HEARTBEAT_STALE_S:
+            state = "wedged"
         sessions.append({"name": p.name, "mode": live["mode"], "alive": live["alive"],
                          "pid": live["pid"], "heartbeat_age_s": live["heartbeat_age_s"],
                          "queued": queued, "processing": processing,
                          "done": _count(p / "done"), "failed": _count(p / "failed"),
-                         "reason": live["reason"]})
-        if not live["alive"]:
-            if queued + processing:
-                problems.append(
-                    f"{p.name}: {queued} queued + {processing} claimed brief(s) and "
-                    f"NO RUNTIME -- {live['reason']}. Nothing will ever claim them; "
-                    "start it with scripts/cockpit")
-        elif processing == 0 and (live["heartbeat_age_s"] or 0) > _HEARTBEAT_STALE_S:
+                         "state": state, "reason": live["reason"]})
+        if state == "stalled":
+            problems.append(
+                f"{p.name}: {queued} queued + {processing} claimed brief(s) and "
+                f"NO RUNTIME -- {live['reason']}. Nothing will ever claim them; "
+                "start it with scripts/cockpit")
+        elif state == "wedged":
             problems.append(
                 f"{p.name}: runtime pid {live['pid']} is alive but has not beaten "
                 f"for {live['heartbeat_age_s']}s while IDLE (poll loop wedged); "
@@ -1565,9 +1577,14 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
         problems.append(f"console: nothing serving on 127.0.0.1:{console_port} -- "
                         "the runtimes may be fine and the UI still gone "
                         "(2026-08-28); restart with scripts/cockpit")
+    model = _model_state()
+    if os.environ.get("PH_WITH_MODEL") == "1" and not model["running"]:
+        problems.append(f"model: PH_WITH_MODEL=1 but nothing serving on "
+                        f"127.0.0.1:{model['port']} (the VLM path cannot run) -- "
+                        f"{_MODEL_START_HINT}")
     return {"ok": not problems, "problems": problems, "sessions": sessions,
             "console": {"port": int(console_port), "serving": serving},
-            "model": _model_state(), "ts": time.time()}
+            "model": model, "ts": time.time()}
 
 
 # --- markdown feeds ---------------------------------------------------------

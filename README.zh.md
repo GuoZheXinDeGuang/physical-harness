@@ -156,7 +156,12 @@ PYTHONPATH=. MUJOCO_GL=egl .venv/bin/python scripts/parity_check.py <archived_ca
 ### 测试
 
 始终使用 `python -m pytest`（不要用 `bin/pytest`，它会把 cwd 从 `sys.path` 中移除并产生虚假的
-收集错误）。**基座快车道**是 `pytest -m "not robosuite and not robocasa"`，在仿真卡片缺席的隔离
-环境下运行：**846 passed, 31 skipped, 28 deselected**。快照格式与隔离流程见
-[docs/project-documentation.md](docs/project-documentation.md) §3；每当计数变动时，请在同一个
-commit 中刷新该章节与本行。
+收集错误）。**基座快车道**是
+
+```
+python -m pytest -o addopts="" -q -m "not robosuite and not robocasa"
+```
+
+不变量是：仿真卡片零安装时它全绿；具体 pass/skip 数字以这条命令当天的输出为准，
+刻意不写在这里。隔离流程与预期跳过清单见
+[docs/project-documentation.md](docs/project-documentation.md) §3。

@@ -10,6 +10,7 @@ runs, so full-suite parity is untouched.
 import json
 import subprocess
 import sys
+import time
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -68,6 +69,17 @@ def live_runtime(tmp_path):
             [sys.executable, str(fake), "--session-dir", str(session_dir)],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         procs.append(proc)
+        # Wait for exec: right after spawn /proc/<pid>/cmdline is still the
+        # pytest argv, and runtime_liveness reads it back -- bounded poll.
+        for _ in range(500):
+            try:
+                if b"harness_runtime.py" in Path(f"/proc/{proc.pid}/cmdline").read_bytes():
+                    break
+            except OSError:
+                pass
+            time.sleep(0.01)
+        else:
+            raise RuntimeError(f"pid {proc.pid} never exec'd the fake runtime")
         (session_dir / "runtime_status.json").write_text(
             json.dumps({"pid": proc.pid, "mode": "execution"}))
         return proc.pid

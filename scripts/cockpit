@@ -101,6 +101,11 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
                  still works. Override the interpreter with ROBOCASA_PYTHON=...
                  (default \$REPO/../sims/robocasa-venv/bin/python); --no-runtime
                  is how you start none of them.
+  --with-model   also start the local model server (board.store.model_server
+                 'start', llama.cpp on 127.0.0.1:30001) and wait until it
+                 answers /v1/models before serving. Off by default; PH_WITH_MODEL=1
+                 in the repo's .env turns it on. --status flags a STOPPED model
+                 as a problem only when this is on.
   --stop         stop the web server and any runtime THIS cockpit spawned, by the
                  exact PIDs in each session's pidfile. A runtime some earlier
                  cockpit spawned counts as spawned (ownership survives a
@@ -160,6 +165,7 @@ _env_get() {
 
 PORT="$(_env_get PH_CONSOLE_PORT)"; PORT="${PORT:-3080}"
 TRUSTED_HOST="$(_env_get PH_TRUSTED_HOST)"
+WITH_MODEL="$(_env_get PH_WITH_MODEL)"; WITH_MODEL="${WITH_MODEL:-0}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -172,6 +178,7 @@ while [ $# -gt 0 ]; do
     --no-runtime) NO_RUNTIME=1; shift;;
     --no-render)  NO_RENDER=1; shift;;
     --with-robocasa) shift;;   # no-op: that session is ON by default now
+    --with-model) WITH_MODEL=1; shift;;
     -h|--help) usage; exit 0;;
     *) echo "cockpit: unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
@@ -186,27 +193,35 @@ done
 if [ "$DO_STATUS" -eq 1 ]; then
   STATUS_PY="${PH_BOARD_PYTHON:-$REPO/.venv/bin/python}"
   [ -x "$STATUS_PY" ] || STATUS_PY="$(command -v python3)"
-  PYTHONPATH="$REPO" "$STATUS_PY" - "$REPO/runs" "$PORT" <<'PYEOF'
+  (cd "$REPO" && PH_WITH_MODEL="$WITH_MODEL" PYTHONPATH="$REPO" "$STATUS_PY" - "$REPO/runs" "$PORT") <<'PYEOF'
 import sys
-from board.store import health
+from board.store import health, _MODEL_START_HINT
 
 h = health(sys.argv[1], int(sys.argv[2]))
 print("cockpit --status: " +
       ("HEALTHY" if h["ok"] else f"{len(h['problems'])} PROBLEM(S)"))
 for p in h["problems"]:
     print("  ! " + p)
+# dormant = dead runtime, empty inbox: evidence kept, nothing to do. One line
+# for all of them, so a retired session cannot make this face read red forever.
+dormant = [s["name"] for s in h["sessions"] if s["state"] == "dormant"]
 for s in h["sessions"]:
+    if s["state"] == "dormant":
+        continue
     beat = "-" if s["heartbeat_age_s"] is None else f"{s['heartbeat_age_s']:.0f}s"
-    print(f"  session {s['name']:<22} {'UP  ' if s['alive'] else 'DOWN'}"
+    print(f"  session {s['name']:<22} {s['state'].upper():<7}"
           f"  pid={str(s['pid'] or '-'):<8} mode={str(s['mode'] or '-'):<10}"
           f" beat={beat:<8} queued={s['queued']} processing={s['processing']}"
           f" done={s['done']} failed={s['failed']}")
+if dormant:
+    print(f"  dormant {', '.join(dormant)} (runtime stopped, inbox empty; nothing to do)")
 c, m = h["console"], h["model"]
 print(f"  console 127.0.0.1:{c['port']:<11} "
       f"{'SERVING' if c['serving'] else 'DOWN'}")
 print(f"  model   127.0.0.1:{m['port']:<11} "
       f"{'HEALTHY' if m['healthy'] else ('LOADING' if m['running'] else 'STOPPED')}"
-      f"  pid={str(m['pid'] or '-'):<8} model={m['model']} vram_mib={m['vram_mib']}")
+      f"  pid={str(m['pid'] or '-'):<8} model={m['model']} vram_mib={m['vram_mib']}"
+      + ("" if m["running"] else f"\n          {_MODEL_START_HINT}"))
 sys.exit(0 if h["ok"] else 1)
 PYEOF
   exit $?
@@ -379,6 +394,34 @@ if [ "$DO_STOP" -eq 1 ]; then
 fi
 
 # --- start path -------------------------------------------------------------
+# Model server first (needs no node): the SAME board.store.model_server the
+# console's toggle and `storecli model_server start` call, then wait until it
+# answers -- a 27B load takes minutes and a console that reports STOPPED with
+# nothing to start it is how the VLM path silently could not run.
+if [ "$WITH_MODEL" = "1" ]; then
+  MODEL_PY="${PH_BOARD_PYTHON:-$REPO/.venv/bin/python}"
+  [ -x "$MODEL_PY" ] || MODEL_PY="$(command -v python3)"
+  mkdir -p "$REPO/runs"
+  # cd first: `python -` puts the CWD ahead of PYTHONPATH, so board/ must be $REPO's.
+  (cd "$REPO" && PYTHONPATH="$REPO" "$MODEL_PY" - "$REPO/runs" "${PH_MODEL_WAIT_S:-600}") <<'PYEOF' || exit 1
+import sys, time
+from board.store import model_server
+
+runs, deadline = sys.argv[1], time.time() + float(sys.argv[2])
+m = model_server("start", runs)
+if m.get("error"):
+    sys.exit(f"cockpit: ERROR model server start failed: {m['error']}")
+print(f"cockpit: model server pid {m['pid']} on :{m['port']}; waiting for /v1/models", file=sys.stderr)
+while not m["healthy"]:
+    if time.time() > deadline:
+        sys.exit(f"cockpit: ERROR model server not healthy after {sys.argv[2]}s (see {runs}/model-server.log)")
+    time.sleep(2)
+    m = model_server("status", runs)
+print(f"cockpit: model server HEALTHY ({m['model']})", file=sys.stderr)
+PYEOF
+fi
+export PH_WITH_MODEL="$WITH_MODEL"   # the console's MCP health face inherits it
+
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   echo "cockpit: ERROR nvm not found at $NVM_DIR/nvm.sh" >&2

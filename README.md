@@ -171,8 +171,13 @@ plugin/card model, and how to write a card all live in [ARCHITECTURE.md](ARCHITE
 ## Tests
 
 Always use `python -m pytest` (not `bin/pytest`, which drops cwd from `sys.path` and yields
-spurious collection errors). The **base fast lane** is `pytest -m "not robosuite and not
-robocasa"`, run isolated with the sim cards absent: **846 passed, 31 skipped, 28 deselected**.
-The snapshot format and the isolation recipe are in
-[docs/project-documentation.md](docs/project-documentation.md) §3; refresh that section and this
-line in the same commit whenever the count moves.
+spurious collection errors). The **base fast lane** is
+
+```
+python -m pytest -o addopts="" -q -m "not robosuite and not robocasa"
+```
+
+The invariant is that it is green with zero simulators installed; the exact pass/skip
+numbers are whatever that command prints today and are deliberately not written down here.
+The isolation recipe and the expected skip list are in
+[docs/project-documentation.md](docs/project-documentation.md) §3.

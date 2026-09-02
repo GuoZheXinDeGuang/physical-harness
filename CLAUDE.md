@@ -115,8 +115,6 @@ round; never edit the old one.
   spurious). cwd is always the repo root — anywhere that can see
   `sims/robocasa/`, the import silently resolves to a namespace package and
   374 kitchen envs never register.
-- Base-lane test counts changed ⇒ refresh `docs/project-documentation.md` §3.2
-  + `README.md` + `README.zh.md` **in the same commit**.
 - `STATUS.md` and `progress.md` are the operator's local, untracked notes —
   never `git add` them. They are display-only: nothing reads STATUS.md to decide
   what is burned (that is `board.store.burned_blocks`), and `rsi_campaign`

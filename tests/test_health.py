@@ -218,7 +218,7 @@ def test_health_names_the_session_the_briefs_are_rotting_in(tmp_path):
     assert row == {"name": "session-robocasa", "mode": "execution", "alive": False,
                    "pid": _DEAD_PID, "heartbeat_age_s": row["heartbeat_age_s"],
                    "queued": 1, "processing": 0, "done": 0, "failed": 0,
-                   "reason": row["reason"]}
+                   "state": "stalled", "reason": row["reason"]}
 
 
 def test_health_does_not_cry_about_a_retired_session(tmp_path):
@@ -229,7 +229,21 @@ def test_health_does_not_cry_about_a_retired_session(tmp_path):
     _status(_session(runs, "session-old"), _DEAD_PID)
     h = bs.health(runs, _free_port())
     assert [p for p in h["problems"] if p.startswith("session-old")] == []
-    assert next(s for s in h["sessions"] if s["name"] == "session-old")["alive"] is False
+    row = next(s for s in h["sessions"] if s["name"] == "session-old")
+    assert row["alive"] is False and row["state"] == "dormant"
+
+
+def test_health_flags_a_stopped_model_only_when_the_operator_wants_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_find_model_server", lambda: None)
+    monkeypatch.setattr(bs, "_model_health", lambda: (False, None))
+    monkeypatch.delenv("PH_WITH_MODEL", raising=False)
+    assert not [p for p in bs.health(tmp_path / "runs", _free_port())["problems"]
+                if p.startswith("model:")]
+    monkeypatch.setenv("PH_WITH_MODEL", "1")
+    flagged = [p for p in bs.health(tmp_path / "runs", _free_port())["problems"]
+               if p.startswith("model:")]
+    assert len(flagged) == 1 and "cockpit --with-model" in flagged[0] \
+        and "storecli model_server start" in flagged[0]
 
 
 def test_health_flags_a_dead_console_even_when_every_runtime_is_fine(tmp_path):
