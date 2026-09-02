@@ -469,6 +469,9 @@ clone 合法地显示**更多跳过，绝不是失败**：
 `{task,session,seeds,arm,rounds:[{round,tried:{kind,node,detail},before,after,best,suite_sha,published,per_seed,needs,media:[路径],media_dropped:{"种子/节点":原因},ts}],best,cursor,status:running|cancelled|done,applied:{executors,tunables}}`。
 `applied` 是已接受的状态，后续每轮重新应用；下一轮的 before 直接沿用上一轮保留的结果，不重测。
 
+**进度（live）**：campaign.json 还带一个 `live` 块，每到阶段/种子/节点边界就随整个文件 tmp+rename 重写（单写者，无竞争）：`{phase: idle|baseline|propose|retest|publish|done|cancelled, round, seeds_total, seed_index, seed, node, started_at, round_started_at, phase_started_at, last_round_s, per_seed_partial:[本次 suite 已跑完的 {seed,success,first_death,failure_mode}], tried, message:"第 1 轮 基线评测：种子 4244 运行中 (nav-can1)，1/2"}`。`node` 是推断：`task.plan` 落地取首节点，每个成功的 `task.verify` 落地推进到计划序的下一节点（没有 node-start 行）。`rsi_run` 原样返回为 `live`（旧文件为 null）；它是活状态，`rsi_step` 只封轮行，永不封 live。
+**取景窗**：runtime `--frames`（egl 自动开）时给 evolve 子进程传 `PH_RSI_FRAMES=<session>/frame.jpg`，与 rsi 链同一把 `_maybe_arm_frames` 锁，suite 每集镜像到 `read_runtime_frame` 读的那份文件；帧永不进链。
+
 **停/续**：`cancel_brief` 落标记 → evolve.py 在轮边界退出（状态 `cancelled`，exit 3；轮中则 killpg）→ `runtime.task_cancelled`，brief 进 `cancelled/`。同 task 再投 evolve → 从 `cursor` 继续；已 `done` 且 rounds 不变 → 空操作。
 
 **媒体规则**（`harness/media.py`）：段级节点每 4 步录一帧 128px 到内存，来源按序取第一个存在的：`embodiment.frame(obs)`（robocasa：obs 里已有的 `robot0_agentview_left_image`，不需要渲染器，所有驱动免费得到）→ `driver.frame()` → `env.frame()`；verify 成功才落 `media/<task>/<seed>/<node>.mp4`（无 imageio 则 .gif），失败即丢；>1 MB 降 fps/抽帧重编；同节点重跑覆盖。录制失败不影响任务但绝不静默：该节点 `diagnostics.media` 封 `{kept:true,file}` 或 `{kept:false,reason:verify_failed|no_frame_source|no_frames|encode_failed[,error]}`，同一原因写进 `index.json["dropped"]`（evolve 轮行 `media_dropped`）。帧永不进链，链和 campaign.json 只存路径。
@@ -1571,13 +1574,14 @@ workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 acto
 三条派生关系全部在 `harness/protocol.py` 上算，只读记录，不依赖任何卡：
 
 - `skill_class(rec)` → 上面 9.1 的推导规则，一条技能一个 class。
-- `skill_dependencies(records)` → `(src, dst, rule)`：`causal` = `src.requires ∩ dst.ensures ≠ ∅`（谓词规范串比较，自环排除）；`uses` = plan 记录图上每个节点的 `(plan.id, node.skill)`，去重保序。
+- `skill_dependencies(records)` → `(src, dst, rule)`：`causal` = `src.requires` 里某个**带参**谓词与 `dst.ensures` 逐位相等（ground 实例 `at(can1)`←`at(can1)`，或泛型同名变量 `at(obj)`←`at(obj)`；自环排除）；零元谓词（`gripper_free()`、`water_on()`）是资源，不产生依赖；`uses` = plan 记录图上每个节点的 `(plan.id, node.skill)`，去重保序。
+- `skill_instances(records)` → `[(instance, generic)]`：同 class 且 `instance.name == generic.name + "_" + 后缀`，最长的 generic 名胜出。
 - `skill_benchmarks(records, cards)` → `{技能: [benchmark]}`：卡的 `embodiment` 在记录 `bindings` 里，且（卡没写 `tasks`，或某条 plan 记录的 task 在 `tasks` 里且用了该技能）。benchmark 卡的 `embodiment` / `tasks` 从 `plugins/benchmark_*/manifest.toml` 的 `[benchmarks.<name>]` 读，当数据看。
 
 `board/vault.py:build_graph` 把静态技能库和这三条关系折进**同一张图**——控制台看到的技能图就是这一张，没有第二处：
 
 - 节点：`skill:<name>`（库记录，status `library`）、`class:<c>`、`benchmark:<name>`，与既有的 `package` / `capability` 并列（5 类）。
-- 边：`IN_CLASS`、`DEPENDS_ON`（rule `requires∩ensures` / `plan uses`）、`BOUND_TO`（bindings 的 `plugins.<card>:attr` → 卡目录）、`EVIDENCED_ON`（有证据时额外带 `n` / `k`），与既有血缘边并列（13 种关系）。
+- 边：`IN_CLASS`、`DEPENDS_ON`（rule `requires∩ensures` / `plan uses`）、`INSTANCE_OF`（rule `name prefix within class`，via 实例记录路径；generic 节点带 `instances: n`）、`BOUND_TO`（bindings 的 `plugins.<card>:attr` → 卡目录）、`EVIDENCED_ON`（有证据时额外带 `n` / `k`），与既有血缘边并列（14 种关系）。
 - 记录当数据读（json → `SkillRecordV0.from_dict`，读不动的文件跳过），`board/` 依旧零插件导入。
 
 ---

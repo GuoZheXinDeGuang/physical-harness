@@ -216,11 +216,34 @@ PLAN = P.PlanRecord(id="p1", task="thaw", goal=("in(apple,microwave)",), graph=G
 def test_skill_dependencies_causal_and_uses():
     deps = P.skill_dependencies([GRASP, PLACE, LOOK, PLAN])
     assert ("place", "grasp", "causal") in deps          # place requires holding, grasp ensures it
-    assert ("grasp", "place", "causal") in deps          # grasp requires gripper_free, place ensures it
+    assert ("grasp", "place", "causal") not in deps      # gripper_free() is zero-arity: a resource, no edge
     assert ("look", "grasp", "causal") not in deps and not any(s == d for s, d, _ in deps)
     assert [e for e in deps if e[2] == "uses"] == [("p1", "grasp", "uses"), ("p1", "place", "uses")]
     assert P.skill_dependencies({"g": GRASP, "p": P.to_plain(PLAN)}) == [("p1", "grasp", "uses"),
                                                                           ("p1", "place", "uses")]
+
+
+def test_skill_dependencies_position_wise_only():
+    def rec(name, req=(), ens=()):
+        return P.SkillRecordV0(id=name, name=name, requires=req, ensures=ens)
+    zero = [rec("a", req=("gripper_free()",)), rec("b", ens=("gripper_free()",))]
+    assert P.skill_dependencies(zero) == []                                   # zero-arity ignored
+    ground = [rec("carry_can1", req=("holding(can1)",)), rec("grasp_can1", ens=("holding(can1)",)),
+              rec("grasp_can2", ens=("holding(can2)",))]
+    assert P.skill_dependencies(ground) == [("carry_can1", "grasp_can1", "causal")]   # ground match
+    var = [rec("carry", req=("holding(object)",)), rec("grasp", ens=("holding(object)",)),
+           rec("lift", ens=("holding(item)",))]
+    assert P.skill_dependencies(var) == [("carry", "grasp", "causal")]       # same variable name
+
+
+def test_skill_instances_name_prefix_within_class():
+    def rec(name, cls=""):
+        return P.SkillRecordV0(id=name, name=name, class_=cls)
+    recs = [rec("grasp"), rec("grasp_can"), rec("grasp_can_left"), rec("grasp_can1"),
+            rec("nav_fridge"), rec("navigate"), rec("place_meat", cls="grasp")]
+    assert P.skill_instances(recs) == [("grasp_can", "grasp"), ("grasp_can_left", "grasp_can"),
+                                       ("grasp_can1", "grasp")]   # longest generic wins; class must match
+    assert P.skill_instances({r.name: P.to_plain(r) for r in recs[:2]}) == [("grasp_can", "grasp")]
 
 
 def test_skill_benchmarks_membership():

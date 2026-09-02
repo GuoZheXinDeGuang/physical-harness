@@ -223,22 +223,45 @@ def _skills_and_plans(records: Any) -> tuple[list[SkillRecordV0], list[tuple[str
     return skills, plans
 
 
+def _bearing_preds(refs) -> set[str]:
+    """Canonical refs of the predicates that carry >= 1 argument."""
+    return {pred_ref_str(p) for p in refs if parse_pred_ref(p)[1]}
+
+
 def skill_dependencies(records: Any) -> list[tuple[str, str, str]]:
-    """``(src, dst, rule)`` edges over ``records``: ``causal`` when
-    ``src.requires`` meets ``dst.ensures`` (canonical pred refs, src != dst),
-    ``uses`` when plan record ``src``'s graph names skill ``dst``."""
+    """``(src, dst, rule)`` edges over ``records``: ``causal`` when a predicate
+    of ``src.requires`` equals one of ``dst.ensures`` position-wise -- ground
+    instances equal (``at(can1)`` <- ``at(can1)``) or, on generic records, the
+    same variable name (``at(obj)`` <- ``at(obj)``) -- with src != dst. A
+    zero-arity predicate (``gripper_free()``, ``water_on()``) is a resource,
+    not a causal link, and never yields an edge. ``uses`` when plan record
+    ``src``'s graph names skill ``dst``."""
     skills, plans = _skills_and_plans(records)
     out: dict[tuple[str, str, str], None] = {}
     for src in skills:
-        req = {pred_ref_str(p) for p in src.requires}
+        req = _bearing_preds(src.requires)
         for dst in skills:
-            if dst.name != src.name and req & {pred_ref_str(p) for p in dst.ensures}:
+            if dst.name != src.name and req & _bearing_preds(dst.ensures):
                 out[(src.name, dst.name, "causal")] = None
     for pid, _task, nodes in plans:
         for n in nodes:
             if n.get("skill"):
                 out[(pid, str(n["skill"]), "uses")] = None
     return list(out)
+
+
+def skill_instances(records: Any) -> list[tuple[str, str]]:
+    """``(instance, generic)`` pairs: same class and ``instance.name ==
+    generic.name + "_" + suffix``; the longest such generic name wins."""
+    skills, _plans = _skills_and_plans(records)
+    out = []
+    for inst in skills:
+        cls = skill_class(inst)
+        gens = [g.name for g in skills if skill_class(g) == cls
+                and inst.name.startswith(g.name + "_")]
+        if gens:
+            out.append((inst.name, max(gens, key=len)))
+    return out
 
 
 def skill_benchmarks(records: Any, benchmark_cards: Mapping[str, Mapping[str, Any]]

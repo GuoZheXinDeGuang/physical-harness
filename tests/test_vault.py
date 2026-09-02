@@ -208,6 +208,14 @@ def _library_tree(tmp_path):
             "pi05": {"transport": "ssp", "ref": "plugins.policy_fake:provider",
                      "checkpoint_sha": "ab" * 32}}}},
         "evidence": {"robocasa": {"n": 10, "k": 7, "by_executor": {"pi05": {"n": 4, "k": 3}}}}}))
+    (lib / "carry_x_v2.json").write_text(json.dumps({
+        "id": "carry_x_v2", "name": "carry_x_v2", "kind": "segment", "class": "carry",
+        "args": {}, "requires": ["gripper_free()"], "ensures": ["at(bin)"], "clobbers": [],
+        "limits": {}, "failure_modes": [], "bindings": {}, "evidence": {}}))
+    (lib / "free_x.json").write_text(json.dumps({
+        "id": "free_x", "name": "free_x", "kind": "segment", "class": "free",
+        "args": {}, "requires": [], "ensures": ["gripper_free()"], "clobbers": [],
+        "limits": {}, "failure_modes": [], "bindings": {}, "evidence": {}}))
     (lib / "plan_t1.json").write_text(json.dumps({
         "kind": "plan", "id": "p1", "task": "t1", "goal": [], "embodiment": "robocasa",
         "arm": "scripted", "evidence": {}, "rule": {},
@@ -239,7 +247,7 @@ def test_library_record_folds_to_skill_class_nodes(tmp_path):
         "transport": "ssp", "ref": "plugins.policy_fake:provider", "checkpoint_sha": "ab" * 32}
     assert carry["evidence"]["robocasa"] == {"n": 10, "k": 7, "by_executor": {"pi05": {"n": 4, "k": 3}}}
     assert by_id["class:carry"] == {"kind": "class", "id": "class:carry", "name": "carry",
-                                    "skills": 1, "annotations": None}
+                                    "skills": 2, "annotations": None}
     assert ("IN_CLASS", "skill:carry_x", "class:carry") in edges
     assert ("IN_CLASS", "skill:grasp_x", "class:grasp") in edges
     assert ("BOUND_TO", "skill:carry_x", "plugins/policy_fake") in edges
@@ -253,6 +261,17 @@ def test_requires_ensures_pair_yields_depends_on(tmp_path):
     dep = [e for e in g["edges"] if e["rel"] == "DEPENDS_ON"]
     assert [(e["src"], e["dst"]) for e in dep] == [("skill:carry_x", "skill:grasp_x")]
     assert dep[0]["rule"] == "requires∩ensures" and dep[0]["via"] == "skill-library/records/carry_x.json"
+    # carry_x_v2 requires gripper_free() which free_x ensures: zero-arity, no DEPENDS_ON
+
+
+def test_name_prefix_within_class_yields_instance_of(tmp_path):
+    g = _fold(tmp_path)
+    inst = [e for e in g["edges"] if e["rel"] == "INSTANCE_OF"]
+    assert [(e["src"], e["dst"], e["rule"], e["via"]) for e in inst] == [
+        ("skill:carry_x_v2", "skill:carry_x", "name prefix within class",
+         "skill-library/records/carry_x_v2.json")]
+    by_id = {n["id"]: n for n in g["nodes"]}
+    assert by_id["skill:carry_x"]["instances"] == 1 and "instances" not in by_id["skill:carry_x_v2"]
 
 
 def test_benchmark_card_yields_evidenced_on(tmp_path):

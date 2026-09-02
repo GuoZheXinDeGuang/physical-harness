@@ -12,9 +12,9 @@ no statistic: every number is verbatim from ``bundle_evidence``/``effects``; the
 only derived scalar is ``board.store._delta`` (governed_rate - base_rate).
 
 Five node kinds (skill / class / benchmark / package / capability), one edge
-kind with a fixed 13-relation vocabulary (DESCENDS_FROM, GOVERNS, REQUIRES,
+kind with a fixed 14-relation vocabulary (DESCENDS_FROM, GOVERNS, REQUIRES,
 PROVIDES, BINDS, EVIDENCED_BY, CLAIMS, SUPERSEDES, MOUNTED_IN, IN_CLASS,
-DEPENDS_ON, BOUND_TO, EVIDENCED_ON); each edge names its mechanical ``rule`` and
+DEPENDS_ON, INSTANCE_OF, BOUND_TO, EVIDENCED_ON); each edge names its mechanical ``rule`` and
 the ``via`` artifact it was read from, so an auditor re-derives it. Skill nodes
 come from two doors: legacy promoted records (``runs/*/skills``, id = digest,
 status from the store) and the static library (``skill-library/records``,
@@ -37,7 +37,8 @@ from board import cards as bc
 from board import store as bs
 from harness.definitions import CAPABILITIES
 from harness.manifest import PLUGINS_ROOT
-from harness.protocol import SkillRecordV0, skill_benchmarks, skill_class, skill_dependencies
+from harness.protocol import (SkillRecordV0, skill_benchmarks, skill_class, skill_dependencies,
+                              skill_instances)
 
 SCHEMA_VERSION = 1
 
@@ -349,16 +350,24 @@ def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR,
                     add("GOVERNS", dig, f"{sess_dir.name}/{nid}",
                         "plan_complete.node.governance.skills", via)
 
-    # library skills: IN_CLASS / DEPENDS_ON / BOUND_TO / EVIDENCED_ON
+    # library skills: IN_CLASS / DEPENDS_ON / INSTANCE_OF / BOUND_TO / EVIDENCED_ON
     library_recs, plans = _library_records(library)
     benchmarks = _benchmark_cards(cards)
     package_ids = {p["id"] for p in package_nodes}
     classes: dict[str, int] = {}
+    instances: dict[str, int] = {}
+    for inst, generic in skill_instances(library_recs):
+        instances[generic] = instances.get(generic, 0) + 1
+        add("INSTANCE_OF", f"skill:{inst}", f"skill:{generic}", "name prefix within class",
+            f"skill-library/records/{inst}.json")
     library_nodes = []
     for name, rec in library_recs.items():
         via = f"skill-library/records/{name}.json"
         cls = skill_class(rec)
-        library_nodes.append(_library_node(rec, cls))
+        node = _library_node(rec, cls)
+        if name in instances:
+            node["instances"] = instances[name]
+        library_nodes.append(node)
         classes[cls] = classes.get(cls, 0) + 1
         add("IN_CLASS", f"skill:{name}", f"class:{cls}", "declared class", via)
         for b in rec.bindings.values():
