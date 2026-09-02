@@ -36,8 +36,11 @@ from plugins.embodiment_robocasa import drivers as D
 
 #: Arm-mode phases (MODE=-1) vs base-mode phases (MODE=+1). Names chosen to not
 #: collide with the tabletop vocab (see module docstring).
-_ARM_PHASES = frozenset({"unclench", "raise", "reseat", "clench"})
-_BASE_PHASES = frozenset({"backout", "redock"})
+_ARM_PHASES = frozenset({"unclench", "raise", "reseat", "clench", "rehover", "redescend"})
+_BASE_PHASES = frozenset({"backout", "redock", "nudge"})
+#: base_nudge's travel bound: the arm stalled at its envelope edge, a hand-span of
+#: base travel re-opens it; more re-parks the whole approach (that is redock's job).
+_NUDGE_MAX = 0.15
 
 #: How far the ``raise`` phase lifts the eef before re-seating, and the small
 #: below-object aim the ``reseat`` phase descends to -- mirrors GraspDriver's
@@ -56,11 +59,15 @@ class RobocasaRecoveryActor:
     ``.done`` when the program is spent. ``obs`` is accepted for protocol parity but
     the primitives read the env directly (oracle-side, as the drivers do)."""
 
-    def __init__(self, env, name: str, steps, *, obj_name=None, fixture_name=None) -> None:
+    def __init__(self, env, name: str, steps, *, obj_name=None, fixture_name=None,
+                 target=None) -> None:
         self.env = env
         self.name = name
         self.obj_name = obj_name
         self.fixture_name = fixture_name
+        #: () -> world xyz the reach phases aim at; default = the live object pose
+        self._target = target
+        self._nudge_from = None
         #: flatten (phase, dur, dx, dy) into a per-step queue, same as RecoveryActor
         self.queue: list[tuple[str, float, float]] = []
         for step in steps:
@@ -73,6 +80,19 @@ class RobocasaRecoveryActor:
         self._i = 0
         self._raise_z: float | None = None
         self._nav = None
+
+    @classmethod
+    def for_stage(cls, env, stage, recovery):
+        """Build the actor for the ACTIVE stage driver (the drivers' ``make_recovery``
+        seam): a grasp stage's target is its object, a place stage's its drop
+        point, a nav stage's its fixture. ``recovery`` is governed's Recovery
+        (``.name``, ``.steps()``) or a repertoire Strategy (``.steps`` tuple)."""
+        steps = recovery.steps() if callable(recovery.steps) else recovery.steps
+        drop = getattr(stage, "_drop_point", None)
+        return cls(env, recovery.name, steps,
+                   obj_name=getattr(stage, "obj_name", None),
+                   fixture_name=getattr(stage, "fixture_name", None),
+                   target=(lambda: np.asarray(drop(env), float)) if drop else None)
 
     @property
     def done(self) -> bool:
@@ -103,13 +123,35 @@ class RobocasaRecoveryActor:
             a = D._arm_action(env, aim, D.GRIP_OPEN)
             a[2] = float(np.clip(a[2], -0.5, 0.5))
             return a
+        if phase == "rehover":
+            # up first, then over: a straight diagonal drags through the target
+            m = self._obj_xyz()
+            hz = m[2] + D.tunables()["hover_dz"]
+            aim = (np.array([eef[0], eef[1], hz]) if eef[2] < hz - 0.02
+                   else np.array([m[0], m[1], hz]))
+            a = D._arm_action(env, aim, self._grip())
+            a[0:3] = np.clip(a[0:3], -_ARM_CAP, _ARM_CAP)
+            return a
+        if phase == "redescend":
+            m = self._obj_xyz()
+            a = D._arm_action(env, np.array([m[0] + dx, m[1] + dy, m[2]]), self._grip())
+            a[2] = float(np.clip(a[2], -0.5, 0.5))
+            return a
         # clench: close in place (kp=0), the enclosure settle
         return D._arm_action(env, eef, D.GRIP_CLOSE, kp=0.0)
 
+    def _grip(self) -> float:
+        """Reach phases keep whatever the stage holds: a place stage (drop-point
+        target) is carrying, a grasp/nav stage is empty-handed."""
+        return D.GRIP_CLOSE if self._target is not None else D.GRIP_OPEN
+
     def _obj_xyz(self) -> np.ndarray:
-        """The live target-object world pose (privileged, oracle-side)."""
+        """The live reach target (privileged, oracle-side): the stage's drop
+        point when it has one, else the target object's world pose."""
+        if self._target is not None:
+            return self._target()
         if self.obj_name is None:
-            raise ValueError("regrasp recovery needs the active stage's obj_name")
+            raise ValueError(f"{self.name} recovery needs the active stage's obj_name")
         return D._obj_pos(self.env, self.obj_name)
 
     # -- base-mode phases (redock_retry) ---------------------------------------
@@ -121,12 +163,36 @@ class RobocasaRecoveryActor:
             a[D.GRIP] = D.GRIP_OPEN
             a[D.MODE] = D.GRIP_CLOSE  # +1 == base mode
             return a
+        if phase == "nudge":
+            xy, psi = D._base_pose(env)
+            if self._nudge_from is None:
+                self._nudge_from = xy.copy()
+            vec = self._obj_xyz()[:2] - xy
+            n = float(np.linalg.norm(vec))
+            left = _NUDGE_MAX - float(np.linalg.norm(xy - self._nudge_from))
+            if n < 1e-6 or left <= 0.0:  # travelled the bound: hold still, base mode
+                return D._base_action(env, xy, psi, grip=self._grip())
+            goal = xy + vec / n * min(n, left)
+            return D._base_action(env, goal, psi, grip=self._grip())
         # redock: re-drive the fixture dock with a fresh NavigateDriver
         if self._nav is None:
             if self.fixture_name is None:
                 raise ValueError("redock recovery needs the active stage's fixture_name")
             self._nav = D.NavigateDriver(self.fixture_name)
         return self._nav.act(env, obs)
+
+
+def run_recovery(env, actor, obs=None):
+    """Step ``actor`` to completion on the live env (a recovery NODE, outside the
+    governed critic loop). Returns ``(steps, obs)``; the stage driver still armed
+    on the segment resumes from the world this leaves."""
+    if obs is None:
+        obs = env._get_observations() if hasattr(env, "_get_observations") else None
+    n = 0
+    while not actor.done:
+        obs, _, _, _ = env.step(actor.act(obs))
+        n += 1
+    return n, obs
 
 
 if __name__ == "__main__":

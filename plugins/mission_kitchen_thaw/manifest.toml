@@ -23,6 +23,9 @@ needs_sim = true
 # it is out of the base fold; harness_runtime._mount_plan overrides the base
 # robosuite mounts with these for the kitchen_thaw runtime (docs/project-documentation.md §5.2).
 [task_bindings.kitchen_thaw]
+# actuation floor for {"kind":"task"} briefs that omit max_actuations: the
+# graph's node count plus replan/recovery headroom (the task default of 3 dies at node 3)
+max_actuations = 20
 env = "plugins.embodiment_robocasa:provider"
 percept = "plugins.embodiment_robocasa.percept:provider"
 policy = "plugins.embodiment_robocasa.kitchen_driver:provider"

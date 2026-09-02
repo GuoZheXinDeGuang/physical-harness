@@ -1011,6 +1011,10 @@ length: int          # property: step-duration upper bound
 uses_feedback: bool  # property: any servo_* phase present
 ```
 
+robocasa 卡（`plugins/embodiment_robocasa/recoveries.py`，12 维 PandaOmron 词汇，`RobocasaRecoveryActor` 执行）除 `regrasp_kitchen`/`redock_retry` 外声明三条 reach 修复，
+供 §9.3 的 recovery 节点用：`reapproach`（升回 hover，按实时目标位姿再下降）、`base_nudge`（底盘向目标 xy 微移 ≤0.15 m 后重 hover）、`release_reset`（张开、抬升、回 hover）。
+目标取活跃 stage：place/drop 段是其 drop point，其余是其 obj_name 的实时位姿。
+
 `plugins/rsi/repertoire.py` 在加载时解析每个 ref 并对 Protocol 做 isinstance 校验——
 形状不对或名字与键不一致会在那里失败，绝不会在修复中途。`steps` 的 phase 是你自己卡的
 词汇（robosuite 的 above/descend/close/lift 来自 `harness/spec_tabletop.py`）；一条策略
@@ -1424,6 +1428,12 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 `task.replan_rejected {replan, problems}`，折回成一次 `invalid_plan` fault，计入 `max_replans`，
 不派发。超过 R 次 → 不可恢复；**L = 第一次不可恢复失败前已验收的节点数**，进 τ.o。
 
+进展规则（`protocol.replan_progress`）：对同一 (node, fault 签名)，同一 `graph_sha`（同 args、同 executor）的图只允许**一次原样重跑**；
+再次给出同图 → `task.replan_rejected {reason:"no_progress"}`，折回成 `no_progress` fault（携带原签名、graph_sha 与「同图已试过，改 args/executor 或加 recovery 节点」提示）交回 planner；
+planner 仍给同图 → 任务以该 fault 诚实终止。`{"kind":"task"}` 缺省 `max_actuations` 取 task binding 的声明值（mission 卡按节点数声明），无声明才是 3。
+「加 recovery 节点」= `protocol.insert_recovery(plan, node, strategy)`：在失败节点前插一个 `kind:"recovery"` 节点（`skill` 是本体卡 `[recoveries.*]` 的策略名，无 args，不进 catalogue）；
+workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 actor，封 `task.verify{node:"recover-<id>"}` 与节点 `diagnostics.strategy`，失败段随后在修复后的世界重跑。mission 表 planner（recycle_cans）对 `no_progress` fault 就这样答。
+
 ### 9.4 卡怎么接入
 
 - 本体卡 manifest 加 `[[provides]]`（`kind ∈ {embodiment, predicate, recovery, skill, planner}`，
@@ -1467,6 +1477,9 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 - pi0.5 服务：`scripts/cockpit --with-policy`（或 `.env` `PH_WITH_POLICY=1`，`PH_POLICY_CHECKPOINT` 换 checkpoint）经
   `board.store.policy_server` 起 :8000，`health().policy` 行只在该 flag 下计 problem。
   e2e：`tests/test_suite_e2e.py`（S1/S2）、`tests/test_suite_robocasa_e2e.py`（S3，robocasa）、`tests/test_suite_pi05_e2e.py`（S4，robocasa+vla，测试自起自停服务）。
+- tunables：robocasa 段驱动的常量（`hover_dz`、`reach_tol`、`standoff`、`segment_cap`、`stall_k`）是卡 manifest `[tunables]` 的数据，
+  `drivers.tunables()` 读默认值并按进程用 `PH_TUNABLES='{"stall_k":20}'` 覆盖（未知键拒绝）；`drivers.tunables_sha()` 随每个 robocasa 段的
+  `diagnostics.tunables_sha` 封入节点/`task.plan_complete.nodes`/`actuation_end`，同处 `diagnostics.failure_mode`（`"reach_stall"` = eef 到目标距离 K=stall_k 步不降，段提前失败）。
 
 ### 9.7 Plan library and mission briefs
 

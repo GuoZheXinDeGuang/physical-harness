@@ -96,9 +96,13 @@ class PointPlaceDriver:
     RELEASE_TICKS = 6
 
     def __init__(self, obj_name: str):
+        t = D.tunables()
         self.obj_name = obj_name
         self.phase = "over"
         self._ticks = 0
+        self._reach_tol = t["reach_tol"]
+        self._stall = D.StallDetector(t["stall_k"])
+        self.failure_mode = None  # "reach_stall": over/lower made no progress
 
     # -- subclass surface ------------------------------------------------------
     def _drop_point(self, env) -> np.ndarray:
@@ -109,7 +113,7 @@ class PointPlaceDriver:
 
     def diagnostics(self, env) -> dict[str, Any]:
         """Live terminal details used to explain a bounded place failure."""
-        return {"phase": self.phase}
+        return {"phase": self.phase, "failure_mode": self.failure_mode}
 
     # -- the shared phase chain ------------------------------------------------
     def act(self, env, obs):
@@ -117,12 +121,16 @@ class PointPlaceDriver:
         eef = D._eef(env)
         if self.phase == "over":
             goal = np.array([c[0], c[1], c[2] + self.OVER_DZ])
-            if np.linalg.norm((eef - goal)[:2]) < 0.03:
+            if np.linalg.norm((eef - goal)[:2]) < self._reach_tol:
                 self.phase = "lower"
+            elif self._stall.update(float(np.linalg.norm(goal - eef))):
+                self.failure_mode = "reach_stall"
             return D._arm_action(env, goal, D.GRIP_CLOSE)
         if self.phase == "lower":
             if eef[2] - c[2] < 0.04:
                 self.phase = "release"
+            elif self._stall.update(float(np.linalg.norm(c - eef))):
+                self.failure_mode = "reach_stall"
             return D._arm_action(env, c, D.GRIP_CLOSE)
         if self.phase == "release":
             self._ticks += 1
@@ -164,6 +172,7 @@ class ReceptaclePlaceDriver(PointPlaceDriver):
 
         return {
             "phase": self.phase,
+            "failure_mode": self.failure_mode,
             "inside": bool(OU.check_obj_in_receptacle(
                 env, self.obj_name, self.receptacle)),
             "released": bool(OU.gripper_obj_far(env, obj_name=self.obj_name)),
@@ -199,13 +208,21 @@ class CompositeStageDriver:
     def exhausted(self) -> bool:
         if self._stage is None:
             return True
-        return self.k >= self._cap or bool(self._stage.done(self._env))
+        return (self.k >= self._cap or bool(self._stage.done(self._env))
+                or getattr(self._stage, "failure_mode", None) is not None)
 
     def retarget(self, target) -> None:
         """No-op: the stage drivers self-target off the live env, never a pose."""
 
     def on_handback(self) -> None:
         """No-op: no critic-recovery bundle mounts over these sub-goals yet."""
+
+    def make_recovery(self, recovery, obs, draw, spec):
+        """The 12-dim recovery actor for the ACTIVE stage (governed.py's
+        ``make_recovery`` seam, same shape as KitchenThawDriver's)."""
+        from plugins.embodiment_robocasa.recovery import RobocasaRecoveryActor
+
+        return RobocasaRecoveryActor.for_stage(self._env, self._stage, recovery)
 
     @property
     def identity(self) -> str:
@@ -222,16 +239,21 @@ class CompositeStageDriver:
         factory, cap = self._stages[task]
         self._env = env
         self._stage = factory()
-        self._cap = cap
+        self._cap = D.tunables()["segment_cap"] or cap
         self.k = 0
 
     def segment_success(self, env) -> bool:
         return bool(self._stage.done(env))
 
     def segment_diagnostics(self, env) -> dict[str, Any]:
-        """Optional stage-owned terminal details; never used for control."""
+        """Stage-owned terminal details (never used for control) plus the two
+        keys every robocasa segment seals: ``failure_mode`` ("reach_stall" or
+        None) and ``tunables_sha`` (the knobs this segment ran under)."""
         diagnose = getattr(self._stage, "diagnostics", None)
-        return dict(diagnose(env)) if diagnose is not None else {}
+        out = dict(diagnose(env)) if diagnose is not None else {}
+        out.setdefault("failure_mode", getattr(self._stage, "failure_mode", None))
+        out["tunables_sha"] = D.tunables_sha()
+        return out
 
 
 class CompositePolicies:

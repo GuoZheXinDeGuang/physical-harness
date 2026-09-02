@@ -242,7 +242,10 @@ def test_stage_failure_replans_until_max_replans_exhausted(monkeypatch):
 
     assert out["success"] is False
     assert len(planner.briefs) == 3, "initial plan + exactly max_replans replans"
-    assert out["replans"] == 2 and out["actuations"] == 3
+    # the deterministic planner answers the same graph: one as-is retry actuates,
+    # the second identical answer is refused (protocol.replan_progress), never run
+    assert out["replans"] == 2 and out["actuations"] == 2
+    assert [f["kind"] for f in out["faults"]] == ["node_failure", "node_failure", "no_progress"]
     # the Fault-shaped brief preserves failed/done/left, attributably
     fault = planner.briefs[1]["fault"]
     assert fault["kind"] == "node_failure" and fault["node"] == "stack-0"
@@ -724,3 +727,33 @@ def test_an_ungrounded_arg_folds_back_instead_of_crashing(monkeypatch):
     assert "refused at dispatch" in fault["msg"] and "can" in fault["msg"], \
         "the refusal must name the known bindings so a replan can ground itself"
     assert len(fake.specs) == 1, "the ungrounded node never actuated"
+
+
+def test_protocol_gate_admits_a_recovery_node_as_an_argless_record():
+    """A planner's ``insert_recovery`` answer passes ``_graph_problems`` exactly as
+    the plan it grew from: the strategy name is no catalogue skill, so the gate
+    folds it as an arg-less, contract-free record (the loop resolves the name)."""
+    from harness import protocol
+    g = {"goal": "x", "nodes": [
+        {"id": "a", "skill": "grasp", "args": {"object": "apple"}, "after": []},
+        {"id": "b", "skill": "place", "args": {"object": "apple"}, "after": ["a"]}],
+        "verify": [{"after": "b", "predicate": "placed"}]}
+    cat = {"grasp": {"object": str}, "place": {"object": str}}
+    brief = {"facts": [], "objects": ["apple"]}
+    g2 = protocol.insert_recovery(g, "b", "reapproach")
+    assert (workload._graph_problems(g2, g, ["a"], brief, cat, 0)
+            == workload._graph_problems(g, g, ["a"], brief, cat, 0))
+
+
+def test_recycle_cans_planner_keeps_a_done_recovery_node_across_faults():
+    """A stateless planner must re-emit a recovery node that already RAN (it is in
+    done_specs): without it every later replan dies as 'dropped done node'."""
+    from plugins.mission_recycle_cans import planner as P
+    pl = P.RecycleCansPlanner()
+    cat, brief = P.CATALOGUE, {"facts": [], "objects": []}
+    g1 = pl.plan({"task": "recycle_cans", "fault": {"kind": "no_progress", "node": "drop-can1"}})
+    done = ["survey", "plan-order", "recover-drop-can1"]
+    g2 = pl.plan({"task": "recycle_cans", "fault": {
+        "kind": "node_failure", "node": "grasp-can2", "nodes_done": done}})
+    assert "recover-drop-can1" in {n["id"] for n in g2["nodes"]}
+    assert workload._graph_problems(g2, g1, done, brief, cat, 0) == []

@@ -10,6 +10,9 @@
 needs_sim = true
 
 [task_bindings.pack_lunch]
+# actuation floor for {"kind":"task"} briefs that omit max_actuations: the
+# graph's node count plus replan/recovery headroom (the task default of 3 dies at node 3)
+max_actuations = 40
 env = "plugins.embodiment_robocasa:provider"
 percept = "plugins.embodiment_robocasa.percept:provider"
 policy = "plugins.embodiment_robocasa.lunch_driver:provider"

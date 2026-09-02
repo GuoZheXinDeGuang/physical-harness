@@ -28,7 +28,8 @@ from scripts.rsi_campaign import _segment_isolation, build_prereg, gate, recover
 # ── A. recovery primitives ────────────────────────────────────────────────────
 
 def test_robocasa_strategies_registered_per_card():
-    assert repertoire.strategies_for("embodiment_robocasa") == ["regrasp_kitchen", "redock_retry"]
+    assert repertoire.strategies_for("embodiment_robocasa") == [
+        "regrasp_kitchen", "redock_retry", "reapproach", "base_nudge", "release_reset"]
     # the tabletop card's vocabulary is untouched -- no cross-card leak either way.
     rs = repertoire.strategies_for("embodiment_robosuite")
     assert "regrasp" in rs and "regrasp_kitchen" not in rs
@@ -83,7 +84,8 @@ def test_recovery_support_kitchen_grasp_is_governable():
              "after": ["at-fridge"], "args": {}}
     s = recovery_support("kitchen_thaw", grasp)
     assert s["supported"] and s["card"] == "embodiment_robocasa"
-    assert s["repertoire"] == ["regrasp_kitchen", "redock_retry"]
+    assert s["repertoire"] == [
+        "regrasp_kitchen", "redock_retry", "reapproach", "base_nudge", "release_reset"]
     assert s["driver"] == "KitchenThawDriver" and not s["blockers"]
 
 

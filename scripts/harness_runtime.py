@@ -595,11 +595,9 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
                          f"declares it (known: {sorted(rt.task_bindings)})")
     seed = int(brief.get("seed", 0))
     max_replans = int(brief.get("max_replans", 3))
-    # clear_table's two pick nodes need one extra actuation of headroom, matching
-    # scripts/task_plan.py's default.
-    max_actuations = int(brief.get(
-        "max_actuations",
-        binding.get("max_actuations", 4 if task == "clear_table" else 3)))
+    # Actuation floor: brief -> the card's task binding (every mission card
+    # declares one to cover its node count) -> the one-node default.
+    max_actuations = int(brief.get("max_actuations", binding.get("max_actuations", 3)))
     kernel = Kernel(CAPABILITIES, log=rt.log)
     kernel.mount(_mount_plan(binding, rt.skills_root, render=rt.render,
                              frames=rt.frames))

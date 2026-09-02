@@ -37,7 +37,7 @@ from typing import Any
 
 import numpy as np
 
-from harness import opstream
+from harness import opstream, protocol
 from harness.registry import load_provider
 from harness.skill_library import RECORDS, catalogue_of, segment_specs, select
 
@@ -148,11 +148,24 @@ class RecycleCansPlanner:
         if task != "recycle_cans":
             raise ValueError(
                 f"RecycleCansPlanner only plans 'recycle_cans', got {task!r}")
-        return _emit_plan()
+        plan = _emit_plan()
+        fault = brief.get("fault") or {}
+        # Stateless emitter: a recovery node that already RAN sits in done_specs,
+        # and replan_monotone refuses any later graph without it -- re-insert
+        # every done recover-<id> before answering this fault.
+        for nid in fault.get("nodes_done") or ():
+            if nid.startswith("recover-"):
+                plan = protocol.insert_recovery(plan, nid[len("recover-"):], "reapproach")
+        if fault.get("kind") == "no_progress":
+            # The loop refused this graph twice at that node: answer with the
+            # card's reach repair (embodiment_robocasa reapproach) before it
+            # instead of a third copy, which would end the task.
+            plan = protocol.insert_recovery(plan, fault["node"], "reapproach")
+        return plan
 
     @property
     def identity(self) -> str:
-        return "recycle_cans_planner@v1"
+        return "recycle_cans_planner@v2"  # v2: answers no_progress with a recovery node
 
 
 def provider(**params: Any) -> RecycleCansPlanner:

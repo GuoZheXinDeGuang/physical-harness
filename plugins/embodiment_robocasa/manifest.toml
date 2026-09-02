@@ -35,6 +35,28 @@ ref = "plugins.embodiment_robocasa.recoveries:REGRASP_KITCHEN"
 [recoveries.redock_retry]
 ref = "plugins.embodiment_robocasa.recoveries:REDOCK_RETRY"
 
+# Reach repairs a planner may insert as a recovery node after a reach_stall:
+# lift to hover and re-descend on the live target / nudge the base <=0.15 m
+# toward it / open, lift, hover (see recoveries.py).
+[recoveries.reapproach]
+ref = "plugins.embodiment_robocasa.recoveries:REAPPROACH"
+
+[recoveries.base_nudge]
+ref = "plugins.embodiment_robocasa.recoveries:BASE_NUDGE"
+
+[recoveries.release_reset]
+ref = "plugins.embodiment_robocasa.recoveries:RELEASE_RESET"
+
+# Stage-driver knobs (drivers.tunables()): defaults here, overlaid per process by
+# PH_TUNABLES='{"key": value}' (unknown keys refuse). drivers.tunables_sha() rides
+# every segment's diagnostics. This is the axis the RSI light loop perturbs.
+[tunables]
+hover_dz = 0.08      # GraspDriver hover height above the object (m)
+reach_tol = 0.03     # xy arrival gate at hover / over the drop point (m)
+standoff = 0.65      # GraspDriver base standoff at the work height (m)
+segment_cap = 0      # per-segment step cap; 0 = the mission's stage table
+stall_k = 40         # StallDetector: steps without eef-to-target progress
+
 # Predicates this card provides (the free-oracle factories in predicates.py;
 # harness.predicates folds them). reads = sigma keys, args = factory params.
 

@@ -13,6 +13,8 @@ oracles = "plugins.task.planner_stack:ORACLES"
 
 [task_bindings.clear_table]
 policy = "plugins.policies:provider"
+# two pick nodes + one actuation of headroom (scripts/task_plan.py's default)
+max_actuations = 4
 planner = "plugins.task.planner_stack:provider"
 catalogue = "plugins.task.planner_stack:CATALOGUE"
 records = "plugins.task.planner_stack:SKILL_RECORDS"

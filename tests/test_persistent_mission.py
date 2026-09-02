@@ -520,8 +520,11 @@ def test_heterogeneous_segment_failure_replans_in_the_same_world(monkeypatch):
     assert out["success"] is False and out["replans"] == 2
     assert out["faults"][0]["kind"] == "node_failure" and out["faults"][0]["node"] == "grab"
     # no new world on replan; walk (already done) was never re-driven, grab retried
+    # ONCE as-is -- the deterministic planner's second identical graph is refused
+    # (protocol.replan_progress no_progress), never driven
     assert _HET_EMB.makes == 1 and _HET_EMB.world.resets == 1 and _HET_EMB.world.closes == 1
-    assert HET_DRIVER.entered.count("go") == 1 and HET_DRIVER.entered.count("pick") == 3
+    assert HET_DRIVER.entered.count("go") == 1 and HET_DRIVER.entered.count("pick") == 2
+    assert out["faults"][-1]["kind"] == "no_progress"
 
 
 def test_segment_retry_reuses_valid_graph_without_calling_planner(monkeypatch):

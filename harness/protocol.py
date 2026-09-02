@@ -432,6 +432,48 @@ def replan_monotone(old_graph: Any, new_graph: Any, done_ids: Collection[str]
     return not problems, problems
 
 
+
+def replan_progress(history: Iterable[Mapping[str, Any]], new_graph: Mapping,
+                    fault: Mapping[str, Any] | None) -> tuple[bool, str]:
+    """The progress rule: against ONE (node, fault signature) the SAME graph
+    (``graph_sha``: same nodes, args and executors) may be re-run as-is once;
+    proposing it a second time is ``no_progress``. ``history`` rows are
+    ``{graph_sha, node, signature}`` -- one per executed graph that faulted.
+    Returns ``(True, "fresh"|"retry")`` or ``(False, "no_progress")``; a fault
+    without a node (invalid_plan) never blocks."""
+    if not fault or fault.get("node") is None:
+        return True, "fresh"
+    sha = graph_sha(new_graph)
+    key = (fault.get("node"), fault.get("signature") or fault.get("kind"))
+    tried = sum(1 for h in history
+                if h.get("graph_sha") == sha and (h.get("node"), h.get("signature")) == key)
+    if tried == 0:
+        return True, "fresh"
+    return (True, "retry") if tried == 1 else (False, "no_progress")
+
+
+def insert_recovery(plan: Mapping, node_id: str, strategy: str) -> dict:
+    """A planner's answer to a ``no_progress`` fault: the same plan with ONE
+    ``kind:"recovery"`` node (``skill`` = a strategy some embodiment card declares
+    under ``[recoveries.*]``, no args) inserted right before ``node_id`` and added
+    to its ``after``, so the failed node re-runs on the world the repair leaves.
+    Done nodes are untouched (``replan_monotone`` holds); the new node changes
+    ``graph_sha``, which is exactly what ``replan_progress`` counts as progress.
+    Idempotent: a plan already carrying ``recover-<node_id>`` comes back as-is."""
+    rid = f"recover-{node_id}"
+    nodes, found = [], False
+    for n in plan["nodes"]:
+        if n["id"] == node_id:
+            found = True
+            if rid not in n["after"]:
+                nodes.append({"id": rid, "skill": strategy, "args": {},
+                              "kind": "recovery", "after": list(n["after"])})
+                n = {**n, "after": [*n["after"], rid]}
+        nodes.append(n)
+    if not found:
+        raise KeyError(f"insert_recovery: node {node_id!r} is not in the plan")
+    return {**plan, "nodes": nodes}
+
 # ------------------------------------------------------------ VLM projection
 
 #: The exact reply shape a VLM planner must emit (the validate_plan dialect:

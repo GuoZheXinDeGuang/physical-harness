@@ -29,7 +29,7 @@ from harness import opstream, predicates, protocol
 from harness.config import sha_json
 from harness.features import privilege_cost
 from harness.kernel import Kernel
-from harness.manifest import mount_params
+from harness.manifest import discover, mount_params
 from harness.registry import load_provider
 from harness.skill_executor import is_segment, normalize_handshake
 from harness.skill_library import ARMS, RECORDS, executor_key, rearm, skill_specs
@@ -517,6 +517,39 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
     return out
 
 
+def _recovery(node: Mapping, ctx: NodeCtx) -> dict:
+    """RECOVERY: a planner-inserted repair on the persistent episode -- the answer
+    to a ``no_progress`` fault (``protocol.insert_recovery``). ``skill`` names a
+    strategy an embodiment card declared under ``[recoveries.*]``; the episode's
+    driver builds the actor for its OWN action space against the stage it is
+    still armed on (the failed segment's live target -- governed.py's
+    ``make_recovery`` seam), the loop steps it on the shared cursor, and the
+    failed segment then re-runs on the world the repair left. No episode, no seam
+    or an undeclared strategy raise ValueError: the dispatch-refusal fold."""
+    ep = ctx.episode
+    if ep is None:
+        raise ValueError(f"recovery node {node['id']!r} needs a persistent episode "
+                         "(the brief must declare 'episodic')")
+    if not hasattr(ep.driver, "make_recovery"):
+        raise ValueError(f"recovery node {node['id']!r}: driver "
+                         f"{type(ep.driver).__name__} has no make_recovery seam")
+    declared = discover().recoveries
+    if node["skill"] not in declared:
+        raise ValueError(f"recovery node {node['id']!r} names undeclared strategy "
+                         f"{node['skill']!r}; declared: {sorted(declared)}")
+    module, _, attr = declared[node["skill"]][1].partition(":")
+    strategy = getattr(importlib.import_module(module), attr)
+    actor = ep.driver.make_recovery(strategy, ep.obs, None, ep.spec)
+    entered = ep.cursor
+    while not actor.done and not ep.exhausted:
+        ep.obs = ep.env.step(actor.act(ep.obs))[0]
+        ep.cursor += 1
+    ep.driver.on_handback()
+    return {"success": bool(actor.done), "steps": ep.cursor - entered, "stages": [],
+            "diagnostics": {"strategy": strategy.name},
+            "governance": _segment_governance(None, [], entered, ep.cursor)}
+
+
 #: kind -> handler ``(node, ctx) -> {"success", "governance", ...}``. The names
 #: are validate.NODE_KINDS verbatim; the assert makes a drifted table a loud
 #: import error, never a silent KeyError mid-brief.
@@ -526,6 +559,7 @@ _KIND_HANDLERS = {
     "perceive": _perceive,
     "decide": _decide,
     "verify": _verify,
+    "recovery": _recovery,
 }
 assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
     "node-kind handler table drifted from validate.NODE_KINDS"
@@ -615,9 +649,16 @@ def _graph_problems(plan: Mapping, prev_plan: Mapping | None, done_ids,
     if prev_plan is not None:
         problems += protocol.replan_monotone(_graph(prev_plan, seed), graph, done_ids)[1]
     records = _records(brief, catalogue)
+    for n in plan["nodes"]:  # a recovery node names a strategy: an arg-less, contract-free record
+        if n.get("kind") == "recovery":
+            records.setdefault(n["skill"], protocol.SkillRecordV0(id=n["skill"], name=n["skill"]))
     problems += protocol.validate_graph(graph, records, brief.get("facts") or (),
                                         brief.get("objects") or ())[1]
     return problems
+
+
+#: Folded into the fault a rejected no-progress replan hands the planner.
+NO_PROGRESS_HINT = "same graph already tried; change args/executor or add a recovery node"
 
 
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
@@ -685,6 +726,9 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     # carry each entry verbatim or the graph is refused (replan stability).
     done_specs: dict[str, dict] = {}
     faults: list[dict] = []
+    # protocol.replan_progress ledger: one {graph_sha, node, signature} row per
+    # executed graph that faulted (segment retries included -- they are as-is runs).
+    history: list[dict] = []
     actuations = 0
     replans = 0
     segment_retry_counts: dict[str, int] = {}
@@ -747,6 +791,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             problems = _graph_problems(plan, prev_plan, done_specs, brief, catalogue, seed)
             if problems:
                 ok, msg = False, "; ".join(problems)
+        reason = "invalid_plan"
+        if ok and replans and not is_retry:
+            # The progress rule: the same graph against the same (node, fault) is
+            # re-run as-is at most once; a second identical answer is refused and
+            # the planner is told what must change (NO_PROGRESS_HINT rides the fault).
+            progress, reason = protocol.replan_progress(history, plan, brief.get("fault"))
+            if not progress:
+                ok, msg = False, f"replan rejected: {reason}: {NO_PROGRESS_HINT}"
         if ok:
             prev_plan = plan
         if not is_retry:
@@ -771,7 +823,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 "facts": facts, "objects": objects, "visible": visible,
                 "legal": ok, "problems": [] if ok else [msg], "block": brief.get("block")})
             if not ok and replans:
-                kernel.note("task.replan_rejected", {"replan": replans, "problems": [msg]})
+                kernel.note("task.replan_rejected", {"replan": replans, "reason": reason,
+                                                     "problems": [msg]})
         # Operational feed (harness.opstream; never chain evidence): the FULL
         # node graph, the moment it exists, so the execution-graph panel draws
         # the plan while the first node is still running.
@@ -782,7 +835,12 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                               "args": dict(n.get("args") or {})} for n in nodes],
                       verify=[dict(v) for v in (plan.get("verify") or [])] if ok else [])
         fault: dict | None = None
-        if not ok:
+        if not ok and reason == "no_progress":
+            prev = brief.get("fault") or {}
+            fault = {**prev, "kind": "no_progress", "msg": msg,
+                     "signature": prev.get("signature") or prev.get("kind"),
+                     "graph_sha": protocol.graph_sha(plan)}
+        elif not ok:
             fault = {"kind": "invalid_plan", "msg": msg}
         else:
             # nodes_out accumulates ACROSS replans: a node that already
@@ -904,6 +962,9 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             success = True
             break
         faults.append(fault)
+        if ok and fault.get("node") is not None:
+            history.append({"graph_sha": protocol.graph_sha(plan), "node": fault["node"],
+                            "signature": fault["kind"]})
         if fault.get("node") is not None:
             kernel.note("task.fault", {"node": fault["node"],
                                        "failed": list(fault.get("failed") or []),
@@ -911,7 +972,11 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         # budget and cancelled are TERMINAL faults: replanning around either
         # would be the loop arguing with a floor the operator (or the budget)
         # already set.
-        if fault["kind"] in ("budget", "cancelled"):
+        # A planner that answers a no_progress refusal with the same graph again
+        # ends the task honestly: two identical answers to one fault is the ceiling.
+        if fault["kind"] in ("budget", "cancelled") or (
+                fault["kind"] == "no_progress"
+                and (brief.get("fault") or {}).get("kind") == "no_progress"):
             break
         failed_node = fault.get("node")
         failed_spec = next(

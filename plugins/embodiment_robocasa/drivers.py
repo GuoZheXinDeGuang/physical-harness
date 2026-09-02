@@ -26,6 +26,13 @@ the env's seeded scene: no rng in the controllers.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import tomllib
+from functools import cache
+from pathlib import Path
+
 import numpy as np
 
 # 12-dim action layout (install report §3.4): arm OSC 0:6, gripper 6,
@@ -41,6 +48,56 @@ GRIP_OPEN = -1.0
 # Navigate success tolerance == NavigateKitchen._check_success (kitchen_navigate.py).
 NAV_POS_TOL = 0.20
 NAV_ORI_COS = 0.98
+
+
+# ---- stage tunables (the card manifest's [tunables] table) -------------------
+
+_MANIFEST = Path(__file__).with_name("manifest.toml")
+
+
+@cache
+def _tunables(overlay: str) -> dict:
+    base = tomllib.loads(_MANIFEST.read_text()).get("tunables", {})
+    extra = json.loads(overlay) if overlay else {}
+    if unknown := set(extra) - set(base):
+        raise KeyError(f"PH_TUNABLES names unknown tunables {sorted(unknown)}; "
+                       f"known: {sorted(base)}")
+    return {**base, **{k: type(base[k])(v) for k, v in extra.items()}}
+
+
+def tunables() -> dict:
+    """Effective stage tunables: manifest ``[tunables]`` defaults overlaid by the
+    ``PH_TUNABLES`` env var (a JSON object; unknown keys refuse loudly). The env
+    overlay is the knob a suite subprocess turns without editing the card."""
+    # ponytail: a process-wide env overlay, not per-episode; thread through
+    # provider params if two arms ever need different tunables in one process.
+    return _tunables(os.environ.get("PH_TUNABLES", ""))
+
+
+def tunables_sha() -> str:
+    """Content id of the EFFECTIVE tunables -- sealed with every segment's
+    diagnostics so a tuned run is distinguishable from the default one."""
+    return hashlib.sha256(
+        json.dumps(tunables(), sort_keys=True).encode()).hexdigest()[:16]
+
+
+class StallDetector:
+    """eef-to-target progress watchdog: ``update(dist)`` is True once the best
+    distance has not improved by ``eps`` for ``k`` consecutive steps. A stage
+    that stalls fails its segment early with failure_mode "reach_stall" instead
+    of burning the whole step cap against furniture/reach limits."""
+
+    def __init__(self, k: int, eps: float = 0.002):
+        self.k, self.eps = int(k), eps
+        self.best = float("inf")
+        self.since = 0
+
+    def update(self, dist: float) -> bool:
+        if dist < self.best - self.eps:
+            self.best, self.since = float(dist), 0
+        else:
+            self.since += 1
+        return self.since >= self.k
 
 
 # ---- live-state readers (privileged; scripted-oracle side) -------------------
@@ -433,6 +490,10 @@ class GraspDriver:
              ("over_end", -0.07, -0.05, -0.015, 0.0, "full", 0.0))
 
     def __init__(self, obj_name):
+        t = tunables()
+        self.HOVER, self.HOVER_XY, self.FWD = t["hover_dz"], t["reach_tol"], t["standoff"]
+        self._stall_k = t["stall_k"]
+        self.failure_mode = None  # "reach_stall" once the retry schedule is spent stalled
         self.obj_name = obj_name
         self.phase = "align"
         self.attempt = 0
@@ -441,6 +502,7 @@ class GraspDriver:
         self._lift_z = None
         self._obj_z0 = None    # object z at entry: the secure-lift reference
         self._z_hist: list = []  # descent stall detector window
+        self._stall = StallDetector(self._stall_k)  # hover/descend reach watchdog
 
     # -- per-attempt geometry --------------------------------------------------
     def _tweak(self):
@@ -471,12 +533,16 @@ class GraspDriver:
         c, s = np.cos(self._apsi()), np.sin(self._apsi())
         return m[:2] - np.array([c * fwd - s * lat, s * fwd + c * lat])
 
-    def _next_attempt(self):
+    def _next_attempt(self, stalled=False):
+        # a stall with no fresh geometry left to try is the segment's honest end
+        if stalled and self.attempt + 1 >= len(self.RETRY):
+            self.failure_mode = "reach_stall"
         self.attempt += 1
         self.phase = "align"
         self._ticks = 0
         self._lift_z = None
         self._z_hist = []
+        self._stall = StallDetector(self._stall_k)
 
     def _minor_axis(self, env):
         """World-horizontal unit vector across the object's THINNEST bbox
@@ -587,8 +653,9 @@ class GraspDriver:
                     and (style == "pre" or abs(yerr) < self.YAW_TOL)):
                 self.phase = "descend"
                 self._ticks = 0
-            elif self._ticks > self.PHASE_CAP:
-                self._next_attempt()
+                self._stall = StallDetector(self._stall_k)
+            elif self._ticks > self.PHASE_CAP or self._stall.update(np.linalg.norm(wp - eef)):
+                self._next_attempt(stalled=True)
                 return _arm_action(env, eef, GRIP_OPEN, kp=0.0)
             if self.phase == "hover":
                 full = np.clip(yerr * self.KYAW, -self.YAW_CAP, self.YAW_CAP)
@@ -619,8 +686,8 @@ class GraspDriver:
             if centred and (-err[2] < self.CLOSE_DZ or wedged):
                 self.phase = "close"
                 self._ticks = 0
-            elif self._ticks > self.PHASE_CAP:
-                self._next_attempt()
+            elif self._ticks > self.PHASE_CAP or self._stall.update(np.linalg.norm(err)):
+                self._next_attempt(stalled=True)
                 return _arm_action(env, eef, GRIP_OPEN, kp=0.0)
             else:
                 # descend yaw per style: "full" keeps the hard servo; the
@@ -713,6 +780,8 @@ class PlaceDriver:
         self.phase = "over"
         self._ticks = 0
         self._target = None
+        self._stall = StallDetector(tunables()["stall_k"])
+        self.failure_mode = None
 
     def _interior(self, env):
         if self._target is None:
@@ -729,11 +798,15 @@ class PlaceDriver:
             goal = np.array([c[0], c[1], c[2] + self.OVER_DZ])
             if np.linalg.norm((eef - goal)[:2]) < 0.03:
                 self.phase = "lower"
+            elif self._stall.update(np.linalg.norm(goal - eef)):
+                self.failure_mode = "reach_stall"
             return _arm_action(env, goal, GRIP_CLOSE)
         if self.phase == "lower":
             goal = np.array([c[0], c[1], c[2]])
             if eef[2] - c[2] < 0.03:
                 self.phase = "release"
+            elif self._stall.update(np.linalg.norm(goal - eef)):
+                self.failure_mode = "reach_stall"
             return _arm_action(env, goal, GRIP_CLOSE)
         if self.phase == "release":
             self._ticks += 1
@@ -805,6 +878,8 @@ def run_stage(env, driver, budget, obs=None):
     for i in range(budget):
         if driver.done(env):
             return True, i, obs
+        if getattr(driver, "failure_mode", None):   # e.g. "reach_stall": fail early
+            return False, i, obs
         action = driver.act(env, obs)
         obs, _, _, _ = env.step(action)
     return driver.done(env), budget, obs

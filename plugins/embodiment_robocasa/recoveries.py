@@ -57,3 +57,32 @@ REDOCK_RETRY = Strategy(
     "dock (fresh NavigateDriver), then hand back so the stalled segment retries "
     "from a clean approach. For a loaded-transport stall. Base mode throughout.",
 )
+
+
+# Reach repairs (overnight-goal item 2): what a planner inserts as a recovery node
+# after a segment failed with failure_mode "reach_stall", instead of retrying the
+# same graph verbatim. Phases rehover/redescend/nudge are executed by
+# RobocasaRecoveryActor against the ACTIVE stage's live target (object pose, or a
+# place stage's drop point).
+
+REAPPROACH = Strategy(
+    "reapproach",
+    (("rehover", 25, 0.0, 0.0), ("redescend", 30, 0.0, 0.0)),
+    "Reach recovery: lift to the hover height above the live target, then "
+    "descend onto its CURRENT pose -- a target that moved (plowed slab, nudged "
+    "can) is re-acquired instead of chased from a stalled pose. Arm mode.",
+)
+
+BASE_NUDGE = Strategy(
+    "base_nudge",
+    (("nudge", 20, 0.0, 0.0), ("rehover", 25, 0.0, 0.0)),
+    "Reach recovery: drive the base at most 0.15 m toward the target xy (the "
+    "arm stalled at the edge of its envelope), then re-hover. Base mode then arm.",
+)
+
+RELEASE_RESET = Strategy(
+    "release_reset",
+    (("unclench", 6, 0.0, 0.0), ("raise", 20, 0.0, 0.0), ("rehover", 25, 0.0, 0.0)),
+    "Reach recovery: open the fingers, lift clear, return to hover over the live "
+    "target -- clears a wedged/snagged approach before the segment retries. Arm mode.",
+)

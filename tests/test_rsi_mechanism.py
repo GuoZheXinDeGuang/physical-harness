@@ -202,7 +202,7 @@ def test_every_repertoire_strategy_is_declared_by_an_embodiment_card():
     # the kitchen card declares its own two, folded even though it is
     # enabled = false (a second-simulator card permanently is)
     assert repertoire.strategies_for("embodiment_robocasa") == [
-        "regrasp_kitchen", "redock_retry"]
+        "regrasp_kitchen", "redock_retry", "reapproach", "base_nudge", "release_reset"]
 
 
 def test_an_undeclaring_card_has_no_recovery_primitives():

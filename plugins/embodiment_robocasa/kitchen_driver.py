@@ -93,7 +93,8 @@ class KitchenThawDriver(InprocExecutor):
         fridge) consumes zero steps and seals success immediately."""
         if self._stage is None:
             return True
-        return self.k >= self._cap or bool(self._stage.done(self._env))
+        return (self.k >= self._cap or bool(self._stage.done(self._env))
+                or getattr(self._stage, "failure_mode", None) is not None)
 
     def retarget(self, target) -> None:  # noqa: D401 -- unused on this protocol
         """No-op: the stage drivers self-target off the live env, never a pose."""
@@ -111,11 +112,7 @@ class KitchenThawDriver(InprocExecutor):
         seam's args, unused here (robocasa recovery reads env truth)."""
         from plugins.embodiment_robocasa.recovery import RobocasaRecoveryActor
 
-        stage = self._stage
-        return RobocasaRecoveryActor(
-            self._env, recovery.name, recovery.steps(),
-            obj_name=getattr(stage, "obj_name", None),
-            fixture_name=getattr(stage, "fixture_name", None))
+        return RobocasaRecoveryActor.for_stage(self._env, self._stage, recovery)
 
     @property
     def identity(self) -> str:
@@ -135,7 +132,7 @@ class KitchenThawDriver(InprocExecutor):
         factory, cap = _STAGES[task]
         self._env = env
         self._stage = factory()
-        self._cap = cap
+        self._cap = D.tunables()["segment_cap"] or cap
         self.k = 0
         self._executor = executor
         if executor is not None:
@@ -146,6 +143,12 @@ class KitchenThawDriver(InprocExecutor):
         """The sub-goal truth: the stage driver's OWN live-state predicate (arrived
         / grasped / placed / closed / on), read on the world as it now is."""
         return bool(self._stage.done(env))
+
+    def segment_diagnostics(self, env) -> dict[str, Any]:
+        """``failure_mode`` ("reach_stall" or None) + ``tunables_sha``, the two
+        keys every robocasa segment seals (CompositeStageDriver seals the same)."""
+        return {"failure_mode": getattr(self._stage, "failure_mode", None),
+                "tunables_sha": D.tunables_sha()}
 
 
 class KitchenThawPolicies:

@@ -79,6 +79,9 @@ graph that achieves the goal with the listed skills.
 - On a replan (fault and completed_nodes are given): keep every completed node in the \
 plan with its id, skill and args EXACTLY as listed -- byte-identical -- and only \
 re-plan the remaining work.
+- If fault.kind is "no_progress": the graph you proposed last (its graph_sha is in \
+fault) was ALREADY tried against this fault. Change the failed node's args or executor, \
+or add a recovery node before it; repeating that graph ends the task.
 - executor: when the input's arm is "auto", pick one per node from that skill's \
 executors (a key), preferring the one with measured evidence (a non-null interval) and \
 the higher lower bound; otherwise omit executor. Never name a key the skill lacks.

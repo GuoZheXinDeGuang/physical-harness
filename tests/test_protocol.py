@@ -149,3 +149,48 @@ def test_pred_ref_str():
     assert P.instantiate("in(object,target)", {"object": "apple"}) == "in(apple,target)"
     with pytest.raises(ValueError):
         P.parse_pred_ref("1bad(")
+
+
+def test_replan_progress_allows_one_as_is_retry_then_no_progress():
+    g = {"goal": "x", "nodes": [{"id": "a", "skill": "grasp", "args": {"object": "apple"},
+                                 "after": [], "executor": "scripted"}], "verify": []}
+    row = {"graph_sha": P.graph_sha(g), "node": "a", "signature": "node_failure"}
+    fault = {"kind": "node_failure", "node": "a"}
+    assert P.replan_progress([], g, fault) == (True, "fresh")
+    assert P.replan_progress([row], g, fault) == (True, "retry")
+    assert P.replan_progress([row, row], g, fault) == (False, "no_progress")
+    # a hinted no_progress fault carries the original signature forward
+    assert P.replan_progress([row, row], g, {**fault, "kind": "no_progress",
+                                             "signature": "node_failure"})[1] == "no_progress"
+    # another executor / args = a different graph; another node or signature = fresh
+    alt = {**g, "nodes": [{**g["nodes"][0], "executor": "pi05"}]}
+    assert P.replan_progress([row, row], alt, fault) == (True, "fresh")
+    assert P.replan_progress([row, row], g, {"kind": "node_failure", "node": "b"}) == (True, "fresh")
+    assert P.replan_progress([row, row], g, {"kind": "invalid_plan"}) == (True, "fresh")
+
+
+def test_insert_recovery_is_the_progress_a_no_progress_fault_asks_for():
+    from plugins.task.validate import plan_to_graph, validate_plan
+    g = {"goal": "x", "nodes": [
+        {"id": "a", "skill": "grasp", "args": {"object": "apple"}, "after": []},
+        {"id": "b", "skill": "place", "args": {"object": "apple"}, "after": ["a"]}],
+        "verify": [{"after": "a", "predicate": "held"}, {"after": "b", "predicate": "placed"}]}
+    cat = {"grasp": {"object": str}, "place": {"object": str}}
+    oracles = {"held": {}, "placed": {}}
+    fault = {"kind": "no_progress", "node": "b", "signature": "node_failure"}
+    rows = [{"graph_sha": P.graph_sha(g), "node": "b", "signature": "node_failure"}] * 2
+    assert P.replan_progress(rows, g, fault) == (False, "no_progress")
+    g2 = P.insert_recovery(g, "b", "reapproach")
+    assert [n["id"] for n in g2["nodes"]] == ["a", "recover-b", "b"]
+    assert g2["nodes"][1] == {"id": "recover-b", "skill": "reapproach", "args": {},
+                              "kind": "recovery", "after": ["a"]}
+    assert g2["nodes"][2]["after"] == ["a", "recover-b"]
+    assert P.replan_progress(rows, g2, fault) == (True, "fresh")
+    assert P.replan_monotone(plan_to_graph(g), plan_to_graph(g2), ["a"]) == (True, [])
+    # the strategy name is not a catalogue skill, and a recovery node takes no args
+    assert validate_plan(g2, cat, oracles) == (True, "")
+    assert not validate_plan({**g2, "nodes": [{**g2["nodes"][1], "args": {"x": 1}}, *g2["nodes"][::2]]},
+                             cat, oracles)[0]
+    assert P.insert_recovery(g2, "b", "reapproach") == g2     # idempotent
+    with pytest.raises(KeyError):
+        P.insert_recovery(g, "zz", "reapproach")

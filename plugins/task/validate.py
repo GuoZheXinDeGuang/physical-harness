@@ -28,7 +28,10 @@ _NODE_OPTIONAL = frozenset({"kind", "task", "on_fail", "executor"})
 #: generic handlers and self-checks coverage against this set at import. A node
 #: with no ``kind`` defaults to ``"manipulate"`` -- so existing cards (no kind on
 #: any node) validate byte-identically, sealed plan shas unmoved.
-NODE_KINDS = frozenset({"manipulate", "segment", "perceive", "decide", "verify"})
+#: ``recovery``: a planner-inserted repair (``protocol.insert_recovery``); its
+#: ``skill`` names an embodiment card's ``[recoveries.*]`` strategy, not a
+#: catalogue skill, and it carries no args.
+NODE_KINDS = frozenset({"manipulate", "segment", "perceive", "decide", "verify", "recovery"})
 
 
 def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
@@ -87,7 +90,7 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
             return False, (f"node {nid!r} declares unknown kind {kind!r}; "
                            f"known kinds: {sorted(NODE_KINDS)}")
         skill = node["skill"]
-        if skill not in catalogue:
+        if skill not in catalogue and kind != "recovery":
             return False, (f"node {nid!r} names unknown skill {skill!r}; "
                            f"catalogue is {sorted(catalogue)}")
         if not isinstance(node["args"], Mapping):
@@ -105,6 +108,9 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
     records = {name: SkillRecordV0(id=name, name=name,
                                    args={k: _TYPE_NAME[t] for k, t in schema.items()})
                for name, schema in catalogue.items()}
+    for n in nodes:  # a recovery strategy is an arg-less record; the loop resolves the name
+        if n.get("kind") == "recovery":
+            records.setdefault(n["skill"], SkillRecordV0(id=n["skill"], name=n["skill"], args={}))
     # Goals and executors stripped here: Covered and Bound need contract-bearing
     # records (bindings), which the workload's protocol gate (_graph_problems) supplies.
     typed = {**plan, "tasks": [{"id": t["id"], "goal": []} for t in tasks or ()],
