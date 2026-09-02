@@ -1463,7 +1463,8 @@ def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once.
 
-    ``runtime_alive`` rides along because this is the FIRST call anyone makes
+    ``mode`` (execution/evolution, None before the first boot) rides along so a
+    panel can offer only evolution sessions for an evolve brief; ``runtime_alive`` because this is the FIRST call anyone makes
     ("Unsure? Call sessions()"): a session with no live runtime is an inbox
     nothing will ever claim from, and finding that out only after the brief has
     sat there for a day is how the last three incidents went. Deliberately the
@@ -1476,7 +1477,8 @@ def discover_sessions(runs_dir: str | Path) -> list[dict]:
             s = read_session(p)
             status = read_runtime_status(p)
             out.append({k: s[k] for k in ("name", "mtime", "chain_ok", "kinds", "skipped")}
-                       | {"runtime_alive": bool(status and status["alive"])})
+                       | {"runtime_alive": bool(status and status["alive"]),
+                          "mode": (status or {}).get("mode")})
     return sorted(out, key=lambda s: s["mtime"], reverse=True)
 
 
