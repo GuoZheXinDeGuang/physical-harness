@@ -1584,6 +1584,16 @@ workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 acto
 - 边：`IN_CLASS`、`DEPENDS_ON`（rule `requires∩ensures` / `plan uses`）、`INSTANCE_OF`（rule `name prefix within class`，via 实例记录路径；generic 节点带 `instances: n`）、`BOUND_TO`（bindings 的 `plugins.<card>:attr` → 卡目录）、`EVIDENCED_ON`（有证据时额外带 `n` / `k`），与既有血缘边并列（14 种关系）。
 - 记录当数据读（json → `SkillRecordV0.from_dict`，读不动的文件跳过），`board/` 依旧零插件导入。
 
+**能力、卡片、技能的边界**（图里三层，各答一个问题）：
+
+| 层 | 是什么 | 答什么 | 来源 |
+|---|---|---|---|
+| 能力 `capability` | 内核认识的接口插槽，固定 10 个（`embodiment.env`、`policy.driver`、`task.planner`、`model.endpoint`…） | 内核需要什么 | `harness.definitions.CAPABILITIES` |
+| 卡片 `package` | 一个插件目录 + manifest，安装单位；声明它提供哪些能力，承载执行器、谓词、恢复原语、benchmark | 装了什么、谁来实现 | `plugins/*/manifest.toml` |
+| 技能 `skill` | 一条 SkillRecord：符号契约 + 对某张卡上执行器的绑定 + 证据；规划器拼图的单位 | 会做什么、靠谁做、做得多好 | `skill-library/records` |
+
+跨层只有三种边：卡片 **PROVIDES** 能力、卡片 **MOUNTED_IN** 本体卡、技能 **BOUND_TO** 卡片；技能之间是 `DEPENDS_ON` / `INSTANCE_OF` / `IN_CLASS`。旧重链路晋级出的 `runs/*/skills` 记录（candidate / promoted / retired）及其血缘边是历史，控制台默认隐藏。
+
 ---
 
 ## 10. 没在这份文档里的东西
