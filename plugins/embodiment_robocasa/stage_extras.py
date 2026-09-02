@@ -31,7 +31,9 @@ class NavToObjectDriver(D.NavigateDriver):
     cross-kitchen leg turns most of the error into a dead vy channel), settle to
     the dock yaw inside the last stretch; on a stall (window displacement under
     2 cm over 20 steps: wedged on the spawn dock's furniture) reverse straight
-    back 25 steps and resume. Measured on recycle_cans scratch seeds: the
+    back 25 steps and resume -- under the parent's shared plateau watchdog
+    (``_watch``: no approach for stall_k steps far from the dock seals
+    "nav_stall" for the planner's redock, the reverse included). Measured on recycle_cans scratch seeds: the
     parent's hold-dock-yaw empty leg moved 0.03-0.13 m on 4/6 cross-kitchen
     legs; heading-first completes a 4.2 m leg (seed 4243, 136 steps) and leaves
     near-dock legs untouched. No path planning -- a mid-route blocking counter
@@ -69,6 +71,7 @@ class NavToObjectDriver(D.NavigateDriver):
         self._hist.append(xy.copy())
         vec = np.asarray(gxy) - xy
         d = float(np.linalg.norm(vec))
+        self._watch(d)
         if self._rev > 0:
             self._rev -= 1
         elif (len(self._hist) > self.STALL_WIN and d > 0.45

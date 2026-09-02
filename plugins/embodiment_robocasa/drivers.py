@@ -311,10 +311,10 @@ class NavigateDriver:
         self.carry = carry          # hold the gripper closed to keep a grasped object
         self._goal = None
         self._stow_left = self.STOW_STEPS if carry else 0
-        # loaded-leg progress watchdog: the base-to-dock distance not improving
-        # by 2 cm for stall_k steps. Near the dock that is a stall-ARRIVAL (done);
-        # farther out it is a "nav_stall" -- the segment fails early for a
-        # redock_retry instead of burning its cap wedged on furniture.
+        # progress watchdog for BOTH legs (_watch): the base-to-dock distance
+        # not improving by 2 cm for stall_k steps. Near the dock that is a
+        # stall-ARRIVAL; farther out it is a "nav_stall" -- the segment fails
+        # early for a redock_retry instead of burning its cap wedged on furniture.
         self._stall = StallDetector(tunables()["stall_k"], eps=0.02)
         self._blocked = False
         self.failure_mode = None
@@ -360,9 +360,22 @@ class NavigateDriver:
         a[TORSO] = _torso_cmd(env, 0.0) if retracted else 0.0
         return a
 
+    def _watch(self, d: float) -> None:
+        """The one plateau rule every nav leg (loaded or not, subclassed or not)
+        feeds its base-to-dock distance: a stall inside the arrival band is
+        ``_blocked`` (the loaded done() accepts it; unloaded that band is the
+        NAV_POS_TOL gate itself, only the yaw still settling), a stall farther
+        out seals failure_mode "nav_stall" so the planner can redock."""
+        if self._stall.update(d):
+            if d <= (self.CARRY_NEAR if self.carry else NAV_POS_TOL):
+                self._blocked = True
+            else:
+                self.failure_mode = "nav_stall"
+
     def act(self, env, obs):
         gxy, gyaw = self._target(env)
         if not self.carry:
+            self._watch(float(np.linalg.norm(np.asarray(gxy, float) - _base_pose(env)[0])))
             return _base_action(env, gxy, gyaw, grip=GRIP_OPEN)
 
         # Loaded transport. Measured (carry-probe traces): in base mode the
@@ -390,12 +403,7 @@ class NavigateDriver:
         a = _base_action(env, gxy, heading, grip=GRIP_CLOSE)
         a[7:9] = np.clip(a[7:9], -self.VCAP, self.VCAP)
         a[9] = float(np.clip(a[9], -self.WARC, self.WARC))
-        d = float(np.linalg.norm(vec))
-        if self._stall.update(d):
-            if d <= self.CARRY_NEAR:
-                self._blocked = True
-            else:
-                self.failure_mode = "nav_stall"
+        self._watch(float(np.linalg.norm(vec)))
         # NO z easing while moving: all height changes happen in the
         # stationary stow -- easing the eef down mid-drive was measured to
         # strip the cargo (drops at steps 144-332 on seeds that survived

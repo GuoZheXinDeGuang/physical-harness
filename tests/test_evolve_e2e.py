@@ -266,7 +266,7 @@ def test_evolve_is_refused_outside_evolution_mode(tmp_path_factory):
         rt.stop()
 
 
-def test_proposer_tries_an_unproven_executor_once_then_says_what_it_needs():
+def test_proposer_tries_an_unproven_executor_once_then_says_what_it_needs(monkeypatch):
     """No evidence favours ``alt`` -> still one honest switch; once tried on that
     node the round is ``none`` with ``needs`` naming what would unblock it."""
     from scripts import evolve
@@ -284,3 +284,13 @@ def test_proposer_tries_an_unproven_executor_once_then_says_what_it_needs():
                            [{"round": 1, "tried": first}])
     assert again["kind"] == "none" and again["detail"]["needs"] == [
         "tunables on test_evolve_e2e:policy_provider", "evidence for another executor", "proposal"]
+    # a tunable a +-20% step leaves where it is (segment_cap 0 -> 0) is no trial:
+    # the next knob is proposed; when none moves, the same honest none
+    hist = [{"round": 1, "tried": first}]
+    monkeypatch.setattr(evolve, "mount_params",
+                        lambda ref: {"tunables": {"segment_cap": 0, "stall_k": 40}})
+    knob = evolve.propose(before, recs, EMB, "auto", binding, 2, {"executors": {}, "tunables": {}}, hist)
+    assert (knob["kind"], knob["detail"]["path"], knob["detail"]["to"]) == ("tunables", ["tunables", "stall_k"], 32)
+    monkeypatch.setattr(evolve, "mount_params", lambda ref: {"tunables": {"segment_cap": 0}})
+    none = evolve.propose(before, recs, EMB, "auto", binding, 2, {"executors": {}, "tunables": {}}, hist)
+    assert none["kind"] == "none" and none["detail"]["needs"] == again["detail"]["needs"]

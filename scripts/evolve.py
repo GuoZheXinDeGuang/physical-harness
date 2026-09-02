@@ -274,13 +274,17 @@ def propose(before: dict, records: dict, emb: str, arm: str, binding: dict,
     ref = (rearm(spec, arm, current if current in bound else None).get("policy_provider")
            or binding["policy"])
     tun, path = _tunables(mount_params(ref))
-    if not tun:
-        return _none(f"no untried executor for {skill!r} and no tunables on {ref!r}", node,
-                     needs=(f"tunables on {ref}", "evidence for another executor", "proposal"))
-    key = sorted(tun)[round_no % len(tun)]
+    f = 1.2 if round_no % 2 else 0.8
+    # the card re-types the overlay (int stays int): a knob the step leaves where it
+    # is (0, a small int) is no trial -- skip it rather than burn a suite on it
+    step = {k: to for k, v in tun.items() if (to := type(v)(v * f)) != v}
+    if not step:
+        return _none(f"no untried executor for {skill!r} and no perturbable tunables on {ref!r}",
+                     node, needs=(f"tunables on {ref}", "evidence for another executor", "proposal"))
+    key = sorted(step)[round_no % len(step)]
     return {"kind": "tunables", "node": node,
             "detail": {"skill": skill, "executor": current, "ref": ref, "path": [*path, key],
-                       "from": tun[key], "to": tun[key] * (1.2 if round_no % 2 else 0.8)}}
+                       "from": tun[key], "to": step[key]}}
 
 
 def apply(tried: dict, applied: dict) -> dict:

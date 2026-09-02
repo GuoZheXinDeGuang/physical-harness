@@ -1520,7 +1520,7 @@ workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 acto
 - tunables：robocasa 段驱动的常量（`hover_dz`、`reach_tol`、`standoff`、`segment_cap`、`stall_k`）是卡 manifest `[tunables]` 的数据，
   `drivers.tunables()` 读默认值并按进程用 `PH_TUNABLES='{"stall_k":20}'` 覆盖（未知键拒绝）；`drivers.tunables_sha()` 随每个 robocasa 段的
   `diagnostics.tunables_sha` 封入节点/`task.plan_complete.nodes`/`actuation_end`，同处 `diagnostics.failure_mode`（`"reach_stall"` = eef 到目标距离 K=stall_k 步不降，段提前失败）。
-  `[tunables]` 经 `manifest.mount_params` 到达该卡每个 driver provider（`params["tunables"]`，evolve 的 `PH_MOUNT_PARAMS_OVERRIDE` 同路并入，`drivers.mount_tunables` 一处共享读）；载物 nav 段底盘到 dock 距离 K 步不降且离 dock > CARRY_NEAR → `failure_mode "nav_stall"`。pack_lunch / kitchen_thaw planner 同 recycle_cans：对 `no_progress` 按首死节点的阶段词插入本体声明的修复（nav/carry → `redock_retry`，grasp → `regrasp_kitchen`，pack/place → `reapproach`；载物段修复保持夹持）。
+  `[tunables]` 经 `manifest.mount_params` 到达该卡每个 driver provider（`params["tunables"]`，evolve 的 `PH_MOUNT_PARAMS_OVERRIDE` 同路并入，`drivers.mount_tunables` 一处共享读）；任一 nav 段（载物/空载，含 NavToObjectDriver）底盘到 dock 距离 K 步不降且离 dock > 到达带（载物 CARRY_NEAR，空载 NAV_POS_TOL）→ `failure_mode "nav_stall"`。pack_lunch / kitchen_thaw planner 同 recycle_cans：对 `no_progress` 按首死节点的阶段词插入本体声明的修复（nav/carry → `redock_retry`，grasp → `regrasp_kitchen`，pack/place → `reapproach`；载物段修复保持夹持）。
 
 ### 9.7 Plan library and mission briefs
 

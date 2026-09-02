@@ -94,6 +94,32 @@ def test_loaded_leg_that_stops_approaching_fails_with_nav_stall(monkeypatch):
     assert nav.done(None) and nav.failure_mode is None
 
 
+def test_unloaded_leg_that_stops_approaching_fails_with_nav_stall(monkeypatch):
+    """Seed 4244's death: nav-can1 (NavToObjectDriver, carry=False) plateaued far
+    from its dock and sealed failure_mode None -- the watchdog only ran loaded."""
+    from plugins.embodiment_robocasa import stage_extras as X
+
+    k = D.tunables()["stall_k"]
+    for make in (lambda: D.NavigateDriver("stove"), lambda: X.NavToObjectDriver("stove", "can1")):
+        base = [3.0, 0.0]
+        monkeypatch.setattr(D, "_base_pose", lambda env: (np.asarray(base, float), 0.0))
+        monkeypatch.setattr(D, "_base_action", lambda env, gxy, yaw, grip: np.zeros(D.ADIM))
+        nav = make()
+        nav._goal = (np.zeros(2), 0.0)
+        for _ in range(3):
+            nav.act(None, None)
+            base[0] -= 0.05
+        for _ in range(k + 1):       # wedged far out (the local reverse included)
+            nav.act(None, None)
+        assert nav.failure_mode == "nav_stall" and not nav.done(None)
+        base[:] = [0.15, 0.0]        # inside NAV_POS_TOL, only the yaw settling
+        nav = make()
+        nav._goal = (np.zeros(2), 0.0)
+        for _ in range(k + 1):
+            nav.act(None, None)
+        assert nav.failure_mode is None and nav.done(None)
+
+
 def test_redock_retry_keeps_the_grip_on_a_loaded_leg(monkeypatch):
     monkeypatch.setattr(D, "_base_pose", lambda env: (np.zeros(2), 0.0))
     nav = D.NavigateDriver("stove", carry=True)
