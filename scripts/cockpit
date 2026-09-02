@@ -587,6 +587,15 @@ if curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then
   echo "cockpit: adopting web server already on :$PORT (pid ${WEB_PID:-unknown}, $([ "$WEB_ADOPTED" -eq 0 ] && echo 'spawned by an earlier cockpit: --stop reaps it' || echo 'started outside cockpit: --stop leaves it')); not restarting" >&2
 fi
 
+# A console-only start (--no-runtime) must not forget who owns session-main's
+# runtime: carry the previous pidfile's runtime_* lines over, or the next --stop
+# treats a runtime an earlier cockpit spawned as "started outside" and skips it
+# (2026-09-03: a one-click restart left session-main on stale code this way).
+if [ -z "$MAIN_RT_PID" ] && [ -f "$PIDFILE" ]; then
+  MAIN_RT_PID="$(sed -n 's/^runtime_pid=//p' "$PIDFILE")"
+  MAIN_RT_ADOPTED="$(sed -n 's/^runtime_adopted=//p' "$PIDFILE")"
+fi
+
 # record PIDs for --stop. Spawned web_pid=$$: this shell is replaced by the web
 # server via exec below, so $$ is the server's PID after exec.
 {
