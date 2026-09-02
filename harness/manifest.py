@@ -20,6 +20,7 @@ folds it while ``harness`` stays plugin-free (``tests/test_kernel.py``).
 
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -116,11 +117,14 @@ def mount_params(ref: str, root: Path = PLUGINS_ROOT) -> dict:
     """The params the card declaring provider ``ref`` mounts it with, enabled or
     not: a segment an arm routes to an unmounted card's provider still runs under
     that card's declared contract. ``{}`` when no card mounts the ref."""
-    for _, data in _load(root):
-        for m in card_mounts(data):
-            if m.provider == ref:
-                return dict(m.params)
-    return {}
+    params: dict = next((dict(m.params) for _, data in _load(root)
+                         for m in card_mounts(data) if m.provider == ref), {})
+    # PH_MOUNT_PARAMS_OVERRIDE: {ref: {param: value}} -- an evolve trial's tunables
+    # perturbation reaching the driver (scripts/evolve.py); one level of nesting
+    # merges ([tunables] tables), anything else replaces.
+    for k, v in json.loads(os.environ.get("PH_MOUNT_PARAMS_OVERRIDE") or "{}").get(ref, {}).items():
+        params[k] = {**params[k], **v} if isinstance(v, dict) and isinstance(params.get(k), dict) else v
+    return params
 
 
 def card_bundles(data: dict) -> dict[str, list[Mount]]:

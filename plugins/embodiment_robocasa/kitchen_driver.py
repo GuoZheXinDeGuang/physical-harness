@@ -146,6 +146,12 @@ class KitchenThawDriver:
         / grasped / placed / closed / on), read on the world as it now is."""
         return bool(self._stage.done(env))
 
+    def frame(self):
+        """harness.media's camera source: the bound env's head-cam render."""
+        from plugins.embodiment_robocasa import env as _env
+
+        return None if self._env is None else _env.frame(self._env)
+
 
 class KitchenThawPolicies:
     """Layer 3 ``harness.contracts.PolicyFactory``: one mount, the composite driver.

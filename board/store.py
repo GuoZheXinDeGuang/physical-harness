@@ -1296,6 +1296,49 @@ def suite_result(session_dir: str | Path, sha: str | None = None) -> dict | None
         return None
 
 
+def _campaign(session_dir: str | Path, task: str) -> dict | None:
+    """``<session>/campaigns/evolve-<task>/campaign.json`` (scripts/evolve.py's
+    atomic snapshot), or None when absent/unreadable. ``task`` rides the shared
+    safe_child guard so a ``../`` task can never read outside the session."""
+    path = safe_child(Path(session_dir) / "campaigns", f"evolve-{task}", Path.is_dir)
+    if path is None:
+        return None
+    try:
+        doc = json.loads((path / "campaign.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def rsi_run(session_dir: str | Path, task: str) -> dict | None:
+    """One evolve campaign's state: the campaign.json fields (task, session,
+    seeds, arm, best, cursor, status, rounds) plus ``latest`` (the newest round
+    row, or None before the first lands). None when no campaign exists."""
+    doc = _campaign(session_dir, task)
+    if doc is None:
+        return None
+    rounds = doc.get("rounds") or []
+    return {**doc, "latest": rounds[-1] if rounds else None}
+
+
+def rsi_series(session_dir: str | Path, task: str) -> list[dict]:
+    """Per-round {round, before, after, best} of one evolve campaign, in order
+    (the line-chart feed). [] when no campaign exists."""
+    doc = _campaign(session_dir, task) or {}
+    return [{k: r.get(k) for k in ("round", "before", "after", "best")}
+            for r in doc.get("rounds") or []]
+
+
+def rsi_frames(session_dir: str | Path, task: str, round: int) -> list[str]:
+    """The kept keyframe/video paths one evolve round recorded (``media`` of that
+    round row, session-relative). [] when the campaign or round is absent."""
+    doc = _campaign(session_dir, task) or {}
+    for r in doc.get("rounds") or []:
+        if r.get("round") == round:
+            return [m for m in r.get("media") or [] if isinstance(m, str)]
+    return []
+
+
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once.

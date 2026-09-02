@@ -154,6 +154,31 @@ def suite_result(name: str = _DEFAULT_SESSION, sha: str | None = None) -> dict |
 
 
 @mcp.tool()
+def rsi_run(task: str, name: str = _DEFAULT_SESSION) -> dict | None:
+    """One evolve campaign's state (campaigns/evolve-<task>/campaign.json: task,
+    session, seeds, arm, rounds[], best, cursor, status) plus ``latest`` round.
+    null when the session runs no campaign for that task."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.rsi_run(path, task) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def rsi_series(task: str, name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Per-round {round, before, after, best} of one evolve campaign (the
+    line-chart feed); [] when none exists."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.rsi_series(path, task) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def rsi_frames(task: str, round: int, name: str = _DEFAULT_SESSION) -> list[str]:
+    """Kept keyframe/video paths (session-relative) one evolve round recorded;
+    [] when the campaign or round is absent. Paths only, never bytes."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.rsi_frames(path, task, round) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
     """Protocol-v0 trajectory samples projected from one session's chain: one
     per plan/replan decision (x: mission/sigma0/skills/done/fault, y: graph id +

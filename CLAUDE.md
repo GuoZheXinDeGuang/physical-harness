@@ -49,6 +49,7 @@ provider.
 {"kind":"task", "task":"basket_smoke_vlm", "seed":424243, "instruction":"把所有物品放进篮子"}
 {"kind":"campaign", "campaign":"stack", "dev":[41000,41999], "heldout":[42000,42199]}
 {"kind":"rsi", "task":"kitchen_thaw"}
+{"kind":"evolve", "task":"kitchen_thaw", "seeds":[420011,420016], "rounds":3, "arm":"auto"}
 {"kind":"mission", "mission":"把肉从冰箱拿到微波炉", "seed":41, "arm":"scripted"}
 ```
 
@@ -56,6 +57,10 @@ provider.
 minimal form needs only a task name; the runtime runs allocate → calibrate →
 gates → prereg → dev → held-out → install by itself. See
 `docs/project-documentation.md` §4.
+`kind:"evolve"` is the lightweight loop (evolution mode only): per round look →
+try one change (executor switch or ±20% tunable) → same-seed re-run → publish
+only if the success count improves; cancel lands at the round boundary and a
+resubmit resumes from `campaign.json` cursor. See §4.0.
 Three things are never yours to pick:
 
 - **The target node comes from first-death attribution**, not from you

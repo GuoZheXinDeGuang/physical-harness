@@ -92,3 +92,23 @@ def make_env(spec: EpisodeSpec):
     if cfg.get("register"):
         importlib.import_module(cfg["register"])
     return create_env(env_name=cfg["env"], robots=ROBOT, seed=spec.seed)
+
+
+#: Offscreen camera preference for ``frame`` (first present wins; None = free cam).
+FRAME_CAMERAS = ("robot0_agentview_left", "agentview", "frontview")
+
+
+def frame(env, size: int = 128):
+    """One ``size``x``size`` RGB uint8 frame of the live env for harness.media
+    (scripts/frame_dump's render path, minus the file). Lazy offscreen context;
+    read-only on mjData, so it consumes no rng. None when rendering fails."""
+    try:
+        sim = env.sim
+        if sim._render_context_offscreen is None:
+            from robosuite.utils.binding_utils import MjRenderContextOffscreen
+            MjRenderContextOffscreen(sim, device_id=-1)
+        names = tuple(getattr(sim.model, "camera_names", ()) or ())
+        cam = next((c for c in FRAME_CAMERAS if c in names), None)
+        return sim.render(width=size, height=size, camera_name=cam)[::-1]
+    except Exception:  # noqa: BLE001 -- a lost frame never touches the task
+        return None

@@ -34,13 +34,25 @@ def _canned_obs() -> dict[str, tuple[float, float, float]]:
 
 
 class _FakeEnvHandle:
-    """One episode's env: canned zero obs, never done, close is a no-op."""
+    """One episode's env: canned zero obs, never done, close is a no-op.
+    ``frame()`` is the synthetic camera harness.media records: a 128px RGB
+    buffer with a stripe that walks with the step count (stdlib only)."""
+
+    t = 0
 
     def reset(self) -> dict:
+        self.t = 0
         return _canned_obs()
 
     def step(self, action: Any) -> tuple[dict, float, bool, dict]:
+        self.t += 1
         return _canned_obs(), 0.0, False, {}
+
+    def frame(self) -> bytes:
+        n = 128
+        row = self.t % n
+        return b"".join(b"\xff\x80\x00" * n if y == row else b"\x20\x30\x40" * n
+                        for y in range(n))
 
     def close(self) -> None:
         pass

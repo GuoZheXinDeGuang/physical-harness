@@ -440,6 +440,32 @@ clone 合法地显示**更多跳过，绝不是失败**：
 实现：`scripts/rsi_campaign.py`（链本体）+ `scripts/harness_runtime.py`（brief 面）。
 通用路径里**没有任何任务名 if 分支**——任务是参数，加任务仍然是装一张卡。
 
+### 4.0 轻量 evolve 循环
+
+`kind:"rsi"` 是重链（下面 4.1–4.5）。旁边还有一条**轻量**循环，不做候选分类、不做晋级状态机、不加门禁，harness 不训练：
+
+```
+{"kind":"evolve","task":"kitchen_thaw","seeds":[lo,hi],"rounds":N,"arm":"auto"}
+```
+
+只在进化态被接受（与 campaign/rsi 同一道拒绝）；runtime `_run_evolve` 起 `scripts/evolve.py` 子进程（走 `_run_watched`，取消/killpg 复用）。`rounds` 是**总目标**，`seeds`/`arm` 续投时可省（取 campaign.json 里的）。
+
+一轮：
+1. **看**：同种子 suite（与 task brief 同一条 `_mount_plan → workload.run` 路径）→ 每种子首死节点、fault `{kind,node,msg}`、每节点 executor。
+2. **试**（内置 proposer，按序取第一个可行的）：① 首死节点换 executor —— 绑定 policy 的 record `evidence.by_executor` 成功率高于实测才换；② 该节点驱动 mount 参数一维 ±20% 扰动（`[tunables]` 表或顶层数值；键按轮次轮转、符号交替，经 `PH_MOUNT_PARAMS_OVERRIDE` 并进 `manifest.mount_params`）；③ 都没有 → `kind:"none"` 并写明原因。
+3. **同种子再跑**，试验已应用（executor 经 `scripts.evolve:planner_provider` 盖进 `node.executor`）。
+4. **成功种子数变好才发布**：带实测 `by_executor` 行（tunables 还有新值）的 record 走 `InMemorySkillGraph.publish` —— 与 `publish_plans` 同一道进化态专用门；否则不发布。试验抛异常 → 记 `tried.detail.error`，after=before，不崩。
+
+每轮封存一行 `rsi_step {brief,task,round,tried,before,after,best,published,suite_sha}`（按 (task,round) 幂等，2 s 轮询时实时封存，退出时兜底），并 tmp+rename 写 `runs/<session>/campaigns/evolve-<task>/campaign.json`：
+`{task,session,seeds,arm,rounds:[{round,tried:{kind,node,detail},before,after,best,suite_sha,published,media:[路径],ts}],best,cursor,status:running|cancelled|done,applied:{executors,tunables}}`。
+`applied` 是已接受的状态，后续每轮重新应用；下一轮的 before 直接沿用上一轮保留的结果，不重测。
+
+**停/续**：`cancel_brief` 落标记 → evolve.py 在轮边界退出（状态 `cancelled`，exit 3；轮中则 killpg）→ `runtime.task_cancelled`，brief 进 `cancelled/`。同 task 再投 evolve → 从 `cursor` 继续；已 `done` 且 rounds 不变 → 空操作。
+
+**媒体规则**（`harness/media.py`）：段级节点每 4 步录一帧 128px 到内存（来源 `driver.frame()` 否则 `env.frame()`，都没有就不录）；verify 成功才落 `media/<task>/<seed>/<node>.mp4`（无 imageio 则 .gif），失败即丢；>1 MB 降 fps/抽帧重编；同节点重跑覆盖；任何录制/编码失败静默。帧永不进链，链和 campaign.json 只存路径。
+
+**三面**（store / storecli / mcp 逐字节等价，只读 campaign.json）：`rsi_run(task, session)` = campaign.json + `latest`；`rsi_series(task, session)` = 每轮 `{round,before,after,best}`；`rsi_frames(task, round, session)` = 那一轮的 `media` 路径列表。没有 campaign → `None` / `[]`。
+
 ### 4.1 brief 形状
 
 ```
@@ -1357,6 +1383,7 @@ runtime 的机器上会替错的 session 作保。这与 `store._model_identity`
 | 17 | **session 休眠**：runtime 没跑、inbox 也空 | `health()` | ✅ `state: dormant`，不算 problem（`--status` 折成一行 `dormant`）；有 brief 排队才升级为 `stalled` |
 | 18 | **模型服务停了** | llama.cpp :30001 | ✅ `health().model.running: false`，`--status` 的 STOPPED 行带启动命令；只有 `PH_WITH_MODEL=1`（`scripts/cockpit --with-model` 会导出）时才计为 problem，免得为省显存停模型的机器常年红 |
 | 19 | **campaign 子进程在 stop / boot 时残留** | `_run_watched` / `_requeue` | ✅ 任何退出（cancel、SIGTERM、Ctrl-C、崩溃）都按 `processing/<brief>.pgid` 杀整个进程组（TERM，宽限后 KILL）并落 `CANCELLED`；`cockpit --stop` 中途的 brief 进 `cancelled/`（stage `runtime_stopped`），boot 时发现活着的孤儿组先杀再重排队，写 `runtime.orphan_killed {brief,pgid}` |
+| 20 | **evolve 中途停/死** | `_run_evolve` / `evolve.py` | ✅ cancel 标记在轮边界生效（`campaign.json.status: cancelled`，exit 3；轮中走第 19 行的 killpg）→ `runtime.task_cancelled`；已封存轮次的 `rsi_step` 行不重复；同 task 再投 `evolve` 从 `cursor` 续跑。执行态投 evolve → 同第 5 行 |
 
 ### 8.4 仍然开着的口子
 
