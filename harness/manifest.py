@@ -62,7 +62,8 @@ class Registry:
     benchmarks: dict[str, dict] = field(default_factory=dict)
 
 
-PROVIDES_KINDS = frozenset({"embodiment", "predicate", "recovery", "skill", "planner"})
+PROVIDES_KINDS = frozenset({"embodiment", "predicate", "recovery", "skill", "planner",
+                            "executor"})
 
 
 def card_provides(data: dict, plugin: str) -> list[dict]:
@@ -84,6 +85,8 @@ def card_provides(data: dict, plugin: str) -> list[dict]:
             if not all(isinstance(a, str) for a in args):
                 raise ValueError(f"plugin {plugin!r}: predicate {name!r} args must be strings")
             entry.update(reads=tuple(reads), args=tuple(args))
+        if kind == "executor":  # which wire the executor speaks (skill_executor.TRANSPORTS)
+            entry["transport"] = raw.get("transport", "inproc")
         if (kind, name) in seen:
             raise ValueError(f"plugin {plugin!r} provides {kind} {name!r} twice")
         seen.add((kind, name))

@@ -9,8 +9,10 @@ neutral; ``bindings[embodiment]`` carries the execution half: ``task_template``
 
 A binding may split its execution half by ARM: ``policies.scripted`` is the
 stage-driver binding above, and another arm (``pi05``) names the provider ref
-that executes the segment instead (``{"ref", "checkpoint_sha"}``). A skill with
-no binding for the requested arm keeps the scripted one -- the handover shape.
+that executes the segment instead (``{"transport", "ref", "checkpoint_sha",
+"params"}``; ``transport`` is one of harness.skill_executor.TRANSPORTS, default
+``inproc``). A skill with no binding for the requested arm keeps the scripted
+one -- the handover shape.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.protocol import TYPES, SkillRecordV0
+from harness.skill_executor import TRANSPORTS
 
 ROOT = Path(__file__).resolve().parent.parent / "skill-library" / "records"
 
@@ -34,6 +37,11 @@ def load_records(root: Path = ROOT) -> dict[str, SkillRecordV0]:
         bad = {k: t for k, t in rec.args.items() if t not in TYPES}
         if bad:
             raise ValueError(f"skill {rec.name!r} args have unknown types {bad}")
+        for b in rec.bindings.values():
+            for key, p in (b.get("policies") or {}).items():
+                if p.get("transport", "inproc") not in TRANSPORTS:
+                    raise ValueError(f"skill {rec.name!r} policies[{key!r}] transport "
+                                     f"{p.get('transport')!r} not in {TRANSPORTS}")
         out[rec.name] = rec
     if not out:
         raise ValueError(f"no skill records under {root}")
@@ -67,17 +75,23 @@ def executor_key(spec: Mapping[str, Any], arm: str, executor: str | None = None)
 
 def rearm(spec: Mapping[str, Any], arm: str, executor: str | None = None) -> dict[str, Any]:
     """Resolve a spec's ``policies`` for ``arm`` (or the node's explicit
-    ``executor``, see :func:`executor_key`): the provider ref lands on
-    ``policy_provider`` (plus ``policy_params`` when it pins a ``checkpoint_sha``);
-    scripted, or an arm the record has no binding for, keeps the stage driver."""
+    ``executor``, see :func:`executor_key`) into the executor binding the
+    workload mounts: ``{key, transport, ref, params, checkpoint_sha, spec}``.
+    ``spec`` is the EpisodeSpec kwargs (``policies`` stripped, ``policy_provider``
+    set when a ref is bound); ``params`` are the provider-mount params (the
+    record's ``params`` plus the pinned ``checkpoint_sha``). Scripted, or an arm
+    the record has no binding for, keeps the stage driver: ref None, inproc."""
     key = executor_key(spec, arm, executor)
     spec = dict(spec)
-    p = (spec.pop("policies", None) or {}).get(key)
-    if p:
+    p = (spec.pop("policies", None) or {}).get(key) or {}
+    sha = p.get("checkpoint_sha")
+    params = dict(p.get("params") or {})
+    if sha:
+        params["checkpoint_sha"] = sha
+    if p.get("ref"):
         spec["policy_provider"] = p["ref"]
-        if p.get("checkpoint_sha"):
-            spec["policy_params"] = {"checkpoint_sha": p["checkpoint_sha"]}
-    return spec
+    return {"key": key, "transport": p.get("transport", "inproc"), "ref": p.get("ref"),
+            "params": params, "checkpoint_sha": sha, "spec": spec}
 
 
 def select(records: Mapping[str, SkillRecordV0], embodiment: str,
@@ -118,14 +132,14 @@ def segment_specs(records: Mapping[str, SkillRecordV0], embodiment: str,
         if b and ("task" in b or "task_template" in b):
             spec = {k: b[k] for k in ("task", "task_template", "policies")
                     if b.get(k)}
-            out[name] = spec if arm is None else rearm(spec, arm)
+            out[name] = spec if arm is None else rearm(spec, arm)["spec"]
     return out
 
 
 def skill_specs(records: Mapping[str, SkillRecordV0], embodiment: str,
                 arm: str = "scripted") -> dict[str, dict[str, Any]]:
     """``{skill: EpisodeSpec kwargs}`` for the one-rollout bindings."""
-    return {name: rearm({**b["episode"], "policies": b.get("policies")}, arm)
+    return {name: rearm({**b["episode"], "policies": b.get("policies")}, arm)["spec"]
             for name, rec in records.items()
             if (b := _binding(rec, embodiment)) and "episode" in b}
 

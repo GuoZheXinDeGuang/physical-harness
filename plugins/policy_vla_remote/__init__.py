@@ -54,6 +54,8 @@ from typing import Any
 
 import numpy as np
 
+from harness.skill_executor import normalize_handshake
+
 #: manifest param -> the handshake metadata key that echoes it (StarVLA
 #: policy_wrapper.metadata key names). ``views`` has no echo upstream -- the
 #: server refuses to own camera order -- so it normally lands in "unverified".
@@ -230,7 +232,7 @@ class RemoteChunkDriver:
                 "anything to ensemble -- draining a chunk before re-inferring "
                 "leaves no timestep predicted twice")
         self._client = client
-        self.handshake = handshake
+        self._handshake = handshake   # raw reconcile record; handshake() normalizes
         self._task = task
         self._k = replan_every
         self._m = ensemble
@@ -238,6 +240,18 @@ class RemoteChunkDriver:
         self._chunks: list[list] = []   # live chunks, oldest first, heads aligned
         self._since = 0                 # steps executed since the last inference
         self.calls = 0                  # inferences this driver has made
+
+    def handshake(self) -> dict:
+        """The sealed shape (harness.skill_executor): transport ssp, the reconcile
+        record under ``meta``."""
+        return normalize_handshake("ssp", REF, self._handshake)
+
+    def done(self) -> bool:
+        """A chunk driver never declares the sub-goal over; the stage predicate does."""
+        return False
+
+    def diagnostics(self) -> dict:
+        return {"inference_calls": self.calls}
 
     def reset(self) -> None:
         """Drop every buffered action. A chunk was computed for a situation; at
@@ -335,6 +349,9 @@ class RemoteVlaPolicy:
         self.connect()
         return RemoteChunkDriver(self._client, self.handshake,
                                  task=getattr(spec, "task", None), **self.execution)
+
+
+REF = "plugins.policy_vla_remote:provider"
 
 
 def provider(**params: Any) -> RemoteVlaPolicy:

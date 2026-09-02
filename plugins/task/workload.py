@@ -31,6 +31,7 @@ from harness.features import privilege_cost
 from harness.kernel import Kernel
 from harness.manifest import mount_params
 from harness.registry import load_provider
+from harness.skill_executor import is_segment, normalize_handshake
 from harness.skill_library import ARMS, RECORDS, executor_key, rearm, skill_specs
 from harness.spec import EpisodeSpec
 from plugins.task.validate import NODE_KINDS, plan_to_graph, validate_plan
@@ -191,6 +192,8 @@ class EpisodeContext:
         if not self.closed:
             self.closed = True
             self.env.close()
+            for factory in self.factories.values():  # an mcp server is a subprocess
+                getattr(factory, "close", lambda: None)()
 
 
 @dataclass(frozen=True)
@@ -221,6 +224,8 @@ class NodeCtx:
     #: executor arm the brief selects (skill_library.ARMS); a segment whose
     #: record binds this arm runs under that provider, the rest stay scripted.
     arm: str = "scripted"
+    #: the graph.scene contract: the symbolic ``sigma`` a segment executor is handed.
+    scene: Any = None
 
 
 #: A non-manipulate node seals zero privilege: decide/verify read only sealed
@@ -373,8 +378,7 @@ def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpe
     binding = (ctx.segment_specs or {}).get(node["skill"])
     if not binding:
         return ep.spec
-    kwargs = rearm(binding, ctx.arm, node.get("executor"))
-    kwargs.pop("policy_params", None)  # provider-mount params, read by _executor
+    kwargs = rearm(binding, ctx.arm, node.get("executor"))["spec"]
     args = dict(node.get("args") or {})
     # Static skill-library grounding: the abstract graph carries semantic args
     # (grasp(object=hot0), place(object=hot0,target=tupperware0)); the
@@ -427,15 +431,44 @@ def _executor(node: Mapping, ep: EpisodeContext, seg_spec: EpisodeSpec, ctx: Nod
     plus the record's pin; the factory connects once per episode, a fresh driver
     per segment (a chunk computed for another situation is stale). The seal
     names the ref and, when the driver carries one, the handshake record."""
-    ref = seg_spec.policy_provider
-    if ref == ep.spec.policy_provider:
+    binding = (ctx.segment_specs or {}).get(node["skill"]) or {}
+    pol = rearm(binding, ctx.arm, node.get("executor"))
+    ref = pol["ref"]
+    if ref is None or ref == ep.spec.policy_provider:
         return None, None
     if ref not in ep.factories:
-        params = rearm((ctx.segment_specs or {})[node["skill"]], ctx.arm,
-                       node.get("executor")).get("policy_params") or {}
-        ep.factories[ref] = load_provider(ref, {**mount_params(ref), **params})
+        ep.factories[ref] = load_provider(ref, {**mount_params(ref), **pol["params"]})
     driver = ep.factories[ref].make_driver(seg_spec)
-    return driver, {"ref": ref, "handshake": getattr(driver, "handshake", None)}
+    hs = getattr(driver, "handshake", None)
+    hs = hs() if callable(hs) else hs
+    if not (isinstance(hs, Mapping) and "transport" in hs):  # a raw record: seal the one shape
+        hs = normalize_handshake(pol["transport"], ref, hs)
+    return driver, {"ref": ref, "handshake": hs}
+
+
+#: Wall-clock budget handed to a segment executor per sub-goal.
+# ponytail: one constant; lift to a record param if a skill ever needs its own.
+SEGMENT_DEADLINE_S = 60.0
+
+
+def _run_segment(executor: Any, node: Mapping, seg_spec: EpisodeSpec, ep: EpisodeContext,
+                 ctx: NodeCtx) -> dict:
+    """A SEGMENT executor (skill_executor.is_segment) owns the whole sub-goal behind
+    ``run(spec, deadline_s)`` -- the harness steps nothing, so the cursor stands.
+    Its ``ok`` is a claim: the stage driver is still armed on the sub-goal so its
+    own terminal truth (``segment_success`` on the live env) gates success, and a
+    downstream verify node reads the world it LEFT. ok=False (or a stage that says
+    no) is the loop's existing fault -> replan."""
+    if hasattr(ep.driver, "enter_segment"):
+        ep.driver.enter_segment(ep.env, seg_spec)
+    sigma = ctx.scene.snapshot(ep.obs) if ctx.scene is not None else {}
+    spec = {"skill": node["skill"], "args": dict(node.get("args") or {}), "sigma": sigma}
+    res = executor.run(spec, SEGMENT_DEADLINE_S)
+    ok = bool(res.get("ok"))
+    if ok and hasattr(ep.driver, "segment_success"):
+        ok = bool(ep.driver.segment_success(ep.env))
+    return {"success": ok, "steps": 0, "stages": [],
+            "diagnostics": dict(res.get("diagnostics") or {})}
 
 
 def _segment(node: Mapping, ctx: NodeCtx) -> dict:
@@ -461,8 +494,11 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
         return {"success": False, "steps": 0, "stages": [], "aborted": "horizon",
                 "governance": _segment_governance(bundle, digests, entered, entered)}
     executor, driver_seal = _executor(node, ep, seg_spec, ctx)
-    seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor,
-                            executor=executor)
+    if is_segment(executor):
+        seg = _run_segment(executor, node, seg_spec, ep, ctx)
+    else:
+        seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor,
+                                executor=executor)
     exited = ep.cursor
     stages = seg.get("stages", [])
     opstream.emit("sub_goal_transition", node=node["id"],
@@ -671,7 +707,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     # episode (if any) is the shared persistent world every segment drives.
     ctx = NodeCtx(seed=seed, env_ref=env_ref, policy_ref=policy_ref,
                   skills=skills, nodes_out=nodes_out, predicates=predicates,
-                  episode=episode, segment_specs=brief.get("segment_specs"), arm=arm)
+                  episode=episode, segment_specs=brief.get("segment_specs"), arm=arm,
+                  scene=scene)
     # sigma0 for Legal(G): computed ONCE from the reset world (the persistent
     # episode's first obs, else the empty pre-episode snapshot) and the card's
     # declared facts, so Supported/Covered judge against real facts and objects.

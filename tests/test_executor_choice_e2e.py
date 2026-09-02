@@ -187,8 +187,9 @@ def test_executor_per_node_is_dispatched_and_sealed(runtime, chosen):
     assert verify["reach-0"] == {"node": "reach-0", "results": {"seg_ok": True},
                                  "executor": "scripted"}
     assert verify["grab-0"]["executor"] == "stub2"
-    assert verify["grab-0"]["driver"] == {"ref": STUB2,
-                                          "handshake": {"metadata": {"checkpoint_sha": SHA}}}
+    assert verify["grab-0"]["driver"] == {"ref": STUB2, "handshake": {
+        "transport": "inproc", "ref": STUB2, "checkpoint_sha": SHA, "unverified": [],
+        "ok": True, "meta": {"metadata": {"checkpoint_sha": SHA}}}}
     # the stub provider really mounted a driver for the segment, under the record's pin
     assert json.loads(runtime.marker.read_text()) == {"task": "grab", "checkpoint_sha": SHA}
     end = _kinds(rows, "task.plan_complete")[0]

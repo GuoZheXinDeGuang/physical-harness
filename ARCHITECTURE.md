@@ -95,6 +95,7 @@ Protocol; **if a seam is not in this table, it is not a seam.**
 | PolicyFactory | `policy.driver` | `make_driver(spec)` | plugins/policies, embodiment cards | mount isinstance; doctor driver smoke |
 | PerceptModel | `percept.model` | `object_estimate(obs, spec, sensor_sd, draw)` | embodiment percept providers | mount isinstance; doctor **determinism-required** (double-run diff) |
 | RolloutExecutor | `exec.rollouts` | `map(fn, items, *, workers)` | harness.executor (base-owned, not a card) | mount isinstance |
+| StepExecutor / SegmentExecutor | `provides.executor.<name>` (transport inproc\|ssp\|mcp) | `handshake()`, `reset()/act(obs)/done()` or `run(spec, deadline_s)->{ok, diagnostics}` | plugins/policies, policy_vla_remote (ssp), executor_mcp_segment (mcp) | `harness/skill_executor.py`: transport checked at record load; `normalize_handshake` seals `task.verify.driver.handshake`; `is_segment` routes workload to `_run_segment` |
 | Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner; model_qwen (inactive) | mount isinstance; doctor **untrusted** (shape only, `available()` probe → SKIP when down) |
 | TaskPlanner | `task.planner` | `plan(brief)` | planner_stack, mission planners; planner_vlm (the `stack_vlm` binding) | mount isinstance; every emitted graph gated by `plugins/task/validate.py` before dispatch; doctor determinism-required (`deterministic = False` opts into shape-only + `available()` probe) |
 | ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`, `available()` | plugins/model_endpoint (inactive until a consumer mounts it) | mount isinstance; doctor untrusted (`available()` probe → SKIP when down) |
@@ -345,6 +346,7 @@ manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），�
 | PolicyFactory | `policy.driver` | `make_driver(spec)` | plugins/policies、本体卡 | 挂载 isinstance；doctor driver smoke |
 | PerceptModel | `percept.model` | `object_estimate(obs, spec, sensor_sd, draw)` | 本体卡感知 provider | 挂载 isinstance；doctor **强制确定性**（跑两次做 diff） |
 | RolloutExecutor | `exec.rollouts` | `map(fn, items, *, workers)` | harness.executor（base 自有，不是卡） | 挂载 isinstance |
+| StepExecutor / SegmentExecutor | `provides.executor.<name>`（transport inproc\|ssp\|mcp） | `handshake()`、`reset()/act(obs)/done()` 或 `run(spec, deadline_s)->{ok, diagnostics}` | plugins/policies、policy_vla_remote（ssp）、executor_mcp_segment（mcp） | `harness/skill_executor.py`：record 加载时校验 transport；`normalize_handshake` 封 `task.verify.driver.handshake`；`is_segment` 让 workload 走 `_run_segment` |
 | Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner；model_qwen（未激活） | 挂载 isinstance；doctor **untrusted**（只验形状，`available()` 探测不通则 SKIP） |
 | TaskPlanner | `task.planner` | `plan(brief)` | planner_stack、mission planner；planner_vlm（`stack_vlm` 绑定） | 挂载 isinstance；每张图 dispatch 前过 `plugins/task/validate.py`；doctor 强制确定性（`deterministic = False` 显式豁免为只验形状 + `available()` 探测） |
 | ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`、`available()` | plugins/model_endpoint（有消费者挂载前保持未激活） | 挂载 isinstance；doctor untrusted（`available()` 探测不通则 SKIP） |

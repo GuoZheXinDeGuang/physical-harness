@@ -1494,6 +1494,15 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 - 链：每条 `task.verify`（及 segment 结果）在 `driver.ref` 旁封 `executor: <实际用的键>`；`board.store.skill_evidence(session)` 投影成 per (skill, embodiment, executor) `{n,k}` = storecli `skill_evidence` = MCP `skill_evidence`，三面字节相同。
 - e2e：`tests/test_arm_routing.py`、`tests/test_protocol.py::test_bound`、`tests/test_skill_evidence.py`、`tests/test_executor_choice_e2e.py`（真 runtime，无 GPU）、`tests/test_executor_pi05_e2e.py`（robocasa+vla，自起自停 :8000）。
 
+### 9.9 Executor 契约
+
+- `harness/skill_executor.py`：`StepExecutor`（handshake/reset/act/done/diagnostics，harness 逐步 act）与 `SegmentExecutor`（handshake + `run(spec, deadline_s)->{ok, diagnostics}`，执行器自己跑完整个子目标）；`is_segment(x)` = 有 run 无 act。
+- `normalize_handshake(transport, ref, meta)` 是 `task.verify.driver.handshake` 唯一封存形状：`{transport: inproc|ssp|mcp, ref, checkpoint_sha|None, unverified:[...], ok, meta}`；未知 transport 挂载即报错。scripted / skill_geometric_grasp 走 inproc（`InprocExecutor` 基类），pi05 走 ssp（reconcile 结果经此归一化）。
+- record `bindings[emb].policies[key]` 显式带 `transport`（缺省 inproc）；`skill_library.rearm(spec, arm, executor)` 返回 `{key, transport, ref, params, checkpoint_sha, spec}`，workload 按 ref 挂 provider、每节点 `make_driver`。
+- 段执行器接入点（`plugins/task/workload.py::_segment`）：rearm 后若 `is_segment(executor)`，不走 driver.act 循环，调 `run({skill,args,sigma}, SEGMENT_DEADLINE_S)`；stage driver 仍 `enter_segment`，其 `segment_success` 与图上的 verify 谓词照常判定——执行器的 ok 只是主张，验证永不外包；ok=false → 该节点 fault → replan。
+- 首个 MCP 段执行器卡 `plugins/executor_mcp_segment/`（provides executor `mcp_segment`, transport mcp）：`provider(command=[...])` 起子进程，stdio 上按行 JSON-RPC 2.0（MCP stdio）：`initialize` → `notifications/initialized` → `tools/call run_segment {skill,args,sigma,deadline_s}`；handshake = initialize 的 serverInfo。零新依赖（~40 行客户端）。
+- e2e：`tests/test_skill_executor.py`；`tests/test_executor_mcp_e2e.py`（真 runtime，假服务 `tests/fakes/mcp_segment_service.py` 记录调用到 `$PH_FAKE_MCP_LOG`、`args.fail` → ok=false）：handshake.transport=="mcp"、服务收到节点 spec、ok=false 产生 task.fault 与 replan。
+
 ---
 
 ## 10. 没在这份文档里的东西

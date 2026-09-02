@@ -21,9 +21,11 @@
     "robocasa": {
       "policies": {
         "scripted": {
+          "transport": "inproc",
           "task": "place_meat"
         },
         "pi05": {
+          "transport": "ssp",
           "ref": "plugins.policy_vla_remote:provider",
           "checkpoint_sha": "08bae6a74c5d1ba90393f5bd59c9d0d1b39629a36d39e047fa7942361f3b1437"
         }

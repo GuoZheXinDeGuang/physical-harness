@@ -210,7 +210,7 @@ def pi05_stepper(args, env, obs, prompt):
         return lerobot_to_env(driver.act(build_obs(o, prompt)))
 
     step.driver = driver                   # the handover arm empties its chunk
-    return step, {"handshake": driver.handshake, "warmup_ms": round(warm_ms, 1),
+    return step, {"handshake": driver.handshake(), "warmup_ms": round(warm_ms, 1),
                   "replan_every": args.replan_every, "ensemble": args.ensemble}
 
 

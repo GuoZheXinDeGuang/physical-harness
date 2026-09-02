@@ -311,7 +311,8 @@ def test_live_socket_handshake_and_inference_round_trip():
 
     factory = RemoteVlaPolicy(host="127.0.0.1", port=port, **_CONTRACT)
     driver = factory.make_driver(spec=None)
-    assert driver.handshake["metadata"] == _METADATA  # sealed for evidence
+    hs = driver.handshake()   # sealed for evidence, normalized
+    assert hs["transport"] == "ssp" and hs["meta"]["metadata"] == _METADATA
     assert driver.act({"prompt": "x"}).shape == (7,)
 
     # and the gate: a second client with a diverging contract must NOT mount.

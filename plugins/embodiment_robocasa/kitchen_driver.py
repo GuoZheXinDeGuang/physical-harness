@@ -27,6 +27,7 @@ from typing import Any
 
 import numpy as np
 
+from harness.skill_executor import InprocExecutor
 from plugins.embodiment_robocasa import drivers as D
 from plugins.embodiment_robocasa import vla_io
 
@@ -48,7 +49,7 @@ _STAGES: dict[str, tuple[Any, int]] = {
 }
 
 
-class KitchenThawDriver:
+class KitchenThawDriver(InprocExecutor):
     """One instance threaded through the whole persistent episode; re-armed per
     sub-goal by ``enter_segment``. Frozen and governable like every harness driver
     (the stage controllers are scripted oracle policies, not learned policies under

@@ -22,14 +22,15 @@ PIN = RECORDS["place_meat"].bindings["robocasa"]["policies"]["pi05"]["checkpoint
 def test_segment_specs_route_by_arm():
     assert ARMS == {"scripted", "pi05"}
     pi05 = segment_specs(RECORDS, "robocasa", "pi05")
-    assert pi05["place_meat"] == {"task": "place_meat", "policy_provider": VLA,
-                                  "policy_params": {"checkpoint_sha": PIN}}
+    assert pi05["place_meat"] == {"task": "place_meat", "policy_provider": VLA}
     assert pi05["grasp_meat"] == {"task": "grasp_meat"}          # handover: scripted
     scripted = segment_specs(RECORDS, "robocasa", "scripted")
     assert scripted["place_meat"] == {"task": "place_meat"}
     assert all("policy_provider" not in s for s in scripted.values())
     # the mission constant carries the arms along for the runtime to rearm per brief
-    assert rearm(SEGMENT_SPECS["place_meat"], "pi05") == pi05["place_meat"]
+    assert rearm(SEGMENT_SPECS["place_meat"], "pi05") == {
+        "key": "pi05", "transport": "ssp", "ref": VLA, "checkpoint_sha": PIN,
+        "params": {"checkpoint_sha": PIN}, "spec": pi05["place_meat"]}
     with pytest.raises(ValueError, match="unknown arm 'nope'"):
         segment_specs(RECORDS, "robocasa", "nope")
 
@@ -87,7 +88,9 @@ def test_pi05_arm_hands_place_to_the_provider_and_seals_it(monkeypatch):
     assert loads == [(VLA, {"chunk": 10, "checkpoint_sha": PIN})]   # connected once per episode, gate pinned
     grasp, place, _ = out
     assert "driver" not in grasp                      # scripted: the episode's driver
-    assert place["driver"] == {"ref": VLA, "handshake": _Remote.handshake}
+    assert place["driver"] == {"ref": VLA, "handshake": {
+        "transport": "ssp", "ref": VLA, "checkpoint_sha": "ab" * 32, "unverified": [],
+        "ok": True, "meta": _Remote.handshake}}
     assert [r["executor"] for r in out] == ["scripted", "pi05", "pi05"]
     execs = [x for _, x in ep.driver.entered]
     assert execs[0] is None and isinstance(execs[1], _Remote) and execs[2] is not execs[1]
@@ -113,8 +116,10 @@ def test_explicit_executor_wins_over_arm(monkeypatch):
 def test_auto_arm_falls_back_to_scripted_without_node_executor(monkeypatch):
     _, _, loads, out = _run(monkeypatch, "auto")
     assert loads == [] and all(r["executor"] == "scripted" for r in out)
-    assert rearm(SEGMENT_SPECS["place_meat"], "auto") == {"task": "place_meat"}
-    assert rearm(SEGMENT_SPECS["place_meat"], "auto", "pi05")["policy_provider"] == VLA
+    assert rearm(SEGMENT_SPECS["place_meat"], "auto") == {
+        "key": "scripted", "transport": "inproc", "ref": None, "checkpoint_sha": None,
+        "params": {}, "spec": {"task": "place_meat"}}
+    assert rearm(SEGMENT_SPECS["place_meat"], "auto", "pi05")["ref"] == VLA
     with pytest.raises(ValueError, match="unknown executor 'nope'"):
         rearm(SEGMENT_SPECS["place_meat"], "auto", "nope")
     with pytest.raises(ValueError, match="unknown executor 'pi05'"):

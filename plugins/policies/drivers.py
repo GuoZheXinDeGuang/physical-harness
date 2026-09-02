@@ -32,6 +32,7 @@ from typing import ClassVar, Protocol
 import numpy as np
 
 from harness.registry import load_provider
+from harness.skill_executor import InprocExecutor
 from harness.spec import PHASE_HEIGHT, STACK_PHASE_HEIGHT, STACK_SCHEDULE, EpisodeSpec
 
 
@@ -112,7 +113,7 @@ class PolicyDriver(Protocol):
     def identity(self) -> str: ...
 
 
-class ScriptedDriver:
+class ScriptedDriver(InprocExecutor):
     """The four-phase open-loop policy, driven by its own phase counter."""
 
     def __init__(self, spec: EpisodeSpec) -> None:

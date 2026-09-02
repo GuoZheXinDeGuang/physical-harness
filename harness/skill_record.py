@@ -54,6 +54,7 @@ from collections.abc import Mapping, Sequence
 
 from harness.config import sha_json
 from harness.protocol import graph_sha, plan_lower_bound, validate_graph
+from harness.skill_executor import TRANSPORTS
 
 #: The ``kind`` discriminator. Any other value (including no ``kind`` at all) is
 #: some other record shape and passes through untouched.
@@ -176,6 +177,9 @@ def validate_capability(record: Mapping, records: Mapping | None = None,
     # refuses to mount when a declared digest is not echoed by the server.
     if "checkpoint_sha" in binding:
         _sha(binding["checkpoint_sha"], "binding.checkpoint_sha")
+    if binding.get("transport", "inproc") not in TRANSPORTS:
+        raise SkillRecordError(
+            f"binding.transport must be one of {TRANSPORTS}, got {binding.get('transport')!r}")
 
     for key in ("preconditions", "effects"):
         refs = record[key]

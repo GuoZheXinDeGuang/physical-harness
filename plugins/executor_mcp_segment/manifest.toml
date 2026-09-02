@@ -1,0 +1,12 @@
+# The MCP segment-executor card: a SkillRecord policy entry with
+# `transport = "mcp"` routes a whole sub-goal to an MCP service reached over
+# stdio JSON-RPC (`params.command` is the server's argv). The harness stays the
+# verifier -- the service's ok is a claim, the record's ensures are checked by
+# the loop's own predicates. No mount, no task: a segment binds it by ref.
+needs_sim = false
+
+[[provides]]
+kind = "executor"
+name = "mcp_segment"
+ref = "plugins.executor_mcp_segment:provider"
+transport = "mcp"

@@ -147,8 +147,7 @@ def _sha(rec: dict) -> str:
     server echoed in the handshake -- an arm whose identity is unknown must not
     read the same as one that agrees with the others."""
     return str(rec.get("checkpoint_sha")
-               or ((rec.get("handshake") or {}).get("metadata") or {})
-               .get("checkpoint_sha"))
+               or (rec.get("handshake") or {}).get("checkpoint_sha"))
 
 
 def _trace_share(eps: list[dict]) -> float | None:

@@ -92,6 +92,7 @@ def test_auto_arm_routes_place_to_pi05_and_seals_executor_per_node(tmp_path, pi0
     assert "place" in verify, sorted(verify)                          # reached the handover
     place = verify["place"]
     assert place["executor"] == "pi05" and place["driver"]["ref"] == VLA
-    assert place["driver"]["handshake"]["metadata"]["checkpoint_sha"] == sha
+    hs = place["driver"]["handshake"]
+    assert hs["transport"] == "ssp" and hs["checkpoint_sha"] == sha
     for seg in ("nav-fridge", "grasp", "nav-micro"):
         assert verify[seg]["executor"] == "scripted" and "driver" not in verify[seg], seg

@@ -91,5 +91,5 @@ def test_pi05_arm_drives_place_through_policy_vla_remote(tmp_path, pi05_server):
     assert "place" in verify, sorted(verify)                          # reached the handover
     drv = verify["place"]["driver"]
     assert drv["ref"] == VLA
-    assert drv["handshake"]["metadata"]["checkpoint_sha"] == sha
-    assert drv["handshake"]["contract"]["unnorm_key"] == "robocasa/lerobot"
+    assert drv["handshake"]["transport"] == "ssp" and drv["handshake"]["checkpoint_sha"] == sha
+    assert drv["handshake"]["meta"]["contract"]["unnorm_key"] == "robocasa/lerobot"

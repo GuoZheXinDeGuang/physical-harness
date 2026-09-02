@@ -30,7 +30,7 @@ def test_s4_pi05_suite_hands_place_to_policy_vla_remote(tmp_path, pi05_server):
     assert "place" in verify, sorted(verify)                          # reached the handover
     drv = verify["place"]["driver"]
     assert drv["ref"] == VLA
-    assert drv["handshake"]["metadata"]["checkpoint_sha"] == sha
+    assert drv["handshake"]["transport"] == "ssp" and drv["handshake"]["checkpoint_sha"] == sha
     art = bs.suite_result(session)
     assert art["arm"] == "pi05" and art["checkpoint_sha"] == sha
     assert art["per_task"]["kitchen_thaw"]["n"] == 1
