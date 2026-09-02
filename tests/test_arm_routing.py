@@ -15,12 +15,15 @@ from plugins.task import workload
 from plugins.task.workload import EpisodeContext, NodeCtx, _segment, _segment_spec
 
 VLA = "plugins.policy_vla_remote:provider"
+#: the pinned weights identity travels from the record into policy_params
+PIN = RECORDS["place_meat"].bindings["robocasa"]["policies"]["pi05"]["checkpoint_sha"]
 
 
 def test_segment_specs_route_by_arm():
     assert ARMS == {"scripted", "pi05"}
     pi05 = segment_specs(RECORDS, "robocasa", "pi05")
-    assert pi05["place_meat"] == {"task": "place_meat", "policy_provider": VLA}
+    assert pi05["place_meat"] == {"task": "place_meat", "policy_provider": VLA,
+                                  "policy_params": {"checkpoint_sha": PIN}}
     assert pi05["grasp_meat"] == {"task": "grasp_meat"}          # handover: scripted
     scripted = segment_specs(RECORDS, "robocasa", "scripted")
     assert scripted["place_meat"] == {"task": "place_meat"}
@@ -80,7 +83,7 @@ def test_pi05_arm_hands_place_to_the_provider_and_seals_it(monkeypatch):
     ep, ctx, loads, out = _run(monkeypatch, "pi05")
     assert _segment_spec({"id": "g", "skill": "grasp_meat", "args": {}}, ep, ctx).policy_provider \
         == ep.spec.policy_provider
-    assert loads == [(VLA, {"chunk": 10})]            # connected once per episode
+    assert loads == [(VLA, {"chunk": 10, "checkpoint_sha": PIN})]   # connected once per episode, gate pinned
     grasp, place, _ = out
     assert "driver" not in grasp                      # scripted: the episode's driver
     assert place["driver"] == {"ref": VLA, "handshake": _Remote.handshake}
