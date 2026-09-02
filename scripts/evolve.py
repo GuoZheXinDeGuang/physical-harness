@@ -14,7 +14,11 @@ root door (``InMemorySkillGraph.publish``, the same one scripts/publish_plans.py
 uses). Every round lands atomically in ``campaigns/evolve-<task>/campaign.json``
 (rounds[], best, cursor, status) with the kept suite's per-seed summary
 (``per_seed``) and, when nothing was tried, ``needs`` -- what would unblock the
-proposer; the runtime seals the ``rsi_step`` rows off it.
+proposer; the runtime seals the ``rsi_step`` rows off it. The same file carries a
+``live`` block (phase / seed / node / partial per-seed, rewritten at every phase and
+seed boundary): live state the board's rsi_run shows, never sealed.
+With ``PH_RSI_FRAMES`` set (the runtime passes its frame.jpg when --frames is on)
+the suite's episodes are mirrored to that file, same one-writer lock as an rsi chain.
 The ``proposals/`` inbox (board.store.submit_proposal) comes first: a pending entry
 for this task is consumed at the start of the round (``rsi_proposal_applied``) and
 tried instead of the built-in proposer -- a ``card`` proposal mounts its candidate
@@ -54,6 +58,7 @@ from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
 from scripts import harness_runtime as hr
 from scripts.brief_drop import drop
+from scripts.rsi_campaign import _maybe_arm_frames
 from board import store as bs
 
 MODES = ("execution", "evolution")
@@ -104,8 +109,30 @@ def planner_provider(inner: str, inner_params=None, executors=None) -> _Forced:
     return _Forced(load_provider(inner, dict(inner_params or {})), executors or {})
 
 
+class _Tap(SessionLog):
+    """The per-seed ledger, reporting the node in flight as rows land: the plan's
+    first node once ``task.plan`` lands, then the next in plan order after each
+    successful ``task.verify`` (a failed one keeps the node: a retry or replan
+    follows). No node-start row exists, so this is an inference, not a reading."""
+
+    def __init__(self, on_node) -> None:
+        super().__init__()
+        self._on, self._order = on_node, []
+
+    def append(self, kind: str, data: dict) -> int:
+        seq = super().append(kind, data)
+        if kind == "task.plan" and data.get("graph"):
+            self._order = [n["id"] for n in data["graph"].get("nodes") or []]
+            self._on(self._order[0] if self._order else None)
+        elif (kind == "task.verify" and data.get("node") in self._order
+              and all((data.get("results") or {}).values())):
+            i = self._order.index(data["node"]) + 1
+            self._on(self._order[i] if i < len(self._order) else None)
+        return seq
+
+
 def _mount(binding: dict, skills_root: Path, executors: dict):
-    plan = hr._mount_plan(binding, skills_root)
+    plan = hr._mount_plan(binding, skills_root, frames=_maybe_arm_frames())
     if not executors:
         return plan
     m = next(m for m in plan.mounts if m.capability == "task.planner")
@@ -125,9 +152,11 @@ def _get(budgets, binding: dict, key: str, default):
 
 
 def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path,
-              applied: dict, media_dir: Path | None = None, budgets: dict | None = None) -> dict:
+              applied: dict, media_dir: Path | None = None, budgets: dict | None = None,
+              progress=None) -> dict:
     """{count, seeds: {seed: {success, first_death, fault, nodes}}, sha}. ``media_dir``
-    (<session>/media) turns on the workload's segment recorder: kept-on-success clips."""
+    (<session>/media) turns on the workload's segment recorder: kept-on-success clips.
+    ``progress(**live)`` is called at every seed boundary and node change."""
     os.environ[OVERRIDE_ENV] = json.dumps(applied["tunables"])
     cards = applied.get("cards") or {}
     os.environ[EXTRA_ENV] = ":".join(r for r in (_BASE_EXTRA, *(c["path"] for c in cards.values())) if r)
@@ -145,8 +174,10 @@ def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path
             rec.setdefault("bindings", {}).setdefault(emb, {}).setdefault("policies", {})[key] = _binding(c)
     if media_dir is not None:
         brief["media_dir"] = str(media_dir)
-    for seed in range(int(seeds[0]), int(seeds[1]) + 1):
-        log = SessionLog()
+    tick = progress or (lambda **kw: None)
+    for i, seed in enumerate(range(int(seeds[0]), int(seeds[1]) + 1)):
+        tick(seed_index=i, seed=seed, node=None)
+        log = _Tap(lambda node: tick(node=node))
         kernel = Kernel(CAPABILITIES, log=log)
         kernel.mount(_mount(binding, skills_root, applied["executors"]))
         out = workload.run(dict(brief), kernel, seed=seed,
@@ -167,6 +198,7 @@ def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path
             "nodes": {nid: {"skill": skills.get(nid), "success": bool(n["success"]),
                             "executor": n.get("executor") or "scripted"}
                       for nid, n in nodes.items()}}
+        tick(per_seed_partial=per_seed({"seeds": per}))
     return {"count": sum(s["success"] for s in per.values()), "seeds": per, "sha": sha_json(per)}
 
 
@@ -349,6 +381,25 @@ def _dropped(session: Path, task: str, seeds: list) -> dict[str, str]:
 
 # ── the round loop ────────────────────────────────────────────────────────────────
 
+_ZH = {"idle": "等待", "baseline": "基线评测", "propose": "选试验", "retest": "同种子复测",
+       "publish": "发布", "done": "完成", "cancelled": "已取消"}
+
+
+def _message(live: dict) -> str:
+    """One short operator sentence for the live block (the page shows it verbatim)."""
+    head = f"第 {live['round']} 轮 {_ZH.get(live['phase'], live['phase'])}"
+    if live["phase"] == "done":
+        return f"已完成 {live['round']} 轮"
+    if live["phase"] == "cancelled":
+        return f"第 {live['round']} 轮边界取消"
+    t = live.get("tried")
+    if t and live["phase"] in ("retest", "publish"):
+        head += f"（{t['kind']} @ {t['node']}）"
+    if live["seed"] is not None:
+        head += (f"：种子 {live['seed']} 运行中" + (f" ({live['node']})" if live["node"] else "")
+                 + f"，{live['seed_index'] + 1}/{live['seeds_total']}")
+    return head
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--mode", choices=MODES, default="execution")
@@ -380,29 +431,51 @@ def main(argv=None) -> int:
                            "applied": {"executors": {}, "tunables": {}}}
     seeds, arm, applied = doc["seeds"], doc["arm"], doc["applied"]
     doc["status"] = "running" if doc["cursor"] < args.rounds else "done"
-    store.save(doc)
+    # live = where the loop is RIGHT NOW (rsi_run's ``live``): rewritten with the
+    # doc at every phase/seed/node boundary. One writer, tmp+rename -> no race.
+    now = time.time()
+    live = doc["live"] = {"phase": "idle", "round": doc["cursor"], "seeds_total": int(seeds[1]) - int(seeds[0]) + 1,
+                          "seed_index": None, "seed": None, "node": None, "started_at": now,
+                          "round_started_at": None, "phase_started_at": now, "last_round_s": None,
+                          "per_seed_partial": [], "tried": None, "message": ""}
+
+    def tick(**kw) -> None:
+        if kw.get("phase", live["phase"]) != live["phase"]:
+            kw = {"phase_started_at": time.time(), "seed": None, "seed_index": None, "node": None,
+                  "per_seed_partial": [], **kw}
+        live.update(kw)
+        live["message"] = _message(live)
+        store.save(doc)
+
+    tick()
     base = None
     for r in range(doc["cursor"] + 1, args.rounds + 1):
         if args.cancel_marker is not None and args.cancel_marker.exists():
             doc["status"] = "cancelled"
-            store.save(doc)
+            tick(phase="cancelled")
             return 3
+        t_round = time.time()
+        tick(phase="baseline" if base is None else "propose", round=r, round_started_at=t_round, tried=None)
         before = base or run_suite(args.task, binding, seeds, arm, args.skills_root, applied,
-                                     media_dir=args.session / "media", budgets=budgets)
+                                     media_dir=args.session / "media", budgets=budgets, progress=tick)
+        tick(phase="propose")
         prop = take_proposal(args.session, args.task, r)
         tried = (from_proposal(prop, before) if prop
                  else propose(before, records, emb, arm, binding, r, applied, doc["rounds"]))
+        tick(tried=tried)
         after, published = before, False
         if tried["kind"] != "none":
             trial = apply(tried, applied)
+            tick(phase="retest")
             try:
                 after = run_suite(args.task, binding, seeds, arm, args.skills_root, trial,
-                                  media_dir=args.session / "media", budgets=budgets)
+                                  media_dir=args.session / "media", budgets=budgets, progress=tick)
             except Exception as exc:  # noqa: BLE001 -- the trial's failure is the round's finding
                 tried["detail"]["error"] = repr(exc)
                 after = before
             published = after["count"] > before["count"]
             if published:
+                tick(phase="publish")
                 applied = trial
                 skill = tried["detail"]["skill"]
                 tried["detail"]["digest"], d = publish(
@@ -419,10 +492,10 @@ def main(argv=None) -> int:
             "media_dropped": _dropped(args.session, args.task, seeds), "ts": time.time(),
             "proposal": {k: prop[k] for k in ("id", "kind", "note")} if prop else None})
         doc["cursor"], doc["applied"] = r, applied
-        store.save(doc)
+        tick(phase="idle", last_round_s=round(time.time() - t_round, 1))
         base = kept
     doc["status"] = "done"
-    store.save(doc)
+    tick(phase="done")
     return 0
 
 

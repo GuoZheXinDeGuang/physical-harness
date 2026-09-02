@@ -1,8 +1,9 @@
 """The lightweight evolve loop on the REAL robocasa kitchen: kitchen_thaw x 2 seeds,
 arm scripted, ONE round, submitted to a tmp evolution-mode runtime drained headless
 (MUJOCO_GL=egl) -- the same shape as tests/test_suite_robocasa_e2e.py. Asserts the
-campaign lands (rsi_series one row, one rsi_step row) and that a seed that
-succeeded left a <1 MB media clip. Nothing here touches runs/.
+campaign lands (rsi_series one row, one rsi_step row), that a seed that
+succeeded left a <1 MB media clip, and that while it ran the ``live`` block carried
+a message and the 取景窗 frame file advanced. Nothing here touches runs/.
 
 Run: cd <repo> && MUJOCO_GL=egl <robocasa-venv>/bin/python -m pytest -m robocasa tests/test_evolve_robocasa_e2e.py
 """
@@ -13,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -33,12 +35,27 @@ def test_one_evolve_round_on_the_real_kitchen(tmp_path):
     name = bs.submit_brief(runs, json.dumps(
         {"kind": "evolve", "task": TASK, "seeds": seeds, "rounds": 1, "arm": "scripted",
          "max_actuations": 24, "max_replans": 1}))["submitted"]
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         [sys.executable, str(RUNTIME), "--session-dir", str(session), "--drain",
          "--mode", "evolution"],
-        cwd=str(REPO), capture_output=True, text=True, timeout=1800, check=False,
+        cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         env={**os.environ, "MUJOCO_GL": "egl", "PYTHONPATH": str(REPO)})
+    campaign = session / "campaigns" / f"evolve-{TASK}" / "campaign.json"
+    messages, frame_ts = set(), set()   # what the board would show while it runs
+    deadline = time.monotonic() + 1800
+    while proc.poll() is None and time.monotonic() < deadline:
+        try:
+            messages.add(json.loads(campaign.read_text())["live"]["message"])
+            frame_ts.add((session / "frame.jpg").stat().st_mtime)
+        except (OSError, KeyError, TypeError, json.JSONDecodeError):
+            pass
+        time.sleep(0.2)
+    _, err = proc.communicate(timeout=60)
+    proc.stderr = err
     assert proc.returncode == 0, proc.stderr[-4000:]
+    assert any(messages), messages
+    assert len(frame_ts) >= 2, frame_ts   # egl runtime -> frames on -> evolve mirrors episodes
+    assert bs.rsi_run(session, TASK)["live"]["phase"] == "done"
     assert (session / "done" / name).exists(), proc.stderr[-4000:]
     rows = bs.chain_rows(session)
     assert not [r for r in rows if r["kind"] == "runtime.task_error"], proc.stderr[-4000:]

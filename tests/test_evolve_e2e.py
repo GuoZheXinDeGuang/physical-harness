@@ -10,6 +10,7 @@ Then cancel mid-run and resubmit: the loop resumes from cursor (round 3).
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -172,10 +173,48 @@ def _doc(runtime) -> dict:
     return json.loads(runtime.campaign.read_text())
 
 
+_LIVE: list[dict] = []   # every distinct ``live`` block the poller saw during two_rounds
+
+
+def _poll(stop: threading.Event, path: Path, seen: list) -> None:
+    while not stop.is_set():
+        try:
+            live = json.loads(path.read_text()).get("live")
+            if live and live != (seen[-1] if seen else None):
+                seen.append(live)
+        except (OSError, json.JSONDecodeError):
+            pass
+        time.sleep(0.005)
+
+
 @pytest.fixture(scope="module")
 def two_rounds(runtime):
-    return runtime.run({"kind": "evolve", "task": TASK, "seeds": [1, 2], "rounds": 2,
-                        "arm": "auto"})
+    stop = threading.Event()
+    t = threading.Thread(target=_poll, args=(stop, runtime.campaign, _LIVE), daemon=True)
+    t.start()
+    try:
+        return runtime.run({"kind": "evolve", "task": TASK, "seeds": [1, 2], "rounds": 2,
+                            "arm": "auto"})
+    finally:
+        stop.set()
+        t.join()
+
+
+def test_live_block_shows_progress_during_the_run_and_done_at_the_end(runtime, two_rounds):
+    """The operator's 「看不到进度」: campaign.json's ``live`` advances per phase, seed
+    and node while the loop runs (polled by a thread), and reads ``done`` at the end."""
+    base = [l for l in _LIVE if l["phase"] == "baseline" and l["round"] == 1]
+    assert [l["seed_index"] for l in base if l["seed_index"] is not None][:1] == [0]
+    assert {l["seed_index"] for l in base} >= {0, 1}, base
+    assert {l["seed"] for l in base} >= {1, 2} and {"reach-0", "grab-0"} & {l["node"] for l in base}
+    partial = [l["per_seed_partial"] for l in base if len(l["per_seed_partial"]) == 1]
+    assert partial and all(p[0]["seed"] == 1 and p[0]["first_death"] == "grab-0" for p in partial), partial
+    assert all(l["seeds_total"] == 2 and l["message"] and l["started_at"] for l in _LIVE)
+    assert any(l["phase"] == "retest" and l["tried"]["kind"] == "executor" for l in _LIVE)
+    assert "种子 1 运行中" in next(l["message"] for l in base if l["seed"] == 1)
+    live = _doc(runtime)["live"]
+    assert live["phase"] == "done" and live["round"] == 2 and live["last_round_s"] is not None
+    assert live["message"] == "已完成 2 轮" and bs.rsi_run(runtime.session, TASK)["live"] == live
 
 
 def test_two_rounds_land_in_campaign_json_and_the_chain(runtime, two_rounds):

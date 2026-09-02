@@ -1089,9 +1089,11 @@ def _run_evolve(brief: dict, rt: Runtime, brief_id: str) -> None:
         if brief.get(k) is not None:
             cmd += [f"--{k.replace('_', '-')}", str(int(brief[k]))]
     seal = lambda: _seal_rounds(rt, brief_id, task, out / "campaign.json")
+    env = {**os.environ, "MUJOCO_GL": "egl"}
+    if rt.frames:   # same 取景窗 mirror as the rsi chain: live state, never evidence
+        env["PH_RSI_FRAMES"] = str(rt.inbox.parent / "frame.jpg")
     try:
-        code, err = _run_watched(cmd, {**os.environ, "MUJOCO_GL": "egl"}, rt, brief_id,
-                                 out, f"evolve {task!r}", tick=seal)
+        code, err = _run_watched(cmd, env, rt, brief_id, out, f"evolve {task!r}", tick=seal)
     finally:
         seal()
     if code != 0:

@@ -1364,12 +1364,15 @@ def rsi_run(session_dir: str | Path, task: str) -> dict | None:
     """One evolve campaign's state: the campaign.json fields (task, session,
     seeds, arm, best, cursor, status, rounds -- each round carrying ``per_seed``
     and ``needs``) plus ``latest`` (the newest round row, or None before the
-    first lands). None when no campaign exists."""
+    first lands) and ``live`` (scripts/evolve.py's in-flight block: phase, round,
+    seed/seed_index/seeds_total, node, per_seed_partial, tried, message, timings --
+    live state, never sealed; null when the file predates it). None when no
+    campaign exists."""
     doc = _campaign(session_dir, task)
     if doc is None:
         return None
     rounds = doc.get("rounds") or []
-    return {**doc, "latest": rounds[-1] if rounds else None}
+    return {**doc, "latest": rounds[-1] if rounds else None, "live": doc.get("live")}
 
 
 def rsi_series(session_dir: str | Path, task: str) -> list[dict]:

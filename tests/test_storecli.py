@@ -113,6 +113,11 @@ _CAMPAIGN = {
          "media": [], "ts": 2.0},
     ],
     "best": 1, "cursor": 2, "status": "running",
+    "live": {"phase": "baseline", "round": 3, "seeds_total": 2, "seed_index": 1, "seed": 2,
+             "node": "grasp", "started_at": 0.5, "round_started_at": 2.5, "phase_started_at": 2.5,
+             "last_round_s": 1.0, "per_seed_partial": [
+                 {"seed": 1, "success": True, "first_death": None, "failure_mode": None}],
+             "tried": None, "message": "第 3 轮 基线评测：种子 2 运行中 (grasp)，2/2"},
 }
 
 
@@ -146,6 +151,10 @@ def test_rsi_faces_are_byte_identical(tmp_path, capsys):
     # non-trivial: the fixture rounds actually flow through each face
     run = bs.rsi_run(sd, "kitchen_thaw")
     assert run["status"] == "running" and run["cursor"] == 2 and run["latest"]["round"] == 2
+    assert run["live"] == _CAMPAIGN["live"] and run["live"]["message"]
+    (camp / "campaign.json").write_text(json.dumps({k: v for k, v in _CAMPAIGN.items() if k != "live"}))
+    assert bs.rsi_run(sd, "kitchen_thaw")["live"] is None   # pre-live campaign reads as null
+    (camp / "campaign.json").write_text(json.dumps(_CAMPAIGN))
     assert bs.rsi_series(sd, "kitchen_thaw") == [   # pre-per_seed rounds read as null
         {"round": 1, "before": 0, "after": 1, "best": 1, "per_seed": None, "needs": None},
         {"round": 2, "before": 1, "after": 1, "best": 1, "per_seed": None, "needs": None}]
