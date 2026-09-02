@@ -19,7 +19,8 @@
 | §6 | 接入你自己的 VLM planner / VLA policy / 恢复原语 | 集成模型的人 |
 | §7 | 学习策略挂在哪条缝（fast/slow brain） | 做 VLA 接缝的人 |
 | §8 | 静默失败面与 `health()` | 系统看起来不对的时候 |
-| §9 | 没在这份文档里的东西 | 找历史的人 |
+| §9 | Skill graph protocol：谓词、技能记录、执行图、轨迹、账本 | 改 planner/validator/技能库的人 |
+| §10 | 没在这份文档里的东西 | 找历史的人 |
 
 ---
 
@@ -196,10 +197,11 @@ scripts/cockpit --stop   # 只停本次调用启动的进程（按 pidfile 里�
 - `--render` 只在 `$DISPLAY` 存在时才传（runtime 在无头下硬拒绝 `--render`）；
   无头派生带 `MUJOCO_GL=egl`。opt-out：`--no-runtime` / `--no-render`。
 - `--stop` 永不按模式 kill（那会打中操作员自己的 shell）；被领养的 runtime 不动。
-- **只重启控制台而不打断实验**：`runs/session-main/cockpit.pids` 里若
-  `runtime_adopted=0`，说明这个 runtime 是上一次 cockpit 派生的，`--stop` 会连它一起
-  杀。要只重启控制台，就 `kill` 那个精确的 `web_pid`，再跑一次 cockpit——它会重新
-  领养活着的 runtime（打印 `adopting resident runtime … not restarting`）。
+- **只重启控制台而不打断实验**：`kill` 那个精确的 `web_pid`，再跑一次 cockpit——它会重新
+  领养活着的 runtime（打印 `adopting resident runtime … not restarting`）。**归属是粘的**：
+  pidfile 里已记为 `runtime_adopted=0` 的 pid 被再次领养后仍算 cockpit 派生，`--stop`
+  照样杀；只有 cockpit 从没派生过的 runtime 才留着不动（此前每次只重启控制台都会把
+  全部 runtime 变成「领养」，`--stop` 从此永久空转）。
 
 ### 2.2 控制台配置：模板是提交的，跑的是渲染出来的那份
 
@@ -380,10 +382,10 @@ AST green  : test_boundaries + test_kernel green (harness-imports-nothing +
 `PYTHONPATH=. .venv/bin/python -m pytest -m "not robosuite and not robocasa"`。
 它比隔离快照多 3 个 pass（那 3 个 camera-env 跳过项在卡在场时变成通过）。
 
-### 3.2 当前快照（2026-08-31，隔离，robosuite 被挡）
+### 3.2 当前快照（2026-09-02，隔离，robosuite 被挡）
 
 ```
-pass       : 824 passed
+pass       : 846 passed
 skips      : 31 skipped
              [2] test_grasp_geometric.py:141  camera env unavailable
              [1] test_grasp_geometry.py:231   camera env unavailable
@@ -404,10 +406,11 @@ deselected : 28 robosuite-marked items
 
 798 → 806 是快照写下之后攒的 8 个底座项（7 个来自其间的提交，+1 是 grasp 谓词审计
 这一轮的 `test_mission_kitchen_thaw.py::test_grasp_verify_is_secure_dz_shaped_not_the_bare_latch`）；
-806 → 824 是 PR #2（静态技能库 + 三张 basket/pack/stack 任务卡）带进来的 18 个底座项。
+806 → 824 是 PR #2（静态技能库 + 三张 basket/pack/stack 任务卡）带进来的 18 个底座项；
+824 → 846 是 skill graph protocol（§9：protocol / predicates / records / trajectories / 派生账本）的 22 个底座项。
 
-**全量对照（卡在场）**：实测 `855 passed, 28 skipped`（2026-09-02，harness `.venv`，
-robosuite 在场，PR #3 basket 稳定化合并之后）。它和上面的 824 不构成同一轮的算术，
+**全量对照（卡在场）**：实测 `876 passed, 28 skipped`（2026-09-02，harness `.venv`，
+robosuite 在场，skill graph protocol 之后）。它和上面的 824 不构成同一轮的算术，
 别拿两者相减。隔离快照少掉的 pass 是：robocasa 标记项在 harness `.venv` 里没有 robocasa 可导入
 而跳过，只在 `sims/robocasa-venv` 里经 `pytest -m robocasa` 跑；1 个 libero 标记项同理
 只在 `sims/libero-venv` 里跑；另有 3 个 camera-env 跳过项在卡在场时变成通过。
@@ -469,14 +472,14 @@ commit** 里更新 (1) §3.2 的 `pass` 行、(2) §3.2 的全量对照行、(3)
 
 | 步 | 做什么 | 在哪 |
 |---|---|---|
-| a. 领种子 | 从 STATUS.md 账本前沿领**一整块 650**，切成标定 150 / dev 300 / held-out 200。领完的 dev∪heldout 喂回 `_declared_ranges` 那道原闸；标定块不过闸（标定永不设门、永远可复测），可用 `cal` 钉住旧块复测 | `rsi_campaign.allocate` + `harness_runtime._rsi_blocks` / `_assert_unburned` |
+| a. 领种子 | 从**派生账本**（`board.store.burned_blocks(runs/)`：`runs/` 下所有已封存 prereg 的 gate/heldout 区间，并上 STATUS.md 已烧行的历史）之外领**一整块 650**，切成标定 150 / dev 300 / held-out 200；钉住的 dev/heldout 撞上已烧区间同样拒绝。没有任何 store ⇒ 拒绝领 gate/heldout，绝不当作「没烧过」；标定块不过闸（标定永不设门、永远可复测），可用 `cal` 钉住旧块复测 | `rsi_campaign.allocate` + `harness_runtime._rsi_blocks` / `_assert_unburned` |
 | b. 标定 | **通用探针**：把 `{"kind":"task"}` 那条路在池子里跑 N 次，skills root 指向空目录 → 臂天然是 baseline。产出链基率、**逐节点 × 机制**首死、每集耗时。任务的节点图/kind/after 边由 planner 现问，不是硬编码表 | `rsi_campaign.calibrate` / `_probe_one`，brief 装配复用 `harness_runtime.task_brief`（和活跑逐字节同一张 brief） |
 | c. 门禁 | 六条机械判据逐条打分。**没过就停在这里**，裁决书写清缺哪条能力 + 触发它的那个数，一粒 dev 种子不烧 | `rsi_campaign.gate` |
 | d. prereg | content-hash 封存，**在任何 dev 种子跑之前** | `rsi_campaign.build_prereg` + `plugins.rsi.workload.run` 盖 provider 三元组 |
 | e. dev campaign | 调既有 `run_campaign`，FROM-SCRATCH（`parent_store=None`）。门 = 配对同种子 McNemar（对父）+ blind twin + `min_fixed`，功效缩放取前缀 | `plugins/rsi/campaign.py` |
 | f. held-out | 仅当有晋级，**只评一次** | 同上 |
 | g. 折入 | 发布记录复制进该 session 的 skills root；两态铁律照旧（执行态 skills-root 变更触审计 → 归档旧 log + 全新 boot 封 row0） | `harness_runtime._run_rsi` → `_copy_skills` |
-| h. 账本 | 生成一段 STATUS.md 形状的条目**打印给操作员**，并进 `runtime.rsi_scheduled` 链行。**从不自动 append**——账本是人写的，第二个写手就是它要防的那种污染 | `rsi_campaign.ledger_entry` |
+| h. 账本 | 生成一段 STATUS.md 形状的条目**打印给操作员**，并进 `runtime.rsi_scheduled` 链行。**从不自动 append**——STATUS.md 只是操作员的展示用笔记，真正的账本由 d 步封存的 prereg 派生（a 步），没有第二份可写的真相 | `rsi_campaign.ledger_entry` |
 
 每集还有一道墙钟帽（`scripts/rsi_campaign.py:EPISODE_WALL_S`，池子 worker 里用
 SIGALRM）：被砍掉的一集返回诚实的 `first_death="wall_timeout"` 行，`attribute()` 把它
@@ -790,7 +793,8 @@ budget、last fault）提示，并要求一张严格 JSON 图 `{goal, nodes[], v
 构造是不可信的**——`plugins/task/validate.py:validate_plan` 在每张图派发前运行，拒绝：
 未知 skill/参数/参数类型（planner 只能从卡片作者写的 catalogue 里选，绝不发明）、
 非更早的 `after` 边、空 `nodes`、空或未知谓词的 `verify`、任何没被 verify 覆盖的
-manipulate/segment 节点、任何丢掉或改写已完成节点的 replan。被拒的图花掉一次 replan
+manipulate/segment 节点、任何丢掉或改写已完成节点的 replan（Typed/Grounded/Supported/
+Covered 与 replan 单调性都委托给 `harness/protocol.py`，见 §9）。被拒的图花掉一次 replan
 （`invalid_plan` 折回），绝不崩；解析不了的回复给且只给一次带上解析错误的重问，然后
 返回一张空 nodes 图——validator 保证会拒——**卡片绝不悄悄编一张图出来**。
 
@@ -817,14 +821,14 @@ tests/test_model_endpoint.py` 覆盖，不需要端点。）
 
 #### 6.1.1 静态 skill library 与 `pack_all_robocasa`
 
-第一版共享技能库在 `skill-library/`，布局参考 open-robot-skills 的“一技能一目录”：
+共享技能库在 `skill-library/records/`，一技能一份 `SkillRecordV0` JSON（模式在
+`harness/protocol.py`，§9）：
 
 ```text
-skill-library/
-  catalog/<skill>/{SKILL.md,contract.toml}   # 语义、参数、前/后条件、成功条件
-  embodiments/robocasa.toml                 # 抽象技能 -> RoboCasa 子任务
-  embodiments/libero.toml                   # 同一抽象 -> LIBERO 子任务
-harness/skill_library.py                     # 加载、校验、生成 catalogue/segment_specs
+skill-library/records/<skill>.json   # args / requires / ensures / clobbers（与本体无关）
+                                     # + bindings[<本体>]（task_template+backend 或 episode kwargs）
+harness/skill_library.py             # load_records / select / catalogue_of / planner_docs
+                                     # / segment_specs / skill_specs
 ```
 
 上层只看 `navigate / grasp / carry / place`——**和 §7.7 capability 记录同一套词**，不是
@@ -835,11 +839,11 @@ oracle，所以绑定明确写着 `implemented=false`，不会被暴露给 plann
 `place_on`——它绑在 robosuite Stack 的脚本 driver 上（`skills.place_on`），是真有东西执行才
 留的名，不是凭空的第六个契约。
 
-**一个事实，一个家。** catalog（`skill-library/`）只写 symbolic contract——技能的语义、参数、
-前后条件散文；测过的数字（successes/n）不在这里，在 capability 记录里（§7.7，
-`runs/pi05-campaign/round99_skills/`）。名字共享时二者不冲突：catalog 说"这个技能是什么"，
-capability 记录说"这个 executor 测出来能做到几成"。robocasa 绑定的四个技能共享 §7.7 的测量
-名，`skill-library/embodiments/robocasa.toml` 顶部的注释指向那份 store。
+**一个事实，一个家。** record 的 symbolic 半边（`requires` / `ensures` / `clobbers` 谓词引用）
+与本体无关；测过的数字不在这里，在 capability 记录里（§7.7，
+`runs/pi05-campaign/round99_skills/`）。名字共享时二者不冲突：record 说"这个技能是什么"，
+capability 记录说"这个 executor 测出来能做到几成"。record 的 `evidence[<本体>]` 目前为空，
+等有 store 再填。
 
 `plugins/mission_pack_all/` 是第一条闭环：manifest 把共享 catalogue、技能说明、场景物体清单
 和 `target_by_object` 交给 `planner_vlm`；VLM 为四件食物逐件生成
@@ -852,8 +856,8 @@ capability 记录说"这个 executor 测出来能做到几成"。robocasa 绑定
  "instruction":"把所有食物按冷热分别装进正确的保鲜盒"}
 ```
 
-新增 benchmark 时不需要复制整套 skill：保留能共享的语义契约，只在
-`skill-library/embodiments/<benchmark>.toml` 写适配；该 benchmark 特有的动作另加 contract。
+新增 benchmark 时不需要复制整套 skill：保留能共享的语义契约，只在各 record 的
+`bindings[<benchmark>]` 写适配；该 benchmark 特有的动作另加一份 record。
 也就是说，**共享的是抽象和图语言，控制器、动作空间、成功谓词仍由 benchmark 自己实现。**
 
 `basket_smoke_vlm` 是更小的端到端冒烟任务：场景固定提供 `item0/item1/item2` 和
@@ -1383,7 +1387,67 @@ runtime 的机器上会替错的 session 作保。这与 `store._model_identity`
 
 ---
 
-## 9. 没在这份文档里的东西
+## 9. Skill graph protocol
+
+planner 产出的图、runtime 的验收事件、技能库的记录和种子账本共用一套对象，模式全部在
+`harness/protocol.py`（stdlib + `sha_json`，不依赖任何卡）。对象都是内容寻址的
+（`content_id` = sha256 of canonical JSON），链行是唯一真相，下面每一样都是链行的投影。
+
+### 9.1 五个对象
+
+| 对象 | 是什么 | 代码 |
+|---|---|---|
+| 状态字典 σ | `key -> 值`；每个键的来源是 `sensed` 或 `privileged`。谓词只在 σ 上求值 | 卡的 `env.py` / `predicates.py` |
+| Predicate | `id, name, args, reads(读哪些键), bindings{本体: "module:attr"}, audit{本体: {n,tp,fp,tn,fn,seed_block,store}}`。**三值**：读键缺失 → `None`（未知），绝不伪造 False。审计门 `sens>=th_s ∧ spec>=th_p ∧ eps<=base_rate<=1-eps`，阈值是参数不是常量 | `PredicateRecord` / `Audit.passes`；本体卡 manifest `[[provides]] kind="predicate"` 声明，`harness/predicates.py` 的 `records()` / `evaluate()` / `audit_gate()` |
+| SkillRecord | `id, name, kind, lineage{parent,round}, args(模式), requires / ensures / clobbers（谓词引用，`clobbers` 是 STRIPS 删除表）, limits, failure_modes, bindings{本体}, evidence{本体}`。symbolic 半边与本体无关，绑定与证据按本体分开。入库规则：`ensures` 非空，且引用的每个谓词对目标本体都有审计记录 | `SkillRecordV0`；`skill-library/records/<name>.json`，`harness/skill_library.py` 加载 |
+| ExecutionGraph G | `{mission, seed, tasks[{id, goal[谓词]}], nodes[{id, task, skill, args, after[], on_fail{policy: replan\|recovery\|abort, budget?, rule?}}], rationale, planner{}}` | `ExecutionGraph.from_dict`；`plugins/task/validate.py:plan_to_graph` 把 planner 的 `{goal,nodes,verify}` 形状抬成它 |
+| Trajectory τ | `(x, y, o)`：x = {mission, σ₀ 的 sensed 投影, 可见技能 id, show_evidence, done, fault}，y = {graph id, rationale}，o = {legal, 每节点 verify, L, success, replans, seed, block, role∈{dev,heldout}}。`id = hash(x, y)`。**纯投影**，从链行算出来，不另存 | `board.store.trajectories(session)`；storecli / MCP 同名 |
+| 种子账本 B | 所有**已封存** prereg 的 gate/heldout 区间之并，再并上 STATUS.md 的已烧行（store 格式之前的历史：phase 1/2 区块、held-out 复评；标定块永不烧）。`alloc(block, role)` 合法 ⇔ block ∩ B = ∅。没有任何 store ⇒ **拒绝**分配 gate/heldout，不是「没烧过」 | `board.store.burned_blocks(runs/)`；`rsi_campaign.allocate` / `harness_runtime._assert_unburned` 消费 |
+
+谓词引用的规范串是 `name(a,b)`（零元 `name()`）；record 里的 `holding(object)` 是模板，
+派发时用节点 args 实例化成 `holding(apple)`（`protocol.instantiate`）。
+
+### 9.2 Legal(G)：四条规则，缺一张图就不派发
+
+`validate_graph(G, records, σ₀.facts, σ₀.objects) -> (ok, problems[])` 一次收齐全部问题：
+
+1. **Typed**：每个节点的 args 与 record 的 args 模式逐键匹配（`TYPES`：entity/str/int/float/bool）。
+2. **Grounded**：`entity` 类型的实参必须在 `σ₀.objects` 里，或由某个前驱节点产出。
+3. **Supported**：节点 n 的每个 `requires` 谓词 p，要么在 σ₀.facts 里，要么在某个祖先 m 的
+   `ensures` 里，且不存在威胁 c（p ∈ clobbers(c)，c 既不在 m 之前也不在 n 之后）——**与 n
+   不可比的节点算作可能的威胁**。
+4. **Covered**：每个 task 的 goal ⊆ 该 task 各节点 `ensures` 之并，且在 task 结束时未被威胁。
+
+不合法的图**从不派发**，但会作为负样本封进链（`task.plan` 行照封，`legal=false`）。
+今天 mission 卡的 CATALOGUE 只有 args，所以 Supported/Covered 对它们是空真；卡通过
+`brief["records"]` / `brief["facts"]` / `brief["objects"]` 发布真 record 后四条全部生效。
+
+### 9.3 运行期：verify → fault → replan 单调
+
+每个节点跑完，在 σ 上求 `ensures` → 链行 `task.verify {node, results{谓词: true|false|null}}`；
+任一非 true → `task.fault {node, failed[], signature?}`。replan 输入 `(G, D=已验收节点, fault, σ)`，
+输出 G′ 必须满足 **D ⊆ nodes(G′) 且每个 done 节点的 (skill, args) 逐字节相同**
+（`replan_monotone`），再以当前 facts 为 σ₀ 重新过 `Legal(G′)`。违者封为
+`task.replan_rejected {replan, problems}`，折回成一次 `invalid_plan` fault，计入 `max_replans`，
+不派发。超过 R 次 → 不可恢复；**L = 第一次不可恢复失败前已验收的节点数**，进 τ.o。
+
+### 9.4 卡怎么接入
+
+- 本体卡 manifest 加 `[[provides]]`（`kind ∈ {embodiment, predicate, recovery, skill, planner}`，
+  `ref = "module:attr"`；谓词必须带 `reads`）。`discover()` 折进 `Registry.provides`，
+  形状错在 discover 就 `ValueError`。
+- 技能加一份 `skill-library/records/<name>.json`；不能执行的本体写 `implemented: false`，
+  planner 看不见它。
+- 不要在卡里再写一份 catalogue/segment 表：`select(RECORDS, 本体, names)` +
+  `catalogue_of` / `planner_docs` / `segment_specs` / `skill_specs` 就是那张表。
+
+测试：`tests/test_protocol.py`（Legal 四条 + 单调 + 三值 + 稳定 id）、`tests/test_predicates.py`、
+`tests/test_static_skill_library.py`、`tests/test_task_protocol_events.py`、
+`tests/test_trajectories.py`、`tests/test_store.py::*burned_blocks*`。
+
+---
+
+## 10. 没在这份文档里的东西
 
 **开发史与设计资本不随仓库发布。** 它们在 git 历史里，和操作员机器上的
 `local-archive/docs/`（git-ignored）里。两份被本文取代、只保留在本地归档

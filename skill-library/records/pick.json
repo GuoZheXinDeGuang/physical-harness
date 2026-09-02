@@ -1,0 +1,31 @@
+{
+ "id": "pick",
+ "name": "pick",
+ "kind": "manipulate",
+ "lineage": {},
+ "args": {
+  "object": "str"
+ },
+ "requires": [],
+ "ensures": [
+  "holding(object)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robosuite": {
+   "episode": {
+    "task_by_object": {
+     "can": "pickcan",
+     "milk": "pickmilk"
+    },
+    "percept_noise": 0.012,
+    "terminal_label": true,
+    "stages": "plugins.embodiment_robosuite.env:pick_stages"
+   }
+  }
+ },
+ "evidence": {},
+ "description": "Pick one named object from the table; the scene is chosen by the object."
+}

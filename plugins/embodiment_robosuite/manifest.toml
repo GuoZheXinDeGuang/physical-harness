@@ -45,3 +45,11 @@ ref = "plugins.embodiment_robosuite.recoveries:PROBE_REGRASP"
 
 [recoveries.replace]
 ref = "plugins.embodiment_robosuite.recoveries:REPLACE"
+
+# Predicates this card provides (harness.predicates folds them; reads = the
+# sigma keys the evaluator consumes, args = factory params).
+[[provides]]
+kind = "predicate"
+name = "lifted"
+ref = "plugins.embodiment_robosuite.env:lifted_pred"
+reads = ["obs", "spec", "start_z"]

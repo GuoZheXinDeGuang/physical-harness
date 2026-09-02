@@ -20,12 +20,11 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-#: skill name -> {arg name: required python type}. Authored on the skill side,
-#: never by the planner: the planner only selects and parameterizes.
-CATALOGUE: dict[str, dict[str, type]] = {
-    "stack": {"object": str, "target": str},
-    "pick": {"object": str},
-}
+from harness.skill_library import RECORDS, catalogue_of, select
+
+#: skill name -> {arg name: required python type}. Authored on the skill side
+#: (skill-library/records), never by the planner, which only selects and parameterizes.
+CATALOGUE: dict[str, dict[str, type]] = catalogue_of(select(RECORDS, "robosuite", ("stack", "pick")))
 
 #: Verify predicates a plan may name. Each is the embodiment's terminal
 #: success boolean for that skill, reached at dispatch time through the

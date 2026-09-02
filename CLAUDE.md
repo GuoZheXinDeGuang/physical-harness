@@ -92,6 +92,11 @@ Read results through `runtime_events` / `session_progress` / `store` /
 
 - Every seed block burns **once**. Reusing a burned block as a gate or held-out
   poisons the conclusion — the whole result is void.
+- The ledger is **derived**: `board.store.burned_blocks(runs/)` is the union of
+  gate/heldout blocks of every sealed prereg under `runs/`, plus the burned rows
+  of `STATUS.md` (pre-store history: phase 1/2 blocks, held-out rescores). No
+  store at all ⇒ gate/held-out allocation is refused, never read as "nothing
+  burned". New burns come from sealed prereg; STATUS.md only carries history.
 - Calibration blocks are the exception: never a gate, always re-runnable.
 - Scratch seeds (< 542000, outside any declared block; 42xxxx/43xxxx by
   convention) never burn the ledger. Seeds ≳ 542479 overflow and crash.
@@ -112,8 +117,10 @@ round; never edit the old one.
   374 kitchen envs never register.
 - Base-lane test counts changed ⇒ refresh `docs/project-documentation.md` §3.2
   + `README.md` + `README.zh.md` **in the same commit**.
-- `STATUS.md` and `progress.md` are the operator's local, untracked ledgers —
-  never `git add` them; the runtime treats a missing ledger as nothing burned.
+- `STATUS.md` and `progress.md` are the operator's local, untracked notes —
+  never `git add` them. They are display-only: nothing reads STATUS.md to decide
+  what is burned (that is `board.store.burned_blocks`), and `rsi_campaign`
+  prints a STATUS.md-shaped paragraph for the operator without appending it.
 
 Before you start: skim the board's recent rounds. This repository's history is
 full of "looked right but a fake predicate said so" lessons — reading for five

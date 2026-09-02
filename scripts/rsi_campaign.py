@@ -11,7 +11,8 @@ branch anywhere below, and adding a task is still installing a plugin dir.
 
 The chain, in order (docs/project-documentation.md §4):
 
-a. **allocate** -- one contiguous 650-seed frontier off the STATUS.md ledger,
+a. **allocate** -- one contiguous 650-seed frontier past every burned block
+   (board.store.burned_blocks: DERIVED from sealed preregistrations under runs/),
    split cal 150 / dev 300 / held-out 200. The caller may pin any of the three.
 b. **calibrate** -- N baseline episodes through the GENERIC task path
    (``plugins.task.workload.run`` under an EMPTY skills root, so the arm is
@@ -49,7 +50,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from board.store import parse_ledger
+from board.store import burned_blocks
 from harness.spec_tabletop import STACK_PHASE_HEIGHT
 from scripts.alloc_seeds import next_block
 
@@ -82,9 +83,13 @@ ACTUATING = ("manipulate", "segment")
 
 # ── a. allocate ──────────────────────────────────────────────────────────────
 
-def allocate(ledger: list[dict], *, floor: int = 0, cal=None, dev=None,
+def allocate(burned: list[tuple], *, floor: int = 0, cal=None, dev=None,
              heldout=None) -> dict:
-    """Claim cal/dev/held-out blocks off the live ledger as inclusive [lo,hi].
+    """Claim cal/dev/held-out blocks past the burned set as inclusive [lo,hi].
+
+    ``burned`` is ``board.store.burned_blocks`` output: ``(lo, hi, role, sha)``
+    rows derived from every sealed preregistration. A pinned dev/held-out block
+    is re-checked against it here, so the CLI path is guarded like the runtime.
 
     ONE contiguous ``CAL_N+DEV_N+HELDOUT_N`` block is taken and split, so the
     three are disjoint by construction rather than by three separate scans that
@@ -92,7 +97,8 @@ def allocate(ledger: list[dict], *, floor: int = 0, cal=None, dev=None,
     calibration block is the normal case, since calibration never gates and a
     measured block stays re-measurable forever.
     """
-    lo, hi = next_block(CAL_N + DEV_N + HELDOUT_N, ledger, floor=floor)
+    taken = [(int(lo), int(hi)) for lo, hi, *_ in burned]
+    lo, hi = next_block(CAL_N + DEV_N + HELDOUT_N, taken, floor=floor)
     if hi > SEED_CEILING:
         raise ValueError(
             f"allocator reached seed {hi} but the driver's RandomState seeding "
@@ -114,6 +120,11 @@ def allocate(ledger: list[dict], *, floor: int = 0, cal=None, dev=None,
                 f"{a} block [{alo},{ahi}] overlaps {b} block [{blo},{bhi}]; "
                 "the three roles must be disjoint (a block that both calibrates "
                 "and gates is not evidence)")
+    for k in ("dev", "heldout"):
+        alo, ahi = blocks[k]
+        for blo, bhi in taken:
+            if alo <= bhi and blo <= ahi:
+                raise ValueError(f"{k} block [{alo},{ahi}] hits burned [{blo},{bhi}]")
     return blocks
 
 
@@ -843,16 +854,15 @@ def ledger_entry(task: str, blocks: dict, cal: dict, verdict: dict,
 def run_chain(task: str, out: Path, *, workers: int = 10, stop_after: str = "heldout",
               cal=None, dev=None, heldout=None, node: str | None = None,
               floor: int = 0, max_replans: int = 3, max_actuations: int = 40,
-              status_md: Path | None = None) -> dict:
+              runs_root: Path | None = None) -> dict:
     """a -> h for one task. Returns the whole chain's report; writes it to
     ``<out>/rsi_report.json`` and heartbeats ``<out>/progress.json`` per stage."""
     from scripts.campaign_progress import write_progress
 
     out.mkdir(parents=True, exist_ok=True)
-    status_md = status_md or REPO / "STATUS.md"
-    # untracked in the public repo: a fresh clone has no ledger = nothing burned
-    ledger = parse_ledger(status_md.read_text() if status_md.exists() else "")
-    blocks = allocate(ledger, floor=floor, cal=cal, dev=dev, heldout=heldout)
+    # derived from sealed preregistrations: no store at all refuses, never "nothing burned"
+    blocks = allocate(burned_blocks(runs_root or REPO / "runs"),
+                      floor=floor, cal=cal, dev=dev, heldout=heldout)
     report: dict = {"task": task, "blocks": {k: list(v) for k, v in blocks.items()},
                     "stage": "calibrate"}
 

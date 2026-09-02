@@ -80,6 +80,11 @@ def lifted(obs, spec: EpisodeSpec, start_z: float) -> bool:
 _STACK_GRASP_PHASES = ("above", "descend", "close", "lift")
 
 
+def lifted_pred():
+    """``[[provides]]`` factory for ``lifted`` (harness.predicates convention)."""
+    return lifted
+
+
 def stack_stages() -> tuple[StageSpec, ...]:
     """The two-stage Stack measurement chain: grasp cubeA, seat it on cubeB.
 

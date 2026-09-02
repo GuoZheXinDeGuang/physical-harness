@@ -51,6 +51,40 @@ class Registry:
     #: strategy name -> (declaring plugin dir, ref). ``plugins/rsi/repertoire.py``
     #: resolves the refs; the fold here stays data-only like everything else.
     recoveries: dict[str, tuple[str, str]] = field(default_factory=dict)
+    #: ``[[provides]]`` entries a card declares (``{kind, ref, name?, ...}``),
+    #: each stamped with its ``plugin``. Kinds: PROVIDES_KINDS. Predicates carry
+    #: ``reads`` (sigma keys) and optional ``args``; ``harness.predicates`` folds
+    #: them into PredicateRecords keyed by name, bindings per card.
+    provides: tuple[dict, ...] = ()
+
+
+PROVIDES_KINDS = frozenset({"embodiment", "predicate", "recovery", "skill", "planner"})
+
+
+def card_provides(data: dict, plugin: str) -> list[dict]:
+    """Every ``[[provides]]`` entry of a SINGLE manifest, shape-checked (fail loud)."""
+    out, seen = [], set()
+    for raw in data.get("provides", []):
+        kind, ref = raw.get("kind"), raw.get("ref")
+        if kind not in PROVIDES_KINDS:
+            raise ValueError(f"plugin {plugin!r}: provides kind {kind!r} not in "
+                             f"{sorted(PROVIDES_KINDS)}")
+        if not isinstance(ref, str) or ":" not in ref:
+            raise ValueError(f"plugin {plugin!r}: provides ref must be 'module:attr', got {ref!r}")
+        name = raw.get("name", ref.rpartition(":")[2])
+        entry = {"kind": kind, "ref": ref, "name": name, "plugin": plugin}
+        if kind == "predicate":
+            reads, args = raw.get("reads"), raw.get("args", [])
+            if not isinstance(reads, list) or not all(isinstance(k, str) for k in reads):
+                raise ValueError(f"plugin {plugin!r}: predicate {name!r} needs reads = [str, ...]")
+            if not all(isinstance(a, str) for a in args):
+                raise ValueError(f"plugin {plugin!r}: predicate {name!r} args must be strings")
+            entry.update(reads=tuple(reads), args=tuple(args))
+        if (kind, name) in seen:
+            raise ValueError(f"plugin {plugin!r} provides {kind} {name!r} twice")
+        seen.add((kind, name))
+        out.append(entry)
+    return out
 
 
 def _load(root: Path) -> list[tuple[str, dict]]:
@@ -115,6 +149,7 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     third_party: dict[str, tuple[str, ...]] = {}
     bundles: dict[str, tuple[Mount, ...]] = {}
     recoveries: dict[str, tuple[str, str]] = {}
+    provides: list[dict] = []
     cap_owner: dict = {}
     task_owner: dict = {}
     camp_owner: dict = {}
@@ -145,6 +180,9 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
             ref = spec if isinstance(spec, str) else spec["ref"]
             _claim(recoveries, recov_owner, name, (plugin, ref),
                    kind="recovery", plugin=plugin)
+        # provides is per-card capability ownership (a predicate binding is keyed
+        # by the declaring card), so it folds above the enabled gate like recoveries.
+        provides += card_provides(data, plugin)
         # ``enabled = false`` = installed but inactive: doctor it (card_mounts
         # reads the file directly, ignoring this), then flip it on and disable the
         # incumbent. Lets an ALTERNATIVE provider for an already-claimed seam --
@@ -167,4 +205,4 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
                    kind="bundle", plugin=plugin)
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
-                    third_party, bundles, recoveries)
+                    third_party, bundles, recoveries, tuple(provides))

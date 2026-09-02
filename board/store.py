@@ -32,6 +32,7 @@ import uuid
 from pathlib import Path
 
 from harness.events import SessionLog
+from harness.protocol import Trajectory, to_plain
 from scripts.brief_drop import drop
 
 # --- store discovery / robust reads -----------------------------------------
@@ -1070,6 +1071,42 @@ def read_runtime_events(session_dir: str | Path, after_seq: int = 0) -> dict:
     return {"events": events, "last_seq": last_seq}
 
 
+def trajectories(session_dir: str | Path, *, role_of_seed=None) -> list[dict]:
+    """Protocol-v0 trajectory samples: a PURE projection of one session's chain
+    rows, one sample per plan/replan decision (``task.plan``), with that graph's
+    ``task.verify`` results folded into ``o.verify`` and the episode's
+    ``task.plan_complete`` stamping success/replans on every sample it closes.
+    ``o.L`` = nodes done before the decision + nodes verified all-true under it.
+    ``role_of_seed(seed) -> "dev" | "heldout"`` fills ``o.role`` when given."""
+    episode: list[Trajectory] = []
+    out: list[Trajectory] = []
+    for row in chain_rows(session_dir):
+        kind, d = row["kind"], row["data"]
+        if kind == "task.plan":
+            seed = d.get("seed")
+            x = {"mission": d.get("mission"), "sigma0": d.get("sigma0"),
+                 "skills": list(d.get("skills") or []),
+                 "show_evidence": bool(d.get("show_evidence")),
+                 "done": list(d.get("done") or []), "fault": d.get("fault")}
+            y = {"graph": d.get("graph_id"), "rationale": d.get("rationale") or ""}
+            o = {"legal": bool(d.get("legal")), "verify": {}, "L": len(x["done"]),
+                 "success": None, "replans": None, "seed": seed, "block": d.get("block"),
+                 "role": role_of_seed(seed) if role_of_seed and seed is not None else None}
+            episode.append(Trajectory(x, y, o))
+        elif kind == "task.verify" and episode:
+            o = episode[-1].o
+            o["verify"][d["node"]] = d["results"]
+            if all(v is True for v in d["results"].values()):
+                o["L"] += 1
+        elif kind == "task.plan_complete":
+            for t in episode:
+                t.o["success"] = bool(d.get("success"))
+                t.o["replans"] = d.get("replans")
+            out += episode
+            episode = []
+    return [{"id": t.id, **to_plain(t)} for t in out + episode]
+
+
 def cancelled_run(row: dict) -> bool:
     """True for a task result the operator actually STOPPED: the workload's
     node-boundary cancel folds in as a ``cancelled`` FAULT, so the run says so
@@ -1540,7 +1577,8 @@ _STATE_ORDER = {"planned": 0, "reserved": 1, "burned": 2}
 
 
 def parse_ledger(text: str) -> list[dict]:
-    """Seed-block burn map from STATUS.md's ``区块预算`` section.
+    """Seed-block burn map from STATUS.md's ``区块预算`` section (board/report.py
+    DISPLAY only; enforcement reads ``burned_blocks``).
 
     The ledger is prose, not a table, so this is a best-effort extraction: pull
     every ``NNNN-NNNN`` range from the budget section, classify each by the
@@ -1586,6 +1624,59 @@ def parse_ledger(text: str) -> list[dict]:
                 found[key] = {"lo": lo, "hi": hi, "state": r_state,
                               "line": re.sub(r"\*\*|`", "", ln).strip()}
     return sorted(found.values(), key=lambda r: r["lo"])
+
+
+def _runs_of(seeds) -> list[tuple[int, int]]:
+    """Seeds -> maximal consecutive inclusive ``[lo, hi]`` runs, sorted."""
+    out: list[tuple[int, int]] = []
+    for s in sorted({int(x) for x in seeds}):
+        if out and s == out[-1][1] + 1:
+            out[-1] = (out[-1][0], s)
+        else:
+            out.append((s, s))
+    return out
+
+
+def burned_blocks(runs_root: str | Path, status_md: str | Path | None = None,
+                  ) -> list[tuple[int, int, str, str]]:
+    """The seed ledger, DERIVED from evidence: every sealed preregistration under
+    ``runs_root`` (any depth -- ``runs/<store>`` and ``runs/<session>/campaigns/
+    <store>`` alike) burns its dev/selection seeds (role ``gate``) and held-out
+    seeds (role ``heldout``) as inclusive ``(lo, hi, role, prereg_sha)`` runs.
+    Calibration blocks never enter a prereg, so they never burn.
+
+    Pre-store history (phase 1/2 blocks, held-out rescores) exists only in the
+    operator's STATUS.md prose, so its burned rows are unioned in as role
+    ``prose`` (sha ``""``): the guard is never weaker than the prose one was.
+    STATUS.md is looked up at ``runs_root.parent / "STATUS.md"`` (the board's
+    convention) unless ``status_md`` is given.
+
+    Raises ``ValueError`` when no store exists at all: an absent ledger is not
+    an empty one, and a caller that treated it as "nothing burned" could reuse
+    every block ever gated.
+    """
+    runs_root = Path(runs_root)
+    status_md = Path(status_md) if status_md else runs_root.parent / "STATUS.md"
+    stores = sorted(p.parent for p in runs_root.rglob("index.jsonl"))
+    if not stores:
+        raise ValueError(f"no campaign store under {runs_root}: the burned set "
+                         "cannot be derived, refusing to treat it as empty")
+    out: list[tuple[int, int, str, str]] = []
+    for store in stores:
+        for row in _index_rows(store):
+            if row["kind"] != "preregistration":
+                continue
+            try:
+                payload = json.loads((store / "artifacts" / f"{row['sha']}.json").read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            for key, role in (("dev", "gate"), ("selection", "gate"), ("heldout", "heldout")):
+                for lo, hi in _runs_of(payload.get(key) or ()):
+                    out.append((lo, hi, role, row["sha"]))
+    if status_md.exists():
+        out += [(r["lo"], r["hi"], "prose", "") for r in parse_ledger(status_md.read_text())
+                if r.get("state") == "burned"]
+    return sorted(set(out))
 
 
 _ROUND = re.compile(r"^##\s*Round\s+(\d+)\s*-\s*([\d-]+)\s*-\s*(.*)$")

@@ -34,3 +34,111 @@ ref = "plugins.embodiment_robocasa.recoveries:REGRASP_KITCHEN"
 
 [recoveries.redock_retry]
 ref = "plugins.embodiment_robocasa.recoveries:REDOCK_RETRY"
+
+# Predicates this card provides (the free-oracle factories in predicates.py;
+# harness.predicates folds them). reads = sigma keys, args = factory params.
+
+[[provides]]
+kind = "predicate"
+name = "fridge_is_open"
+ref = "plugins.embodiment_robocasa.predicates:fridge_is_open"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_grasped"
+ref = "plugins.embodiment_robocasa.predicates:obj_grasped"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_in_microwave"
+ref = "plugins.embodiment_robocasa.predicates:obj_in_microwave"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "microwave_closed"
+ref = "plugins.embodiment_robocasa.predicates:microwave_closed"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "microwave_on"
+ref = "plugins.embodiment_robocasa.predicates:microwave_on"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "gripper_food_far"
+ref = "plugins.embodiment_robocasa.predicates:gripper_food_far"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_grasped_secure"
+ref = "plugins.embodiment_robocasa.predicates:obj_grasped_secure"
+reads = ["env", "z0"]
+args = ["name"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_grasped_any"
+ref = "plugins.embodiment_robocasa.predicates:obj_grasped_any"
+reads = ["env"]
+args = ["name"]
+
+[[provides]]
+kind = "predicate"
+name = "gripper_far"
+ref = "plugins.embodiment_robocasa.predicates:gripper_far"
+reads = ["env"]
+args = ["name"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_in_fixture"
+ref = "plugins.embodiment_robocasa.predicates:obj_in_fixture"
+reads = ["env"]
+args = ["name", "fixture"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_in_receptacle"
+ref = "plugins.embodiment_robocasa.predicates:obj_in_receptacle"
+reads = ["env"]
+args = ["name", "receptacle"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_near_fixture"
+ref = "plugins.embodiment_robocasa.predicates:obj_near_fixture"
+reads = ["env"]
+args = ["name", "fixture"]
+
+[[provides]]
+kind = "predicate"
+name = "obj_on_counter"
+ref = "plugins.embodiment_robocasa.predicates:obj_on_counter"
+reads = ["env"]
+args = ["name"]
+
+[[provides]]
+kind = "predicate"
+name = "base_near_obj"
+ref = "plugins.embodiment_robocasa.predicates:base_near_obj"
+reads = ["env"]
+args = ["name"]
+
+[[provides]]
+kind = "predicate"
+name = "sink_water"
+ref = "plugins.embodiment_robocasa.predicates:sink_water"
+reads = ["env"]
+
+[[provides]]
+kind = "predicate"
+name = "pot_on_chosen_burner"
+ref = "plugins.embodiment_robocasa.predicates:pot_on_chosen_burner"
+reads = ["env"]
+args = ["name"]

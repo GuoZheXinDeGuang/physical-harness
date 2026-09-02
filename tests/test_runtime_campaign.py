@@ -23,6 +23,8 @@ import textwrap
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from harness import manifest
 from plugins.graphs import skill_graph_provider
 from scripts import harness_runtime as runtime
@@ -74,24 +76,22 @@ def _campaign(monkeypatch, name: str, script: Path) -> None:
     monkeypatch.setattr(runtime, "discover", lambda: reg)
 
 
-def _ledger(monkeypatch, tmp_path: Path, *bullets: str) -> Path:
-    """Write a seed ledger of the test's own and point the runtime's guard at it.
-
-    Only the 区块预算 section is parsed, so a heading plus the bullets is a whole
-    ledger as far as board.store.parse_ledger is concerned.
-    """
-    status = tmp_path / "STATUS.md"
-    status.write_text("**PHASE 3 区块预算:**\n" + "\n".join(bullets) + "\n")
-    monkeypatch.setattr(runtime, "STATUS_MD", status)
-    return status
+def _burn(tmp_path: Path, dev: tuple[int, int], heldout: tuple[int, int]) -> Path:
+    """Seal one preregistration under the test's runs root (``session.parent``):
+    the guard derives its burned set from sealed preregs, never from prose."""
+    from test_store import _mkstore
+    prereg = {"dev": list(range(dev[0], dev[1] + 1)),
+              "heldout": list(range(heldout[0], heldout[1] + 1)), "task": "stack"}
+    return _mkstore(tmp_path / f"burn-{dev[0]}", [("preregistration", prereg)])
 
 
 def test_campaign_publishes_skills_and_notes_the_chain(tmp_path, monkeypatch):
     _campaign(monkeypatch, "stub", _stub_script(tmp_path))
+    _burn(tmp_path, (41000, 41580), (42000, 42199))
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
-    # clear seeds: all burned/reserved ranges are <=48000, so 90000+ never hits.
+    # clear seeds: the one sealed prereg burns <=42199, so 90000+ never hits.
     _drop(inbox, "camp.json", {"kind": "campaign", "campaign": "stub",
                                "dev": [[90000, 90499]], "heldout": [[90500, 90599]]})
 
@@ -119,6 +119,7 @@ def test_second_campaign_is_idempotent_on_shared_skills(tmp_path, monkeypatch):
     # Re-running a campaign that republishes the same content-addressed record
     # must not error or double-copy -- the stem IS the digest.
     _campaign(monkeypatch, "stub", _stub_script(tmp_path))
+    _burn(tmp_path, (41000, 41580), (42000, 42199))
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
@@ -158,11 +159,9 @@ def test_burned_range_brief_is_rejected_without_spawning(tmp_path, monkeypatch):
     # the stub would run and write a campaign_scheduled note instead -- the
     # assertion on the overlap reason then fails fast rather than hanging.
     _campaign(monkeypatch, "stack", _stub_script(tmp_path))
-    # The guard reads the operator's LOCAL STATUS.md, which is untracked: on a
-    # fresh clone nothing is burned and the brief is (correctly) accepted. So
-    # bring our own ledger -- one burned block, in the prose shape parse_ledger
-    # reads -- instead of asserting against whatever this box has burned.
-    _ledger(monkeypatch, tmp_path, "**已烧(round 78-79):** stack-g1 dev 41000-41580。")
+    # The guard derives the burned set from sealed preregs under the runs root,
+    # so seal one of our own instead of scanning whatever this box has burned.
+    _burn(tmp_path, (41000, 41580), (42000, 42199))
     session = tmp_path / "session-main"
     inbox = session / "inbox"
     inbox.mkdir(parents=True)
@@ -179,3 +178,16 @@ def test_burned_range_brief_is_rejected_without_spawning(tmp_path, monkeypatch):
     errors = [r for r in rt.log.rows() if r["kind"] == "runtime.task_error"]
     assert len(errors) == 1
     assert "seed-ledger overlap" in errors[0]["data"]["error"]
+
+
+def test_guard_refuses_gate_without_any_store_but_allows_calibration(tmp_path):
+    """An absent ledger is not an empty one: no sealed prereg anywhere under the
+    runs root refuses a dev/held-out claim outright, while a calibration-only
+    brief (nothing to gate) never consults the ledger."""
+    runtime._assert_unburned({"cal": [[1, 150]]}, "cal-only", tmp_path)
+    with pytest.raises(ValueError, match="no campaign store"):
+        runtime._assert_unburned({"dev": [[1, 300]]}, "gate", tmp_path)
+    _burn(tmp_path, (41000, 41580), (42000, 42199))
+    runtime._assert_unburned({"dev": [[1, 300]], "heldout": [[301, 500]]}, "gate", tmp_path)
+    with pytest.raises(ValueError, match="seed-ledger overlap"):
+        runtime._assert_unburned({"heldout": [[42100, 42300]]}, "gate", tmp_path)

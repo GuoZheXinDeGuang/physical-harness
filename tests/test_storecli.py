@@ -59,7 +59,7 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
         # case is both the face-equivalence proof AND null-when-absent (both
         # sides serialize to "null").
         (["runtime_status", "session-main"], bs.read_runtime_status(runs / "session-main")),
-        (["ledger"], bs.parse_ledger(status.read_text())),
+        (["ledger"], bs.burned_blocks(runs)),
         (["rounds"], bs.parse_rounds(progress.read_text())),
     ]
     for argv, expected in cases:
@@ -68,7 +68,7 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
         assert out == json.dumps(expected), argv
     # non-trivial fixtures, so identity is not identity-of-empty
     assert bs.list_stores(runs) and bs.heldout_blocks(runs, "stack-g1")["blocks"]
-    assert bs.parse_ledger(status.read_text()) and bs.parse_rounds(progress.read_text())
+    assert bs.burned_blocks(runs) and bs.parse_rounds(progress.read_text())
 
 
 def test_submit_brief_two_faces_share_one_drop(tmp_path, capsys):

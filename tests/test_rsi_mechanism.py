@@ -28,8 +28,8 @@ from scripts.rsi_campaign import (
 )
 
 
-def _ledger(*ranges):
-    return [{"lo": lo, "hi": hi, "state": state} for lo, hi, state in ranges]
+def _ledger(*ranges):  # board.store.burned_blocks rows: (lo, hi, role, prereg_sha)
+    return [(lo, hi, "gate", "deadbeef" * 8) for lo, hi, _state in ranges]
 
 
 # ── a. allocation ────────────────────────────────────────────────────────────
@@ -44,10 +44,15 @@ def test_allocate_splits_one_contiguous_block_disjointly():
     assert used == list(range(1000, 1000 + CAL_N + DEV_N + HELDOUT_N))
 
 
-def test_allocate_steps_over_burned_and_reserved_ranges():
+def test_allocate_steps_over_burned_ranges():
     # a burned range sitting inside the naive first fit must push the claim past it
-    blocks = allocate(_ledger((0, 99, "burned"), (200, 5000, "reserved")))
+    blocks = allocate(_ledger((0, 99, "burned"), (200, 5000, "burned")))
     assert blocks["cal"][0] == 5001
+
+
+def test_allocate_refuses_a_pinned_block_that_hits_burned():
+    with pytest.raises(ValueError, match="hits burned"):
+        allocate(_ledger((0, 999, "burned")), cal=(5000, 5149), dev=(900, 1199), heldout=(1200, 1399))
 
 
 def test_allocate_honours_a_pinned_calibration_block():

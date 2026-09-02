@@ -119,7 +119,7 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         # anything. The launcher path is a board constant, never an argument.
         return bs.model_server(name or "status", runs)
     if fn == "ledger":
-        return bs.parse_ledger(_read(status))
+        return bs.burned_blocks(runs)
     if fn == "rounds":
         return bs.parse_rounds(_read(progress))
     if fn == "store":
@@ -175,6 +175,11 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         if path is None:
             raise ValueError("unknown session")
         return bs.session_progress(path)
+    if fn == "trajectories":
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        return bs.trajectories(path)
     raise KeyError(fn)
 
 
@@ -210,13 +215,13 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|trajectories|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the model_server action (status|start|stop, default status), or the console port for health")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
     parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, and whose brief brief_status/cancel_brief names (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")
-    parser.add_argument("--status", type=Path, default=None, help="STATUS.md for the ledger (default: <runs>/../STATUS.md)")
+    parser.add_argument("--status", type=Path, default=None, help="STATUS.md (display-only prose; the ledger fn derives from runs/)")
     parser.add_argument("--progress", type=Path, default=None, help="progress.md for the rounds feed (default: <runs>/../progress.md)")
     parser.add_argument("--after", type=int, default=0, help="runtime_events cursor: return only events with seq > AFTER")
     parser.add_argument("--after-ts", type=float, default=0.0, help="runtime_frame cursor: the ts last displayed; unchanged file -> short {unchanged} reply")

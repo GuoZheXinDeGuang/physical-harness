@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from harness.skill_library import LIBRARY
+from harness.skill_library import RECORDS, catalogue_of, planner_docs, segment_specs, select
 
 SKILLS = ("navigate", "grasp", "carry", "place")
 ITEMS = ("hot1", "hot0", "cold0", "cold1")
@@ -20,8 +20,9 @@ TARGET_BY_OBJECT = {
     "cold1": "tupperware1",
 }
 
-CATALOGUE = LIBRARY.catalogue("robocasa", SKILLS)
-SKILL_DOCS = LIBRARY.planner_docs("robocasa", SKILLS)
+_RECORDS = select(RECORDS, "robocasa", SKILLS)
+CATALOGUE = catalogue_of(_RECORDS)
+SKILL_DOCS = planner_docs(_RECORDS)
 ORACLES = ("segment_success",)
 
 DEFAULT_INSTRUCTION = (
@@ -51,7 +52,7 @@ EPISODE: dict[str, Any] = {
     "horizon": 8000,
 }
 
-SEGMENT_SPECS = LIBRARY.segment_specs("robocasa", SKILLS)
+SEGMENT_SPECS = segment_specs(_RECORDS, "robocasa")
 for _name, _spec in SEGMENT_SPECS.items():
     _spec["allowed_args"] = {"object": ITEMS}
     if "target" in CATALOGUE[_name]:

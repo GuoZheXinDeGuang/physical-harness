@@ -150,6 +150,10 @@ class Skill(Protocol):
       mission card's ``SEGMENT_SPECS`` row (the per-sub-goal re-task spec a
       persistent episode's driver switches on). A catalogued skill with no
       binding fails loudly at dispatch, before any actuation.
+   
+    Protocol v0 typed form: ``harness.protocol.SkillRecordV0`` (requires /
+    ensures / clobbers as ``name(args)`` pred refs, per-embodiment bindings and
+    evidence); graphs are checked by ``harness.protocol.validate_graph``.
     """
 
     name: str
@@ -159,7 +163,8 @@ class Skill(Protocol):
 
 @runtime_checkable
 class SkillGraph(Protocol):
-    """Layer 2 seam: measured skills with preconditions, effects, failure modes, capability boundaries."""
+    """Layer 2 seam: measured skills with preconditions, effects, failure modes,
+    capability boundaries. Record/graph/trajectory types: ``harness/protocol.py``."""
 
     def publish(self, record: Mapping) -> str: ...
     def skills(self) -> tuple[Mapping, ...]: ...

@@ -30,8 +30,10 @@
 #   start and names the holding pid, and the lock dies with the process). Cockpit's
 #   `ps` scan is the FRIENDLY half of the same rule -- it adopts instead of racing,
 #   so the lock only ever speaks when something bypassed cockpit. If one exists on
-#   runs/session-main it is ADOPTED (its PID printed, NOT restarted,
-#   NOT recorded for --stop -- cockpit did not start it, so cockpit won't kill it).
+#   runs/session-main it is ADOPTED (its PID printed, NOT restarted). Adoption
+#   keeps ownership: a pid this session's pidfile already records as spawned
+#   (runtime_adopted=0) stays reapable by --stop; only a runtime no cockpit
+#   started is left alone.
 #   If none exists cockpit SPAWNS one (nohup, logged to runs/session-main/
 #   runtime.log) and records its PID so --stop can kill it. --render is passed IFF
 #   $DISPLAY is set (the runtime hard-refuses --render headless); headless spawns
@@ -100,7 +102,9 @@ usage: cockpit [--port N] [--no-render] [--no-runtime]
                  (default \$REPO/../sims/robocasa-venv/bin/python); --no-runtime
                  is how you start none of them.
   --stop         stop the web server and any runtime THIS cockpit spawned, by the
-                 exact PIDs in each session's pidfile. An ADOPTED runtime is left
+                 exact PIDs in each session's pidfile. A runtime some earlier
+                 cockpit spawned counts as spawned (ownership survives a
+                 console-only restart); one started outside cockpit is left
                  running. Reaps every session (main + robocasa) it recorded.
   -h, --help     show this help
 
@@ -253,6 +257,13 @@ kill_recorded() {
   esac
 }
 
+# True iff pidfile $1 records $2_pid=$3 with $2_adopted=0: that process was
+# spawned by an earlier cockpit, so adopting it again keeps it reapable.
+owned_earlier() {
+  local pf="$1" kind="$2" pid="$3"
+  [ -f "$pf" ] && grep -qx "${kind}_pid=$pid" "$pf" && grep -qx "${kind}_adopted=0" "$pf"
+}
+
 # adopt-or-spawn ONE session's runtime. Sets globals RT_PID/RT_ADOPTED for the
 # caller to fold into that session's pidfile. Identical discipline for every
 # session: adopt a live one by cmdline match (never restart, never record for
@@ -268,7 +279,11 @@ runtime_up() {
   existing="$(find_runtime "$session")"
   if [ -n "$existing" ]; then
     RT_PID="$existing"; RT_ADOPTED=1
-    echo "cockpit: adopting resident runtime on $session (pid $RT_PID); not restarting" >&2
+    # Ownership is sticky: a runtime an EARLIER cockpit spawned (this session's
+    # pidfile records the same pid with runtime_adopted=0) stays ours, so a
+    # console-only restart does not turn every runtime into one --stop skips.
+    if owned_earlier "$REPO/$session/cockpit.pids" runtime "$existing"; then RT_ADOPTED=0; fi
+    echo "cockpit: adopting resident runtime on $session (pid $RT_PID, $([ "$RT_ADOPTED" -eq 0 ] && echo 'spawned by an earlier cockpit: --stop reaps it' || echo 'started outside cockpit: --stop leaves it')); not restarting" >&2
     return
   fi
   # Read-only-host adaptations. Both are proven by a boot that died without them
@@ -377,6 +392,7 @@ export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 
 # --- resident runtime: adopt-or-spawn (single entry means no second terminal)
 RT_PID=""
+MAIN_RT_PID=""; MAIN_RT_ADOPTED=""
 RT_ADOPTED=""
 if [ "$NO_RUNTIME" -eq 0 ]; then
   # --frames explicitly, not by the headless-GL auto-enable: a display-attached
@@ -384,6 +400,7 @@ if [ "$NO_RUNTIME" -eq 0 ]; then
   # 取景窗 OFF for a REMOTE operator -- the local window they cannot see was
   # suppressing the browser viewport they use. The two compose in _mount_plan.
   runtime_up "$SESSION_DIR" ".venv/bin/python" 1 --frames
+  MAIN_RT_PID="$RT_PID"; MAIN_RT_ADOPTED="$RT_ADOPTED"   # the next runtime_up overwrites RT_*
 
   # Stack RSI needs the robosuite interpreter, not the robocasa venv. Keep it
   # in a separate evolution-only inbox so a long campaign cannot block normal
@@ -405,7 +422,8 @@ WEB_PID=""
 if curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then
   WEB_PID="$(fuser "$PORT/tcp" 2>/dev/null | awk '{print $1}')"
   WEB_ADOPTED=1
-  echo "cockpit: adopting web server already on :$PORT (pid ${WEB_PID:-unknown}); not restarting" >&2
+  if owned_earlier "$PIDFILE" web "$WEB_PID"; then WEB_ADOPTED=0; fi
+  echo "cockpit: adopting web server already on :$PORT (pid ${WEB_PID:-unknown}, $([ "$WEB_ADOPTED" -eq 0 ] && echo 'spawned by an earlier cockpit: --stop reaps it' || echo 'started outside cockpit: --stop leaves it')); not restarting" >&2
 fi
 
 # record PIDs for --stop. Spawned web_pid=$$: this shell is replaced by the web
@@ -414,9 +432,9 @@ fi
   if [ "$WEB_ADOPTED" -eq 1 ]; then echo "web_pid=$WEB_PID"; else echo "web_pid=$$"; fi
   echo "web_adopted=$WEB_ADOPTED"
   echo "port=$PORT"
-  if [ -n "$RT_PID" ]; then
-    echo "runtime_pid=$RT_PID"
-    echo "runtime_adopted=$RT_ADOPTED"
+  if [ -n "$MAIN_RT_PID" ]; then
+    echo "runtime_pid=$MAIN_RT_PID"
+    echo "runtime_adopted=$MAIN_RT_ADOPTED"
   fi
 } > "$PIDFILE"
 

@@ -145,6 +145,16 @@ def session_progress(name: str = _DEFAULT_SESSION) -> dict:
 
 
 @mcp.tool()
+def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Protocol-v0 trajectory samples projected from one session's chain: one
+    per plan/replan decision (x: mission/sigma0/skills/done/fault, y: graph id +
+    rationale, o: legal/verify/L/success/replans/seed). ``name`` defaults to
+    session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.trajectories(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def runtime_status(name: str = _DEFAULT_SESSION) -> dict | None:
     """One runtime session's LIVE status (pid/render/mode/boot_ts/display), or null
     when it has not booted since the file existed. Live state, not sealed evidence.
@@ -258,9 +268,11 @@ def model_server(action: str = "status") -> dict:
 
 
 @mcp.tool()
-def ledger() -> list[dict]:
-    """Seed-block burn map parsed from STATUS.md's budget section."""
-    return bs.parse_ledger(_read(_Cfg.status))
+def ledger() -> list:
+    """Burned seed blocks, DERIVED from every sealed preregistration under runs/:
+    ``[lo, hi, role, prereg_sha]`` rows, role in gate|heldout. Errors when no
+    store exists at all (an absent ledger is not an empty one)."""
+    return bs.burned_blocks(_Cfg.runs)
 
 
 @mcp.tool()
@@ -537,7 +549,7 @@ def main(argv=None) -> int:
     parser.add_argument("--runs", type=Path, default=Path("runs"),
                         help="campaign runs directory (default: runs)")
     parser.add_argument("--status", type=Path, default=None,
-                        help="STATUS.md for the seed ledger (default: <runs>/../STATUS.md)")
+                        help="STATUS.md (display-only prose; the ledger tool derives from runs/)")
     parser.add_argument("--progress", type=Path, default=None,
                         help="progress.md for the rounds feed (default: <runs>/../progress.md)")
     parser.add_argument("--session", default=_DEFAULT_SESSION,

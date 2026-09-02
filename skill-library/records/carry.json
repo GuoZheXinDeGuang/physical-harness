@@ -1,0 +1,29 @@
+{
+ "id": "carry",
+ "name": "carry",
+ "kind": "segment",
+ "lineage": {},
+ "args": {
+  "object": "str",
+  "target": "str"
+ },
+ "requires": [
+  "holding(object)",
+  "present(target)"
+ ],
+ "ensures": [
+  "holding(object)",
+  "reachable(target)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "backend": "scripted_mobile_manipulation",
+   "task_template": "carry_{object}"
+  }
+ },
+ "evidence": {},
+ "description": "Move while keeping a grasped object secure, ending near its destination."
+}

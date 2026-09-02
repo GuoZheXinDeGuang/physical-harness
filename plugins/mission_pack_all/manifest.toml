@@ -1,6 +1,6 @@
 # Natural-language pack-all planning over the static shared skill library.
 # RoboCasa is executable now via the existing PackFoodByTemp composite driver;
-# the LIBERO binding stays in skill-library/embodiments/libero.toml as explicitly
+# the LIBERO binding stays in skill-library/records/*.json (bindings.libero) as explicitly
 # unimplemented until that embodiment gains a real policy + terminal oracle.
 needs_sim = true
 

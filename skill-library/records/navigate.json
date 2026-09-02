@@ -1,0 +1,26 @@
+{
+ "id": "navigate",
+ "name": "navigate",
+ "kind": "segment",
+ "lineage": {},
+ "args": {
+  "object": "str"
+ },
+ "requires": [
+  "present(object)"
+ ],
+ "ensures": [
+  "reachable(object)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "backend": "scripted_mobile_manipulation",
+   "task_template": "nav_{object}"
+  }
+ },
+ "evidence": {},
+ "description": "Move the robot to a pose from which it can reach the named object."
+}

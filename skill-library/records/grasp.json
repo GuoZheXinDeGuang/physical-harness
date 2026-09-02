@@ -1,0 +1,44 @@
+{
+ "id": "grasp",
+ "name": "grasp",
+ "kind": "segment",
+ "lineage": {},
+ "args": {
+  "object": "str"
+ },
+ "requires": [
+  "reachable(object)",
+  "gripper_free()"
+ ],
+ "ensures": [
+  "holding(object)"
+ ],
+ "clobbers": [
+  "gripper_free()"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "backend": "scripted_mobile_manipulation",
+   "task_template": "grasp_{object}"
+  },
+  "robosuite": {
+   "backend": "scripted_tabletop_stack",
+   "task_template": "grasp_{object}",
+   "episode": {
+    "task": "lift",
+    "percept_noise": 0.012,
+    "terminal_label": true,
+    "stages": "plugins.embodiment_robosuite.env:pick_stages"
+   }
+  },
+  "libero": {
+   "backend": "vla",
+   "task_template": "pick_{object}",
+   "implemented": false
+  }
+ },
+ "evidence": {},
+ "description": "Grasp and securely lift one named object."
+}

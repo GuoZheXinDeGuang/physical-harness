@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from board import store as bs
 
 
@@ -211,3 +213,31 @@ def test_missing_store_is_not_a_store(tmp_path):
     empty.mkdir()
     assert bs.is_store(empty) is False
     assert bs.list_stores(tmp_path) == []
+
+
+def test_burned_blocks_derives_from_sealed_preregs_only(tmp_path):
+    """The ledger is a projection of sealed preregistrations: two stores at two
+    depths burn their dev (gate) and held-out blocks, non-prereg artifacts and
+    calibration never burn, and no store at all is a refusal, not an empty set."""
+    with pytest.raises(ValueError, match="no campaign store"):
+        bs.burned_blocks(tmp_path)
+    _mkstore(tmp_path / "only-rescore", [("heldout_rescore", {"block": 1})])
+    assert bs.burned_blocks(tmp_path) == []  # stores exist, nothing sealed a prereg
+    a = _mkstore(tmp_path / "a", [("preregistration",
+                                  {"dev": list(range(100, 200)), "heldout": [300, 301, 305]})])
+    b = _mkstore(tmp_path / "s" / "campaigns" / "b",
+                 [("calibration", {"seeds": list(range(0, 50))}),
+                  ("preregistration", {"dev": [500], "heldout": list(range(600, 610))})])
+    sha = lambda root: json.loads(root.joinpath("index.jsonl").read_text().splitlines()[-1])["sha"]
+    assert bs.burned_blocks(tmp_path) == [
+        (100, 199, "gate", sha(a)), (300, 301, "heldout", sha(a)), (305, 305, "heldout", sha(a)),
+        (500, 500, "gate", sha(b)), (600, 609, "heldout", sha(b))]
+
+
+def test_burned_blocks_unions_status_md_prose(tmp_path):
+    """Pre-store history lives only in STATUS.md; the derived guard must not be weaker."""
+    runs = tmp_path / "runs"; store = runs / "s"; (store / "artifacts").mkdir(parents=True)
+    (store / "index.jsonl").write_text("")
+    (tmp_path / "STATUS.md").write_text("## 区块预算\n已烧: held-out 1000-1999。\n")
+    rows = bs.burned_blocks(runs)
+    assert (1000, 1999, "prose", "") in rows

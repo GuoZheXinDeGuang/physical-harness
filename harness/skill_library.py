@@ -1,155 +1,88 @@
-"""Static, embodiment-neutral robot skill catalogue.
+"""Static skill library: one ``SkillRecordV0`` JSON per skill under
+``skill-library/records/<name>.json`` (harness/protocol.py is the schema).
 
-The library deliberately separates two kinds of data:
-
-* ``skill-library/catalog/<skill>/contract.toml`` describes what a skill means;
-* ``skill-library/embodiments/<name>.toml`` maps that meaning to a benchmark's
-  lower-level sub-task names.
-
-This mirrors open-robot-skills' one-directory-per-skill layout while keeping the
-machine contract in TOML, which the Python standard library parses without a
-second YAML dependency.  ``SKILL.md`` beside every contract is the human / VLM
-explanation; execution never scrapes prose for authority.
+The symbolic contract (args / requires / ensures / clobbers) is embodiment-
+neutral; ``bindings[embodiment]`` carries the execution half: ``task_template``
++ ``backend`` for a persistent segment, ``episode`` for a one-rollout node
+(the EpisodeSpec kwargs ``plugins.task.workload`` dispatches). A binding with
+``implemented: false`` is declared but not planner-visible.
 """
 
 from __future__ import annotations
 
-import string
-import tomllib
+import json
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent / "skill-library"
-_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+from harness.protocol import TYPES, SkillRecordV0
+
+ROOT = Path(__file__).resolve().parent.parent / "skill-library" / "records"
 
 
-@dataclass(frozen=True)
-class SkillContract:
-    name: str
-    description: str
-    kind: str
-    arguments: Mapping[str, type]
-    requires: tuple[str, ...]
-    ensures: tuple[str, ...]
-    exit_conditions: tuple[str, ...]
-    doc: str
-
-    def planner_doc(self) -> dict[str, Any]:
-        return {
-            "description": self.description,
-            "kind": self.kind,
-            "arguments": {k: v.__name__ for k, v in self.arguments.items()},
-            "requires": list(self.requires),
-            "ensures": list(self.ensures),
-            "exit_conditions": list(self.exit_conditions),
-        }
+def load_records(root: Path = ROOT) -> dict[str, SkillRecordV0]:
+    out: dict[str, SkillRecordV0] = {}
+    for path in sorted(Path(root).glob("*.json")):
+        rec = SkillRecordV0.from_dict(json.loads(path.read_text()))
+        if rec.name in out:
+            raise ValueError(f"duplicate skill record {rec.name!r}")
+        bad = {k: t for k, t in rec.args.items() if t not in TYPES}
+        if bad:
+            raise ValueError(f"skill {rec.name!r} args have unknown types {bad}")
+        out[rec.name] = rec
+    if not out:
+        raise ValueError(f"no skill records under {root}")
+    return out
 
 
-@dataclass(frozen=True)
-class SkillBinding:
-    skill: str
-    embodiment: str
-    task_template: str
-    backend: str
-    implemented: bool
-
-    @property
-    def template_fields(self) -> tuple[str, ...]:
-        return tuple(field for _, field, _, _ in
-                     string.Formatter().parse(self.task_template) if field)
+def _binding(rec: SkillRecordV0, embodiment: str) -> dict[str, Any] | None:
+    b = rec.bindings.get(embodiment)
+    return b if b and b.get("implemented", True) else None
 
 
-class SkillLibrary:
-    def __init__(self, root: Path = ROOT) -> None:
-        self.root = Path(root)
-        self._contracts = self._load_contracts()
-        self._bindings: dict[str, dict[str, SkillBinding]] = {}
-
-    def _load_contracts(self) -> dict[str, SkillContract]:
-        out: dict[str, SkillContract] = {}
-        for path in sorted((self.root / "catalog").glob("*/contract.toml")):
-            raw = tomllib.loads(path.read_text())
-            spec = raw["skill"]
-            name = str(spec["name"])
-            if name in out:
-                raise ValueError(f"duplicate static skill {name!r}")
-            args: dict[str, type] = {}
-            for arg, type_name in raw.get("arguments", {}).items():
-                if type_name not in _TYPES:
-                    raise ValueError(
-                        f"skill {name!r} arg {arg!r} has unknown type {type_name!r}")
-                args[arg] = _TYPES[type_name]
-            doc_path = path.with_name("SKILL.md")
-            out[name] = SkillContract(
-                name=name,
-                description=str(spec["description"]),
-                kind=str(spec.get("kind", "segment")),
-                arguments=args,
-                requires=tuple(spec.get("requires", ())),
-                ensures=tuple(spec.get("ensures", ())),
-                exit_conditions=tuple(spec.get("exit_conditions", ())),
-                doc=doc_path.read_text() if doc_path.exists() else "",
-            )
-        if not out:
-            raise ValueError(f"no static skills found under {self.root / 'catalog'}")
-        return out
-
-    def bindings(self, embodiment: str, *, implemented_only: bool = True
-                 ) -> Mapping[str, SkillBinding]:
-        if embodiment not in self._bindings:
-            path = self.root / "embodiments" / f"{embodiment}.toml"
-            if not path.exists():
-                raise KeyError(f"unknown skill-library embodiment {embodiment!r}")
-            raw = tomllib.loads(path.read_text())
-            found: dict[str, SkillBinding] = {}
-            for name, spec in raw.get("skills", {}).items():
-                if name not in self._contracts:
-                    raise ValueError(
-                        f"{path}: binding names unknown abstract skill {name!r}")
-                binding = SkillBinding(
-                    skill=name,
-                    embodiment=embodiment,
-                    task_template=str(spec["task_template"]),
-                    backend=str(spec["backend"]),
-                    implemented=bool(spec.get("implemented", True)),
-                )
-                missing = set(binding.template_fields) - set(
-                    self._contracts[name].arguments)
-                if missing:
-                    raise ValueError(
-                        f"{path}: {name!r} task_template uses undeclared args "
-                        f"{sorted(missing)}")
-                found[name] = binding
-            self._bindings[embodiment] = found
-        bindings = self._bindings[embodiment]
-        return ({k: v for k, v in bindings.items() if v.implemented}
-                if implemented_only else dict(bindings))
-
-    def select(self, embodiment: str, names: Iterable[str]) -> tuple[SkillContract, ...]:
-        available = self.bindings(embodiment)
-        selected = []
-        for name in names:
-            if name not in self._contracts:
-                raise KeyError(f"unknown abstract skill {name!r}")
-            if name not in available:
-                raise ValueError(
-                    f"skill {name!r} has no implemented {embodiment!r} binding")
-            selected.append(self._contracts[name])
-        return tuple(selected)
-
-    def catalogue(self, embodiment: str, names: Iterable[str]) -> dict[str, dict[str, type]]:
-        return {s.name: dict(s.arguments) for s in self.select(embodiment, names)}
-
-    def planner_docs(self, embodiment: str, names: Iterable[str]) -> dict[str, dict]:
-        return {s.name: s.planner_doc() for s in self.select(embodiment, names)}
-
-    def segment_specs(self, embodiment: str, names: Iterable[str]) -> dict[str, dict]:
-        bindings = self.bindings(embodiment)
-        self.select(embodiment, names)  # validates the requested surface
-        return {name: {"task_template": bindings[name].task_template}
-                for name in names}
+def select(records: Mapping[str, SkillRecordV0], embodiment: str,
+           names: Iterable[str]) -> dict[str, SkillRecordV0]:
+    """The planner-visible subset: every name must carry an implemented binding."""
+    out = {}
+    for name in names:
+        if name not in records:
+            raise KeyError(f"unknown skill record {name!r}")
+        if _binding(records[name], embodiment) is None:
+            raise ValueError(f"skill {name!r} has no implemented {embodiment!r} binding")
+        out[name] = records[name]
+    return out
 
 
-LIBRARY = SkillLibrary()
+def catalogue_of(records: Mapping[str, SkillRecordV0]) -> dict[str, dict[str, type]]:
+    """The ``{skill: {arg: python type}}`` shape validate_plan / planner briefs use."""
+    return {name: {k: TYPES[t] for k, t in rec.args.items()}
+            for name, rec in records.items()}
+
+
+def planner_docs(records: Mapping[str, SkillRecordV0]) -> dict[str, dict[str, Any]]:
+    return {name: {"description": rec.description, "kind": rec.kind,
+                   "arguments": dict(rec.args), "requires": list(rec.requires),
+                   "ensures": list(rec.ensures), "clobbers": list(rec.clobbers)}
+            for name, rec in records.items()}
+
+
+def segment_specs(records: Mapping[str, SkillRecordV0], embodiment: str
+                  ) -> dict[str, dict[str, Any]]:
+    """``{skill: {task_template}}`` for the persistent-segment bindings (fresh dicts:
+    mission cards add their ``allowed_args`` grounding on top)."""
+    out = {}
+    for name, rec in records.items():
+        b = _binding(rec, embodiment)
+        if b and "task_template" in b:
+            out[name] = {"task_template": b["task_template"]}
+    return out
+
+
+def skill_specs(records: Mapping[str, SkillRecordV0], embodiment: str
+                ) -> dict[str, dict[str, Any]]:
+    """``{skill: EpisodeSpec kwargs}`` for the one-rollout bindings."""
+    return {name: dict(b["episode"]) for name, rec in records.items()
+            if (b := _binding(rec, embodiment)) and "episode" in b}
+
+
+RECORDS = load_records()

@@ -98,7 +98,9 @@ Protocol; **if a seam is not in this table, it is not a seam.**
 | Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner; model_qwen (inactive) | mount isinstance; doctor **untrusted** (shape only, `available()` probe → SKIP when down) |
 | TaskPlanner | `task.planner` | `plan(brief)` | planner_stack, mission planners; planner_vlm (the `stack_vlm` binding) | mount isinstance; every emitted graph gated by `plugins/task/validate.py` before dispatch; doctor determinism-required (`deterministic = False` opts into shape-only + `available()` probe) |
 | ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`, `available()` | plugins/model_endpoint (inactive until a consumer mounts it) | mount isinstance; doctor untrusted (`available()` probe → SKIP when down) |
-| Skill | — (not a mount) | `name`, `args`, `binding` (descriptive: the CATALOGUE row + the SKILL_SPECS/SEGMENT_SPECS row) | card-authored dict tables, keyed by skill name | plan nodes checked against the catalogue by `validate_plan`; a missing execution binding fails loudly at dispatch, before actuation |
+| Skill | — (not a mount) | `SkillRecordV0`: `args` schema, `requires` / `ensures` / `clobbers` pred refs (embodiment-neutral), `bindings[embodiment]` (`task_template`+`backend` or `episode` kwargs), `evidence[embodiment]` | `skill-library/records/<name>.json`, loaded by `harness/skill_library.py`; cards select by embodiment (`select` / `catalogue_of` / `segment_specs` / `skill_specs`) | `validate_plan` → `harness.protocol.validate_graph` (Typed / Grounded / Supported / Covered) before dispatch; `implemented: false` bindings are never planner-visible; a missing execution binding fails loudly at dispatch |
+| Predicate | — (not a mount: `[[provides]] kind = "predicate"` in an embodiment card's manifest) | `ref` (`module:factory`), `reads` (state keys), `args` | embodiment card `predicates.py` / `env.py`; folded into `PredicateRecord`s by `harness/predicates.records()` | `card_provides` shape-checks at discover (predicate without `reads` fails); `evaluate` returns `None` when a read key is missing (three-valued, never a fake False); audit gate `Audit.passes(th_s, th_p, eps)` |
+| provides | `[[provides]]` list on any card | `kind` ∈ {embodiment, predicate, recovery, skill, planner}, `ref`, `name` | folded by `discover()` into `Registry.provides` (disabled cards still count) | unknown kind / bad ref / duplicate (kind, name) in one card → `ValueError` at discover |
 | SkillGraph / SkillLibrary | `graph.skill` | `publish(record)` (evolution-mode install), `skills()` (execution-mode mount) | plugins/graphs `InMemorySkillGraph` over skills_root | mount isinstance; doctor publish-idempotence smoke; execution mode never publishes (mode gate in the runtime) |
 | SceneGraph | `graph.scene` | `snapshot(obs)` | plugins/graphs | mount isinstance; doctor snapshot smoke |
 | RecoveryStrategy | — (not a mount: `[recoveries.<name>] ref` in the owning embodiment card's manifest) | `name`, `steps` (phase, duration, dx, dy), `rationale`, `length`, `uses_feedback` | embodiment_robosuite `recoveries.py`; a card declaring none has none (RSI reports that verbatim) | `plugins/rsi/repertoire.py` isinstance + name/key check at load, never mid-repair |
@@ -213,8 +215,9 @@ results in the ledger are worth as much as wins: they chart where the capability
 boundary actually is.
 
 **Seeds are exam questions**: simulation is deterministic, same seed = same world.
-A burned seed block is retired forever (a one-shot ledger, enforced at the
-scheduling boundary). Calibration blocks are the exception: calibration never
+A burned seed block is retired forever (a one-shot ledger derived from the sealed
+prereg artifacts under `runs/`, unioned with STATUS.md's burned rows for pre-store
+history — `board.store.burned_blocks` — and enforced at the scheduling boundary). Calibration blocks are the exception: calibration never
 gates, so it may be re-measured freely.
 
 ## 7. Evidence (runs/)
@@ -345,7 +348,9 @@ manifest 里写字符串引用（`"plugins.embodiment_robocasa:provider"`），�
 | Reasoner | `reasoner.proposer` | `propose(brief)` | plugins/reasoner；model_qwen（未激活） | 挂载 isinstance；doctor **untrusted**（只验形状，`available()` 探测不通则 SKIP） |
 | TaskPlanner | `task.planner` | `plan(brief)` | planner_stack、mission planner；planner_vlm（`stack_vlm` 绑定） | 挂载 isinstance；每张图 dispatch 前过 `plugins/task/validate.py`；doctor 强制确定性（`deterministic = False` 显式豁免为只验形状 + `available()` 探测） |
 | ModelEndpoint | `model.endpoint` | `chat(messages, **opts)`、`available()` | plugins/model_endpoint（有消费者挂载前保持未激活） | 挂载 isinstance；doctor untrusted（`available()` 探测不通则 SKIP） |
-| Skill | ——（不是挂载点） | `name`、`args`、`binding`（描述性：CATALOGUE 行 + SKILL_SPECS/SEGMENT_SPECS 行） | 卡内以技能名为键的 dict 表 | 计划节点由 `validate_plan` 对 catalogue 校验；缺执行绑定在 dispatch 处、任何动作之前就大声失败 |
+| Skill | ——（不是挂载点） | `SkillRecordV0`：`args` 模式、`requires` / `ensures` / `clobbers` 谓词引用（与本体无关）、`bindings[本体]`（`task_template`+`backend` 或 `episode` kwargs）、`evidence[本体]` | `skill-library/records/<name>.json`，由 `harness/skill_library.py` 加载；卡按本体挑选（`select` / `catalogue_of` / `segment_specs` / `skill_specs`） | dispatch 前 `validate_plan` → `harness.protocol.validate_graph`（Typed / Grounded / Supported / Covered）；`implemented: false` 的绑定永不暴露给 planner；缺执行绑定在 dispatch 处大声失败 |
+| Predicate | ——（不是挂载点：本体卡 manifest 里的 `[[provides]] kind = "predicate"`） | `ref`（`module:factory`）、`reads`（状态键）、`args` | 本体卡的 `predicates.py` / `env.py`；`harness/predicates.records()` 折成 `PredicateRecord` | discover 时 `card_provides` 验形状（谓词缺 `reads` 就失败）；`evaluate` 缺读键返回 `None`（三值，绝不伪造 False）；审计门 `Audit.passes(th_s, th_p, eps)` |
+| provides | 任何卡上的 `[[provides]]` 列表 | `kind` ∈ {embodiment, predicate, recovery, skill, planner}、`ref`、`name` | `discover()` 折进 `Registry.provides`（禁用的卡也算） | 未知 kind / 坏 ref / 同卡重复 (kind, name) → discover 时 `ValueError` |
 | SkillGraph / SkillLibrary | `graph.skill` | `publish(record)`（演化态写入）、`skills()`（执行态挂载读取） | plugins/graphs 的 `InMemorySkillGraph`（落在 skills_root） | 挂载 isinstance；doctor publish 幂等 smoke；执行态永不 publish（两态门在 runtime） |
 | SceneGraph | `graph.scene` | `snapshot(obs)` | plugins/graphs | 挂载 isinstance；doctor snapshot smoke |
 | RecoveryStrategy | ——（不是挂载点：在所属本体卡 manifest 的 `[recoveries.<name>] ref` 声明） | `name`、`steps`（phase, duration, dx, dy）、`rationale`、`length`、`uses_feedback` | embodiment_robosuite 的 `recoveries.py`；没声明的卡就是没有（RSI 原样报告） | `plugins/rsi/repertoire.py` 加载时 isinstance + 名字/键一致性检查，从不在修复中途 |
@@ -434,8 +439,8 @@ brief 直接拒；每次执行前重折技能目录摘要与 boot 清单比对�
 正确动作是去补能力，不是调阈值凑一个晋级。账本里的 null 结论和成功一样值钱——
 它们标出了能力边界。
 
-**Seed 即考题**：仿真确定性，同 seed 同世界。考过的种子块永久作废（一次性账本），
-runtime 在调度边界强制查重。标定块例外：标定永不设门，永远可复测。
+**Seed 即考题**：仿真确定性，同 seed 同世界。考过的种子块永久作废（一次性账本，由 `runs/` 下已封存的
+prereg 派生，并上 STATUS.md 已烧行的历史——`board.store.burned_blocks`），runtime 在调度边界强制查重。标定块例外：标定永不设门，永远可复测。
 
 ## 7. Evidence（runs/）
 

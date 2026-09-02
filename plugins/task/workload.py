@@ -24,12 +24,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from harness import opstream
+from harness import opstream, protocol
 from harness.config import sha_json
 from harness.features import privilege_cost
 from harness.kernel import Kernel
 from harness.registry import load_provider
 from harness.spec import EpisodeSpec
+from harness.skill_library import RECORDS, skill_specs
 from plugins.task.validate import NODE_KINDS, validate_plan
 
 #: The kernel consumer name every capability this workload resolves is
@@ -37,35 +38,11 @@ from plugins.task.validate import NODE_KINDS, validate_plan
 CONSUMER = "task"
 
 #: skill name -> EpisodeSpec kwargs for the node that runs it: the EXECUTION
-#: half of the hand-declared Stack vocabulary (planner_stack.CATALOGUE is the
-#: symbolic half the planner sees). ``stages`` is a "module:factory" ref
-#: resolved at dispatch through harness.registry -- plugins never import each
-#: other (tests/test_boundaries.py), and the ref string is the same sanctioned
-#: crossing episode specs already use for env/policy providers. percept_noise
-#: 0.012 is the Stack policy's calibrated operating point (scripts/stack_campaign.py).
-SKILL_SPECS: dict[str, dict[str, Any]] = {
-    "stack": {"task": "stack", "percept_noise": 0.012, "terminal_label": True,
-              "stages": "plugins.embodiment_robosuite.env:stack_stages"},
-    # One skill, several scenes: "pick" resolves its embodiment task from the
-    # node's object arg (the first arg threading, arrived with the second
-    # skill provider exactly as round 83 predicted).
-    "pick": {"task_by_object": {"can": "pickcan", "milk": "pickmilk"},
-             "percept_noise": 0.012,  # the phase-3 operating point; omitting it
-             # silently falls to EpisodeSpec's 0.020 default -- the probe ran at
-             # 0.012 and the first real closed loop failed on the drift (round 86)
-             "terminal_label": True,
-             "stages": "plugins.embodiment_robosuite.env:pick_stages"},
-    # The geometric-grasp card's follow-up (skill_geometric_grasp/planner.py
-    # docstring): its single grasp node driven by the generic loop. Names its
-    # task directly like "stack" (one scene, the grasp IS the Lift task under
-    # the card-mounted lift_geometric_provider) -- not task_by_object, the node's
-    # object arg is card vocabulary the catalogue only types. Mirrors the card's
-    # own [claim] verbatim (task="lift", pick_stages, percept_noise 0.012,
-    # terminal_label): the pick grasp stage (finger_gap>0.01) plus lifted() on
-    # the terminal label ARE the real lift criteria, no separate success path.
-    "grasp": {"task": "lift", "percept_noise": 0.012, "terminal_label": True,
-              "stages": "plugins.embodiment_robosuite.env:pick_stages"},
-}
+#: half of each robosuite skill record (``bindings.robosuite.episode`` in
+#: skill-library/records/<skill>.json; planner_stack.CATALOGUE is the symbolic
+#: half the planner sees). ``stages`` is a "module:factory" ref resolved at
+#: dispatch through harness.registry -- plugins never import each other.
+SKILL_SPECS: dict[str, dict[str, Any]] = skill_specs(RECORDS, "robosuite")
 
 
 def _governed_rollout(spec: EpisodeSpec, bundle) -> dict:
@@ -477,6 +454,39 @@ _KIND_HANDLERS = {
 assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
     "node-kind handler table drifted from validate.NODE_KINDS"
 
+#: python type -> protocol TYPES name, for a catalogue-derived SkillRecordV0.
+_TYPE_NAMES = {str: "str", int: "int", float: "float", bool: "bool"}
+
+
+def _graph(plan: Mapping, seed: int) -> dict:
+    """The plan's protocol-v0 ExecutionGraph shape: one task, nodes verbatim."""
+    return {"mission": plan.get("goal", ""), "seed": seed,
+            "tasks": [{"id": "t0", "goal": []}],
+            "nodes": [{"id": n["id"], "task": "t0", "skill": n["skill"],
+                       "args": dict(n["args"]), "after": list(n["after"])}
+                      for n in plan.get("nodes") or []]}
+
+
+def _graph_problems(plan: Mapping, prev_plan: Mapping | None, done_ids,
+                    brief: Mapping, catalogue: Mapping, seed: int) -> list[str]:
+    """Protocol gate on a validate_plan-accepted graph: replan monotonicity
+    against the last accepted plan (same rule as done_specs) plus Legal(G).
+    Records come from ``brief["records"]`` (protocol dicts by skill) when the
+    card publishes contracts, else typed-only records derived from the catalogue."""
+    problems: list[str] = []
+    graph = _graph(plan, seed)
+    if prev_plan is not None:
+        problems += protocol.replan_monotone(_graph(prev_plan, seed), graph, done_ids)[1]
+    recs = brief.get("records")
+    records = ({k: protocol.SkillRecordV0.from_dict(v) for k, v in recs.items()} if recs
+               else {name: protocol.SkillRecordV0(
+                         id=name, name=name,
+                         args={k: _TYPE_NAMES.get(t, "str") for k, t in schema.items()})
+                     for name, schema in catalogue.items()})
+    problems += protocol.validate_graph(graph, records, brief.get("facts") or (),
+                                        brief.get("objects") or ())[1]
+    return problems
+
 
 def run(brief: Mapping, kernel: Kernel, *, seed: int,
         max_replans: int = 3, max_actuations: int = 3,
@@ -544,6 +554,8 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     replans = 0
     segment_retry_counts: dict[str, int] = {}
     retry_plan: Mapping | None = None
+    prev_plan: Mapping | None = None   # last accepted graph (monotonicity base)
+    skill_ids = sorted({str(r.get("id") or r.get("skill")) for r in skills})
     success = False
     # M7 opt-in: a brief that declares ``episodic`` opens ONE persistent world
     # here and threads it through every node; ``env.close()`` fires once in the
@@ -571,11 +583,32 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         # A low-level segment gets a bounded retry in the same world and on the
         # same validated graph.  A controller miss is not evidence that the task
         # decomposition changed, so do not spend a VLM call or a replan on it.
-        plan = retry_plan if retry_plan is not None else planner.plan(brief)
+        is_retry = retry_plan is not None
+        plan = retry_plan if is_retry else planner.plan(brief)
         retry_plan = None
         ok, msg = validate_plan(
             plan, catalogue, oracles, done=tuple(done_specs.values()),
             requirements=brief.get("planning_context"))
+        if ok:
+            problems = _graph_problems(plan, prev_plan, done_specs, brief, catalogue, seed)
+            if problems:
+                ok, msg = False, "; ".join(problems)
+        if ok:
+            prev_plan = plan
+        if not is_retry:
+            # One chain row per plan/replan DECISION, legal or not: an illegal
+            # graph is sealed as a negative sample, never dispatched.
+            kernel.note("task.plan", {
+                "replan": replans, "seed": seed, "mission": brief.get("task"),
+                "sigma0": brief["scene"], "skills": skill_ids,
+                "show_evidence": bool(brief.get("show_evidence")),
+                "done": sorted(done_specs), "fault": brief.get("fault"),
+                "graph": plan if isinstance(plan, Mapping) else None,
+                "graph_id": protocol.content_id(plan) if isinstance(plan, Mapping) else None,
+                "rationale": plan.get("rationale", "") if isinstance(plan, Mapping) else "",
+                "legal": ok, "problems": [] if ok else [msg], "block": brief.get("block")})
+            if not ok and replans:
+                kernel.note("task.replan_rejected", {"replan": replans, "problems": [msg]})
         # Operational feed (harness.opstream; never chain evidence): the FULL
         # node graph, the moment it exists, so the execution-graph panel draws
         # the plan while the first node is still running.
@@ -649,6 +682,13 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 # second oracle dialect arrives with a second skill provider.
                 bad_preds = [v["predicate"] for v in plan["verify"]
                              if v["after"] == node["id"] and not result["success"]]
+                # Protocol verify event: this node's bound predicates on sigma
+                # (its own oracle when none bind); three-valued, None = unknown.
+                results = {v["predicate"]: protocol.tri(result["success"])
+                           for v in plan["verify"] if v["after"] == node["id"]}
+                kernel.note("task.verify", {
+                    "node": node["id"],
+                    "results": results or {node["skill"]: protocol.tri(result["success"])}})
                 entry = {"success": bool(result["success"]),
                          "steps": result.get("steps"),
                          "stages": stages,
@@ -691,6 +731,10 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
             success = True
             break
         faults.append(fault)
+        if fault.get("node") is not None:
+            kernel.note("task.fault", {"node": fault["node"],
+                                       "failed": list(fault.get("failed") or []),
+                                       "signature": fault["kind"], "msg": fault.get("msg")})
         # budget and cancelled are TERMINAL faults: replanning around either
         # would be the loop arguing with a floor the operator (or the budget)
         # already set.

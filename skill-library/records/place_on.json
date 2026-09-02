@@ -1,0 +1,31 @@
+{
+ "id": "place_on",
+ "name": "place_on",
+ "kind": "segment",
+ "lineage": {},
+ "args": {
+  "object": "str",
+  "target": "str"
+ },
+ "requires": [
+  "holding(object)",
+  "stable_support(target)"
+ ],
+ "ensures": [
+  "on(object,target)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(object)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robosuite": {
+   "backend": "scripted_tabletop_stack",
+   "task_template": "place_{object}_on_{target}"
+  }
+ },
+ "evidence": {},
+ "description": "Place one held object stably on top of a named support object."
+}

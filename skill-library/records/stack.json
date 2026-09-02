@@ -1,0 +1,29 @@
+{
+ "id": "stack",
+ "name": "stack",
+ "kind": "manipulate",
+ "lineage": {},
+ "args": {
+  "object": "str",
+  "target": "str"
+ },
+ "requires": [],
+ "ensures": [
+  "on(object,target)"
+ ],
+ "clobbers": [],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robosuite": {
+   "episode": {
+    "task": "stack",
+    "percept_noise": 0.012,
+    "terminal_label": true,
+    "stages": "plugins.embodiment_robosuite.env:stack_stages"
+   }
+  }
+ },
+ "evidence": {},
+ "description": "Stack one cube on top of another in one governed rollout."
+}

@@ -57,7 +57,7 @@ def test_tools_are_byte_identical_passthroughs(tmp_path):
     # runtime_status: fixture session has no runtime_status.json, so this is both
     # the face-equivalence proof AND null-when-absent (both sides are null).
     assert _same(ms.runtime_status("session-main"), bs.read_runtime_status(runs / "session-main"))
-    assert _same(ms.ledger(), bs.parse_ledger((tmp_path / "STATUS.md").read_text()))
+    assert _same(ms.ledger(), bs.burned_blocks(runs))
     assert _same(ms.rounds(), bs.parse_rounds((tmp_path / "progress.md").read_text()))
     # non-trivial fixtures, so identity is not identity-of-empty
     assert ms.list_stores() and ms.heldout("stack-g1")["blocks"] and ms.ledger() and ms.rounds()

@@ -11,6 +11,11 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 
+from harness.protocol import (TYPES, ExecutionGraph, Node, SkillRecordV0, Task,
+                              replan_monotone, validate_graph)
+
+_TYPE_NAME = {t: n for n, t in TYPES.items()}     # python type -> TYPES name
+
 #: The exact key set every node must carry: the 4-key graph dialect zos's
 #: cockpit renders is the same JSON this validator admits.
 _NODE_KEYS = frozenset({"id", "skill", "args", "after"})
@@ -71,21 +76,8 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
         if skill not in catalogue:
             return False, (f"node {nid!r} names unknown skill {skill!r}; "
                            f"catalogue is {sorted(catalogue)}")
-        schema = catalogue[skill]
-        args = node["args"]
-        if not isinstance(args, Mapping):
+        if not isinstance(node["args"], Mapping):
             return False, f"node {nid!r}.args must be an object"
-        missing = set(schema) - set(args)
-        if missing:
-            return False, (f"node {nid!r} is missing required args "
-                           f"{sorted(missing)} for {skill!r}")
-        for key, value in args.items():
-            if key not in schema:
-                return False, (f"node {nid!r} passes unknown arg {key!r} to "
-                               f"{skill!r}; declared args: {sorted(schema)}")
-            if not isinstance(value, schema[key]):
-                return False, (f"node {nid!r} arg {key!r} must be "
-                               f"{schema[key].__name__}, got {type(value).__name__}")
         after = node["after"]
         # EARLIER ids only: admits exactly the topologically ordered DAGs, so
         # execution order is the list order — determinism for free.
@@ -93,6 +85,15 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
             return False, (f"node {nid!r}.after must list ids of earlier nodes; "
                            f"earlier ids: {ids}")
         ids.append(nid)
+    # Typed / Grounded / Supported / Covered: protocol.validate_graph is the one
+    # legality judge; the catalogue is lifted to arg-only records (no contract
+    # predicates), so today's callers get exactly the Typed check.
+    records = {name: SkillRecordV0(id=name, name=name,
+                                   args={k: _TYPE_NAME[t] for k, t in schema.items()})
+               for name, schema in catalogue.items()}
+    ok, problems = validate_graph(plan_to_graph(plan), records, (), ())
+    if not ok:
+        return False, "; ".join(problems)
     verify = plan.get("verify")
     if not isinstance(verify, list) or not verify:
         return False, "plan.verify must be a non-empty list: an unverified plan is vacuous"
@@ -170,15 +171,22 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
                                            f"{args['target']!r} for object {obj!r}; "
                                            f"expected {expected!r}")
     # Replan stability: every completed node must reappear byte-identical.
-    by_id = {n["id"]: n for n in nodes}
-    for d in done:
-        node = by_id.get(d["id"])
-        if node is None:
-            return False, (f"replan dropped completed node {d['id']!r}; a replan "
-                           "must preserve every done node's {id, skill, args} verbatim")
-        if node["skill"] != d["skill"] or dict(node["args"]) != dict(d["args"]):
-            return False, (f"replan rewrote completed node {d['id']!r}: got "
-                           f"skill {node['skill']!r} args {dict(node['args'])}, "
-                           f"completed as skill {d['skill']!r} args {dict(d['args'])}; "
-                           "done nodes must be preserved verbatim")
+    if done:
+        old = {"mission": goal, "nodes": [{**d, "task": "main"} for d in done]}
+        ok, problems = replan_monotone(old, plan_to_graph(plan), [d["id"] for d in done])
+        if not ok:
+            return False, "; ".join(problems) + "; done nodes must be preserved verbatim"
     return True, ""
+
+
+def plan_to_graph(plan: Mapping) -> ExecutionGraph:
+    """Today's ``{goal, nodes[{id, skill, args, after}], verify}`` plan as a protocol
+    ExecutionGraph. A plan with no ``tasks`` gets one implicit task ``main`` that
+    every node belongs to; its goal is empty (the verify list is the gate today)."""
+    tasks = tuple(Task(id=t["id"], goal=tuple(t.get("goal", ())))
+                  for t in plan.get("tasks") or ()) or (Task(id="main", goal=()),)
+    nodes = tuple(Node(id=n["id"], task=n.get("task", tasks[0].id), skill=n["skill"],
+                       args=dict(n["args"]), after=tuple(n["after"]))
+                  for n in plan["nodes"])
+    return ExecutionGraph(mission=plan["goal"], seed=int(plan.get("seed", 0)),
+                          tasks=tasks, nodes=nodes)

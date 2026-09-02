@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.skill_library import LIBRARY
+from harness.skill_library import RECORDS, segment_specs, select
 from harness.spec import EpisodeSpec
 from plugins import mission_basket_smoke as B
 from plugins import mission_pack_all as M
@@ -52,12 +52,27 @@ class _Endpoint:
 
 
 def test_contracts_are_shared_but_only_admitted_bindings_are_planner_visible():
-    robo = LIBRARY.bindings("robocasa")
-    libero = LIBRARY.bindings("libero", implemented_only=False)
-    assert {"grasp", "place"} <= set(robo) & set(libero)
-    assert not libero["grasp"].implemented and not libero["place"].implemented
-    assert LIBRARY.bindings("libero") == {}
-    assert set(LIBRARY.bindings("robosuite")) == {"grasp", "place_on"}
+    assert {"grasp", "place"} <= set(RECORDS)
+    for name in ("grasp", "place"):
+        assert RECORDS[name].bindings["libero"]["implemented"] is False
+        with pytest.raises(ValueError, match="no implemented 'libero' binding"):
+            select(RECORDS, "libero", (name,))
+    assert set(segment_specs(RECORDS, "libero")) == set()
+    assert set(segment_specs(RECORDS, "robosuite")) == {"grasp", "place_on"}
+    assert set(segment_specs(RECORDS, "robocasa")) == {"navigate", "grasp", "carry", "place"}
+
+
+def test_records_roundtrip_and_catalogue_matches_stack_vocabulary():
+    from plugins.task.planner_stack import CATALOGUE
+    from plugins.task.workload import SKILL_SPECS
+
+    for rec in RECORDS.values():
+        assert rec.ensures, rec.name                         # library rule
+        assert rec.args and set(rec.args) <= {"object", "target"}
+    assert CATALOGUE == {"stack": {"object": str, "target": str}, "pick": {"object": str}}
+    assert set(SKILL_SPECS) == {"stack", "pick", "grasp"}
+    assert SKILL_SPECS["grasp"]["task"] == "lift"
+    assert SKILL_SPECS["pick"]["task_by_object"] == {"can": "pickcan", "milk": "pickmilk"}
 
 
 def test_vlm_receives_instruction_contracts_and_grounded_scene():

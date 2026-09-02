@@ -87,7 +87,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from board.store import cancelled_run, parse_ledger
+from board.store import burned_blocks, cancelled_run
 from harness import opstream
 from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
@@ -99,9 +99,6 @@ from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
 from profiles import base_profile
 from scripts.brief_drop import drop
-
-#: The one prose seed-ledger the guard enforces (board.store.parse_ledger).
-STATUS_MD = REPO_ROOT / "STATUS.md"
 
 #: The render overlay: the generalised viewer wrapper (scripts/watch_stack.py),
 #: mounted on ``embodiment.env`` per task when ``--render`` is set. Param-free on
@@ -551,21 +548,10 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
                         cancelled=cancelled)
 
 
-def _ledger_text(status_md: Path | None = None) -> str:
-    """STATUS.md is the operator's local ledger, untracked in the public repo:
-    a fresh clone has no ledger, which correctly reads as 'nothing burned'.
-
-    ``STATUS_MD`` is read at CALL time, not bound as a default: a test must be
-    able to point this at a ledger of its own, or it silently asserts against
-    whatever the box happens to have burned (and fails on a fresh clone)."""
-    status_md = status_md or STATUS_MD
-    return status_md.read_text() if status_md.exists() else ""
-
-
-def _burned_ranges(status_md: Path | None = None) -> list[tuple[int, int]]:
-    """Burned seed intervals from the one prose ledger (STATUS.md 区块预算)."""
-    return [(r["lo"], r["hi"]) for r in parse_ledger(_ledger_text(status_md))
-            if r["state"] == "burned"]
+def _runs_root(rt: "Runtime") -> Path:
+    """The runs/ tree the derived seed ledger is read from: ``runs/<session>/inbox``
+    -> ``runs``. Sealed preregistrations anywhere below it burn their blocks."""
+    return rt.inbox.parent.parent
 
 
 def _declared_ranges(brief: dict) -> list[tuple[int, int]]:
@@ -578,23 +564,29 @@ def _declared_ranges(brief: dict) -> list[tuple[int, int]]:
     return ranges
 
 
-def _assert_unburned(brief: dict, what: str) -> None:
-    """The seed-ledger guard (non-negotiable invariant): the one prose ledger
-    becomes one enforced check at the scheduling boundary. Reject BEFORE spawning
-    if the declared dev∪heldout intersects any burned range (inclusive intervals).
+def _assert_unburned(brief: dict, what: str, runs_root: Path) -> None:
+    """The seed-ledger guard (non-negotiable invariant): the burned set DERIVED
+    from every sealed preregistration (board.store.burned_blocks) is one enforced
+    check at the scheduling boundary. Reject BEFORE spawning if the declared
+    dev∪heldout intersects any burned range (inclusive intervals). No store at
+    all -> refuse (an absent ledger is not an empty one); a brief that declares
+    no dev/heldout (calibration only) never consults the ledger.
 
     Shared by the campaign and rsi paths. An rsi brief usually declares nothing
     (the chain allocates), so its scheduler fills dev/heldout in from the
     allocation and calls this with the SAME ``_declared_ranges`` reader -- the
     guard is never routed around, only fed.
     """
-    burned = _burned_ranges()
-    for lo, hi in _declared_ranges(brief):
-        for blo, bhi in burned:
+    declared = _declared_ranges(brief)
+    if not declared:
+        return
+    burned = burned_blocks(runs_root)
+    for lo, hi in declared:
+        for blo, bhi, role, sha in burned:
             if lo <= bhi and blo <= hi:
                 raise ValueError(
                     f"seed-ledger overlap: {what} declares [{lo},{hi}] "
-                    f"which hits burned [{blo},{bhi}]")
+                    f"which hits burned {role} [{blo},{bhi}] (prereg {sha[:12]})")
 
 
 def _copy_skills(src: Path, dst: Path) -> list[str]:
@@ -736,7 +728,7 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
     # already-absolute path is that absolute path, so both forms resolve here.
     script = REPO_ROOT / script
 
-    _assert_unburned(brief, name)
+    _assert_unburned(brief, name, _runs_root(rt))
 
     out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
     code, err = _run_watched(_campaign_cmd(name, script, out),
@@ -751,8 +743,8 @@ def _run_campaign(brief: dict, rt: Runtime, brief_id: str) -> None:
                    "prereg_sha": _prereg_sha(out), "skills": copied})
 
 
-def _rsi_blocks(brief: dict) -> dict:
-    """Claim this rsi brief's cal/dev/held-out blocks off the LIVE ledger.
+def _rsi_blocks(brief: dict, runs_root: Path) -> dict:
+    """Claim this rsi brief's cal/dev/held-out blocks off the DERIVED ledger.
 
     Allocation happens HERE, server-side, for the same reason provider refs do:
     a brief that could name its own seed blocks could name a burned one. The
@@ -766,7 +758,7 @@ def _rsi_blocks(brief: dict) -> dict:
         v = brief.get(key)
         return (int(v[0]), int(v[1])) if v is not None else None
 
-    return allocate(parse_ledger(_ledger_text()),
+    return allocate(burned_blocks(runs_root),
                     floor=int(brief.get("floor", 0)),
                     cal=pin("cal"), dev=pin("dev"), heldout=pin("heldout"))
 
@@ -787,11 +779,11 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
     if task not in rt.task_bindings:
         raise ValueError(f"no task binding for {task!r}; install a plugin that "
                          f"declares it (known: {sorted(rt.task_bindings)})")
-    blocks = _rsi_blocks(brief)
+    blocks = _rsi_blocks(brief, _runs_root(rt))
     # the SAME guard the campaign path uses, fed the allocated blocks. cal is
     # deliberately absent: a calibration block never gates and stays re-measurable.
     _assert_unburned({"dev": [list(blocks["dev"])], "heldout": [list(blocks["heldout"])]},
-                     f"rsi {task!r}")
+                     f"rsi {task!r}", _runs_root(rt))
 
     out = rt.inbox.parent / "campaigns" / Path(brief_id).stem
     cmd = [sys.executable, str(REPO_ROOT / "scripts/rsi_campaign.py"),

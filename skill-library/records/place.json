@@ -1,0 +1,36 @@
+{
+ "id": "place",
+ "name": "place",
+ "kind": "segment",
+ "lineage": {},
+ "args": {
+  "object": "str",
+  "target": "str"
+ },
+ "requires": [
+  "holding(object)",
+  "reachable(target)"
+ ],
+ "ensures": [
+  "inside(object,target)",
+  "gripper_free()"
+ ],
+ "clobbers": [
+  "holding(object)"
+ ],
+ "limits": {},
+ "failure_modes": [],
+ "bindings": {
+  "robocasa": {
+   "backend": "scripted_mobile_manipulation",
+   "task_template": "pack_{object}"
+  },
+  "libero": {
+   "backend": "vla",
+   "task_template": "place_{object}_in_{target}",
+   "implemented": false
+  }
+ },
+ "evidence": {},
+ "description": "Release a held object inside a named receptacle."
+}
