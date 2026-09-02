@@ -49,6 +49,7 @@ provider.
 {"kind":"task", "task":"basket_smoke_vlm", "seed":424243, "instruction":"把所有物品放进篮子"}
 {"kind":"campaign", "campaign":"stack", "dev":[41000,41999], "heldout":[42000,42199]}
 {"kind":"rsi", "task":"kitchen_thaw"}
+{"kind":"mission", "mission":"把肉从冰箱拿到微波炉", "seed":41, "arm":"scripted"}
 ```
 
 `kind:"rsi"` is the generic self-improvement chain (evolution mode only): the

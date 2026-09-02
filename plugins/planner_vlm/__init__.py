@@ -82,6 +82,16 @@ re-plan the remaining work.
 - rationale: one short paragraph on why the graph is legal (which facts / ensures \
 support each requires) and sufficient."""
 
+_DECOMPOSE_RULES = """You are a robot mission decomposer. Reply with ONE JSON object and \
+nothing else (no prose, no code fences), exactly the shape of the input's output_schema.
+Hard rules -- a violation gets the whole decomposition rejected:
+- Split the mission into an ORDERED list of tasks. Each entry names a task from \
+known_tasks (its description says what it does) and lists the GROUNDED goal predicates \
+that task must make true, using ONLY predicate names from predicates and ONLY object \
+names from objects.
+- Never invent a task, a predicate, or an object. Give every entry a unique id.
+- rationale: one short paragraph on why these tasks in this order achieve the mission."""
+
 
 class VlmPlanner:
     """Layer 1 ``harness.contracts.TaskPlanner`` over the model.endpoint seam."""
@@ -157,9 +167,10 @@ class VlmPlanner:
         }
 
     @staticmethod
-    def _parse(text: str) -> Mapping:
+    def _parse(text: str, key: str = "nodes") -> Mapping:
         """Strict-JSON extraction: the reply as-is, or the outermost {...} slice
-        (tolerates fences / a thinking preamble, repairs nothing inside)."""
+        (tolerates fences / a thinking preamble, repairs nothing inside).
+        ``key`` is the one structural key the reply must carry."""
         try:
             plan = json.loads(text)
         except ValueError:
@@ -171,13 +182,57 @@ class VlmPlanner:
             plan, _ = json.JSONDecoder().raw_decode(text[start:])
         if not isinstance(plan, Mapping):
             raise ValueError(f"reply is JSON but not an object: {type(plan).__name__}")
-        if "nodes" not in plan:
+        if key not in plan:
             # Structural, not semantic: a JSON object that is not even
             # plan-shaped (observed live: the model echoing the input payload
             # back) earns the re-ask; everything plan-shaped goes to the
             # validator untouched.
-            raise ValueError("reply is a JSON object but not a plan (no 'nodes' key)")
+            raise ValueError(f"reply is a JSON object but not a plan (no {key!r} key)")
         return plan
+
+    # -- mission decomposition ---------------------------------------------
+    def decompose(self, brief: Mapping) -> dict:
+        """Mission -> ``{tasks: [{id, task?, goal}], rationale, prompt_sha}`` over
+        ``protocol.mission_projection(known_tasks, predicates, objects)``.
+        Refuses (ValueError, the sealed refusal) a reply that is not JSON, names
+        an unknown task, or grounds a goal in a predicate outside the catalogue;
+        the model never invents vocabulary."""
+        proj = protocol.mission_projection(
+            brief["known_tasks"], brief["predicates"], brief.get("objects") or ())
+        messages = [{"role": "system", "content": _DECOMPOSE_RULES},
+                    {"role": "user", "content":
+                     f"Mission: {brief['mission']}\n\nDecomposition input:\n"
+                     + json.dumps(proj, sort_keys=True)
+                     + "\n\nOutput ONLY the decomposition JSON object now."}]
+        prompt_sha = protocol.content_id(messages)
+        reply = self._endpoint().chat(messages, temperature=0.0,
+                                      max_tokens=self._max_tokens,
+                                      response_format={"type": "json_object"})
+        out = self._parse(reply, key="tasks")
+        tasks = out["tasks"]
+        known = {t["task"] for t in proj["known_tasks"]}
+        if not isinstance(tasks, list) or not tasks:
+            raise ValueError("decomposition.tasks must be a non-empty list")
+        ids: set[str] = set()
+        for i, t in enumerate(tasks):
+            if not isinstance(t, Mapping) or not isinstance(t.get("id"), str) or t["id"] in ids:
+                raise ValueError(f"decomposition.tasks[{i}] needs a unique string id")
+            ids.add(t["id"])
+            if t.get("task") is not None and t["task"] not in known:
+                raise ValueError(f"decomposition.tasks[{i}] names unknown task "
+                                 f"{t['task']!r}; known: {sorted(known)}")
+            goal = t.get("goal")
+            if not isinstance(goal, list) or not goal:
+                raise ValueError(f"decomposition.tasks[{i}].goal must be a non-empty list")
+            for g in goal:
+                name = protocol.parse_pred_ref(g)[0]
+                if name not in proj["predicates"]:
+                    raise ValueError(f"decomposition.tasks[{i}] goal {g!r} names unknown "
+                                     f"predicate {name!r}; catalogue: {sorted(proj['predicates'])}")
+        return {"tasks": [{"id": t["id"], "task": t.get("task"),
+                           "goal": [protocol.pred_ref_str(g) for g in t["goal"]]}
+                          for t in tasks],
+                "rationale": str(out.get("rationale", "")), "prompt_sha": prompt_sha}
 
     def _generate(self, brief: Mapping) -> tuple[Mapping, str]:
         messages = [{"role": "system", "content": _RULES},

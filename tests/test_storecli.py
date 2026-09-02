@@ -60,6 +60,7 @@ def test_every_fn_is_byte_identical_to_board_store(tmp_path, capsys):
         # sides serialize to "null").
         (["runtime_status", "session-main"], bs.read_runtime_status(runs / "session-main")),
         (["ledger"], bs.burned_blocks(runs)),
+        (["plan_index", "session-main"], bs.plan_index(runs / "session-main")),
         (["rounds"], bs.parse_rounds(progress.read_text())),
     ]
     for argv, expected in cases:

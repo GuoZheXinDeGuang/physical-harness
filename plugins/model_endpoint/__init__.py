@@ -157,11 +157,18 @@ def provider(**params: Any) -> OpenAICompatEndpoint:
     return OpenAICompatEndpoint(**params)
 
 
+#: path -> next reply index for a JSON-list fake file. Module-level so every
+#: FakeEndpoint instance in the process (one per planner) consumes ONE sequence.
+_FAKE_CURSOR: dict[str, int] = {}
+
+
 class FakeEndpoint:
-    """Test-only ``ModelEndpoint``: every chat() returns one canned reply read
-    from ``path`` (default: env ``PH_MODEL_ENDPOINT_FAKE``). Reached by the same
-    registry-ref seam (``plugins.model_endpoint:fake_provider``) so a GPU-less
-    e2e drives the real planner_vlm prompt path with a fixed graph."""
+    """Test-only ``ModelEndpoint``: chat() returns a canned reply read from
+    ``path`` (default: env ``PH_MODEL_ENDPOINT_FAKE``). A file holding a JSON
+    LIST is a sequence of replies (str or object) consumed in order across every
+    instance on that path; anything else is the one reply, every call. Reached
+    by the same registry-ref seam (``plugins.model_endpoint:fake_provider``) so a
+    GPU-less e2e drives the real planner_vlm prompt path with fixed graphs."""
 
     def __init__(self, *, path: str | None = None, **_: Any) -> None:
         self._path = path or os.environ.get("PH_MODEL_ENDPOINT_FAKE")
@@ -176,7 +183,18 @@ class FakeEndpoint:
         return Path(self._path).is_file()
 
     def chat(self, messages: Sequence[Mapping], **opts: Any) -> str:
-        return Path(self._path).read_text()
+        text = Path(self._path).read_text()
+        try:
+            seq = json.loads(text)
+        except ValueError:
+            return text
+        if not isinstance(seq, list):
+            return text
+        i = _FAKE_CURSOR.get(self._path, 0)
+        if i >= len(seq):
+            raise ValueError(f"fake endpoint {self._path}: canned replies exhausted")
+        _FAKE_CURSOR[self._path] = i + 1
+        return seq[i] if isinstance(seq[i], str) else json.dumps(seq[i])
 
 
 def fake_provider(**params: Any) -> FakeEndpoint:

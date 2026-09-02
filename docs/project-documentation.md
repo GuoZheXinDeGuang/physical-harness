@@ -1468,6 +1468,24 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
   `board.store.policy_server` 起 :8000，`health().policy` 行只在该 flag 下计 problem。
   e2e：`tests/test_suite_e2e.py`（S1/S2）、`tests/test_suite_robocasa_e2e.py`（S3，robocasa）、`tests/test_suite_pi05_e2e.py`（S4，robocasa+vla，测试自起自停服务）。
 
+### 9.7 Plan library and mission briefs
+
+- PlanRecord（与 SkillRecord 同一 publish 门进 skills_root，文件名 = digest）：
+  `{"kind":"plan","id":graph_sha,"task","goal":[pred refs],"graph":<task.plan 的 graph 字典>,"embodiment","arm",
+   "evidence":{n,k,L_mean,seed_blocks,sessions},"rule":{theta,n_min,lower},"published_from":[chain refs]}`。
+  发布规则：Jeffreys 95% 下界 `lower(k/n) >= theta` 且 `n >= n_min`；theta/n_min 是显式参数（默认 0.8 / 10）并写进 `rule`，不是暗常数。
+  `validate_capability` 对 kind=plan 走 `validate_plan`（id == graph_sha、rule.lower 复算、带 records 时跑 validate_graph）。
+- 门：`scripts/publish_plans.py --mode evolution --runs ... --skills-root ...`（execution 模式 rc 3 拒绝）；
+  候选来自 `board.store.plan_index(session)`（= storecli `plan_index` = MCP `plan_index`，三面字节相同）。执行模式永不写 skills_root。
+- Library planner：`plugins/planner_library` 包一个内层 planner ref；(task, embodiment, arm) 命中挂载的 PlanRecord 就取最高 `rule.lower` 的 graph，
+  `planner={"provider":"library","plan_id"}`；未命中原样交给内层。`_mount_plan` 对 task brief 也挂它。
+- Mission brief：`{"kind":"mission","mission":<自然语言>,"seed","arm"?,"max_replans"?,"max_actuations"?}`。两层：
+  (1) 分解：model endpoint 吃 `mission_projection`（已知 task / 谓词目录 / objects / MISSION_DECOMPOSE_SCHEMA）→ `{tasks:[{id,task?,goal}],rationale}`，
+  谓词必须在目录里、命名 task 必须已知，封 `mission.decomposed{tasks,prompt_sha}`；拒绝封 `mission.refused`，不派发。
+  (2) 每个 task 先 library planner，未命中走 VLM planner；合成一张 ExecutionGraph（goal 非空，Covered 生效）→ validate_graph → 普通 workload 路径。
+- 链：每条 `task.plan` 带 `graph_sha`（去掉 planner/rationale 的 content_id）和 `planner:{provider:"library"|<ref>,plan_id?,prompt_sha?}`；合成图只封一条 task.plan，逐任务来源在 `planner.tasks`。
+- e2e：`tests/test_plan_records.py`、`tests/test_mission_plan.py`（单元）、`tests/test_plan_library_e2e.py`、`tests/test_mission_decompose_e2e.py`（FakeEndpoint JSON 列表按序应答）、`tests/test_mission_robocasa_e2e.py`（robocasa）。
+
 ---
 
 ## 10. 没在这份文档里的东西

@@ -186,6 +186,11 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
         if path is None:
             raise ValueError("unknown session")
         return bs.export_trajectories(path, out) if out else bs.trajectories(path)
+    if fn == "plan_index":
+        path = bs.safe_child(runs, name or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        return bs.plan_index(path)
     raise KeyError(fn)
 
 
@@ -221,7 +226,7 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the model_server action (status|start|stop, default status), or the console port for health")
     parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
     parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, and whose brief brief_status/cancel_brief names (default: session-main)")

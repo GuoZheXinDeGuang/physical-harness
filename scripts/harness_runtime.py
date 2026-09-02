@@ -81,6 +81,7 @@ import sys
 import threading
 import time
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -93,7 +94,9 @@ from harness.config import Mount, Patch, resolve_plan
 from harness.definitions import CAPABILITIES
 from harness.events import SessionLog
 from harness.kernel import Kernel
+from harness import predicates, protocol
 from harness.manifest import discover
+from harness.registry import load_provider
 from harness.skill_record import skill_index
 from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
@@ -497,7 +500,9 @@ def _mount_plan(binding: dict, skills_root: Path, render: bool = False,
     plus a window. Param-free (the workload refuses env mount params); the base ref
     it wraps rides watch_stack's module globals _prepare_render armed at boot."""
     override = [
-        Mount("task.planner", binding["planner"]),
+        # PlanRecords first (planner_library wraps the card's planner by ref):
+        # a mounted plan for (task, embodiment, arm) replays without a model call.
+        Mount("task.planner", _LIBRARY_PLANNER_REF, {"inner": binding["planner"]}),
         Mount("policy.driver", binding["policy"]),
         Mount("graph.skill", "plugins.graphs:skill_graph_provider",
               {"root": str(skills_root)}),
@@ -542,7 +547,11 @@ def task_brief(task: str, binding: dict) -> dict:
     would make a calibration measure a different mission than the one that ships.
     """
     wbrief = {"task": task, "catalogue": _load_attr(binding["catalogue"]),
-              "oracles": _load_attr(binding["oracles"])}
+              "oracles": _load_attr(binding["oracles"]),
+              # The embodiment a task.plan row / PlanRecord is keyed by: the
+              # binding's env ref (base-folded robosuite unless the card names
+              # one), never a render/frames overlay that wraps it for a session.
+              "embodiment": binding.get("env", resolve_plan(base_profile()).ref("embodiment.env"))}
     # Optional planner-only, server-authored context. The natural-language
     # instruction may be supplied by the task brief, but the skill semantics and
     # scene inventory remain manifest refs -- a caller cannot redefine either.
@@ -603,6 +612,139 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
     return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations,
                         segment_retries=int(binding.get("segment_retries", 0)),
+                        cancelled=cancelled)
+
+
+#: The mission decomposer: the VLM card's ``decompose`` over the SAME model
+#: seam its plan() uses. Server-side configuration, never a brief key; the ref
+#: is sealed in every ``mission.decomposed`` row. PH_MISSION_DECOMPOSER lets a
+#: GPU-less e2e route it to the fake endpoint the way test cards route planners.
+_DECOMPOSER_REF = os.environ.get("PH_MISSION_DECOMPOSER", "plugins.planner_vlm:provider")
+_LIBRARY_PLANNER_REF = "plugins.planner_library:provider"
+
+
+def _binding_records(binding: dict) -> dict[str, protocol.SkillRecordV0]:
+    recs = _load_attr(binding["records"]) if "records" in binding else {}
+    return {k: v if isinstance(v, protocol.SkillRecordV0) else protocol.SkillRecordV0.from_dict(v)
+            for k, v in recs.items()}
+
+
+def _known_tasks(bindings: dict[str, dict]) -> list[dict]:
+    """The decomposer's task menu: every task binding with its goal preds -- the
+    card's declared ``goal`` ref when present, else the records' FINAL ensures
+    (ensured by some skill, required by none: the effects a task is for)."""
+    out = []
+    for task, binding in sorted(bindings.items()):
+        recs = _binding_records(binding)
+        if "goal" in binding:
+            goal = [protocol.pred_ref_str(g) for g in _load_attr(binding["goal"])]
+        else:
+            ens = {p for r in recs.values() for p in r.ensures}
+            req = {p for r in recs.values() for p in r.requires}
+            goal = sorted(ens - req)
+        desc = _load_attr(binding["default_instruction"]) if "default_instruction" in binding else ""
+        out.append({"task": task, "goal": goal, "description": str(desc)})
+    return out
+
+
+def _predicate_catalogue(bindings: dict[str, dict]) -> dict[str, tuple[str, ...]]:
+    """name -> arg names: the registered predicate cards plus every predicate the
+    bindings' records mention (its template args)."""
+    cat = {name: tuple(rec.args) for name, rec in predicates.records().items()}
+    for binding in bindings.values():
+        for r in _binding_records(binding).values():
+            for p in (*r.requires, *r.ensures, *r.clobbers):
+                name, args = protocol.parse_pred_ref(p)
+                cat.setdefault(name, tuple(args))
+    return cat
+
+
+def _compose(mission: str, parts: list[tuple[dict, Mapping]], planner: dict) -> dict:
+    """ONE plan-dialect graph from per-task plans: node ids namespaced by task id,
+    every node labelled with its task, verify entries carried along."""
+    tasks, nodes, verify = [], [], []
+    for t, plan in parts:
+        tid = t["id"]
+        tasks.append({"id": tid, "goal": list(t["goal"])})
+        for n in plan.get("nodes") or ():
+            nodes.append({**n, "id": f"{tid}.{n['id']}", "task": tid,
+                          "after": [f"{tid}.{a}" for a in n["after"]]})
+        verify += [{**v, "after": f"{tid}.{v['after']}"} for v in plan.get("verify") or ()]
+    return {"goal": mission, "tasks": tasks, "nodes": nodes, "verify": verify,
+            "rationale": "; ".join(f"{t['id']}: {p.get('rationale', '')}" for t, p in parts),
+            "planner": planner}
+
+
+def _run_mission(brief: dict, rt: Runtime, cancelled=None) -> dict:
+    """Natural-language mission -> decompose (sealed) -> per-task plan (PlanRecord
+    library first, the binding's planner otherwise) -> ONE composed graph ->
+    the ordinary workload run path (Legal(G) with real goals gates dispatch).
+
+    ponytail: every decomposed task must share one binding's env/policy (a
+    composed graph runs in ONE kernel); split into per-task kernels when a
+    mission first spans two simulators."""
+    mission, seed = str(brief["mission"]), int(brief.get("seed", 0))
+    arm = brief.get("arm", "scripted")
+    known = _known_tasks(rt.task_bindings)
+    catalogue = _predicate_catalogue(rt.task_bindings)
+    objects: set[str] = set()
+    for task, binding in rt.task_bindings.items():
+        tb = task_brief(task, binding)
+        objects |= set(workload._sigma0(tb, {}, {}, _binding_records(binding))[1])
+    decomposer = load_provider(_DECOMPOSER_REF, {})
+    try:
+        dec = decomposer.decompose({"mission": mission, "known_tasks": known,
+                                    "predicates": catalogue, "objects": sorted(objects)})
+        for t in dec["tasks"]:
+            if t.get("task") is None:
+                raise ValueError(f"task {t['id']!r} names no known task binding; "
+                                 "the runtime can only plan under a binding")
+    except ValueError as exc:
+        rt.log.append("mission.refused", {"mission": mission, "seed": seed,
+                                          "decomposer": _DECOMPOSER_REF, "error": str(exc)})
+        raise
+    rt.log.append("mission.decomposed", {
+        "mission": mission, "seed": seed, "decomposer": _DECOMPOSER_REF,
+        "tasks": dec["tasks"], "prompt_sha": dec["prompt_sha"],
+        "rationale": dec["rationale"]})
+    bindings = [rt.task_bindings[t["task"]] for t in dec["tasks"]]
+    first = bindings[0]
+    for b in bindings[1:]:
+        for key in ("env", "policy", "percept", "episodic"):
+            if b.get(key) != first.get(key):
+                raise ValueError(f"mission tasks disagree on binding {key!r}: "
+                                 f"{first.get(key)!r} != {b.get(key)!r}")
+    max_actuations = int(brief.get("max_actuations", sum(
+        int(b.get("max_actuations", 3)) for b in bindings)))
+    kernel = Kernel(CAPABILITIES, log=rt.log)
+    kernel.mount(_mount_plan(first, rt.skills_root, render=rt.render, frames=rt.frames))
+    plans = [r for r in kernel.resolve("graph.skill", consumer="mission").skills()
+             if r.get("kind") == "plan"]
+    wbrief = task_brief(dec["tasks"][0]["task"], first)
+    parts, planners = [], {}
+    for t, binding in zip(dec["tasks"], bindings):
+        tb = {**task_brief(t["task"], binding), "arm": arm, "seed": seed, "scene": {},
+              "budget": max_actuations, "plans": plans,
+              "instruction": f"{mission} -- {t['task']}: achieve {', '.join(t['goal'])}"}
+        recs = workload._records(tb, tb["catalogue"])
+        tb["facts"], tb["objects"] = workload._sigma0(tb, {}, {}, recs)
+        plan = load_provider(_LIBRARY_PLANNER_REF, {"inner": binding["planner"]}).plan(tb)
+        parts.append((t, plan))
+        planners[t["id"]] = plan.get("planner") or {"provider": binding["planner"]}
+        for key in ("catalogue", "records", "skill_docs", "predicates"):
+            if key in tb:
+                wbrief[key] = {**(wbrief.get(key) or {}), **tb[key]}
+        for key in ("oracles", "initial_facts"):
+            if key in tb:
+                wbrief[key] = tuple(dict.fromkeys((*(wbrief.get(key) or ()), *tb[key])))
+    wbrief["arm"] = arm
+    wbrief["graph"] = _compose(mission, parts, {
+        "provider": "mission", "decomposer": _DECOMPOSER_REF,
+        "prompt_sha": dec["prompt_sha"], "tasks": planners})
+    return workload.run(wbrief, kernel, seed=seed,
+                        max_replans=int(brief.get("max_replans", 3)),
+                        max_actuations=max_actuations,
+                        segment_retries=int(first.get("segment_retries", 0)),
                         cancelled=cancelled)
 
 
@@ -998,6 +1140,7 @@ _BRIEF_KEYS = {
     "campaign": {"kind", "campaign", "dev", "heldout"},
     "suite": {"kind", "suite", "arm", "seeds", "max_replans", "max_actuations"},
     "rsi": {"kind", "task", "node", "cal", "dev", "heldout", "workers", "floor"},
+    "mission": {"kind", "mission", "seed", "arm", "max_replans", "max_actuations"},
 }
 _MAX_INSTRUCTION_CHARS = 4000
 
@@ -1061,7 +1204,13 @@ def _process(rt: Runtime, path: Path) -> None:
                 raise ValueError(
                     "task instruction must be a non-empty string of at most "
                     f"{_MAX_INSTRUCTION_CHARS} characters")
-        if kind == "task":
+        if kind == "mission":
+            mission = brief.get("mission")
+            if (not isinstance(mission, str) or not mission.strip()
+                    or len(mission) > _MAX_INSTRUCTION_CHARS):
+                raise ValueError("mission must be a non-empty string of at most "
+                                 f"{_MAX_INSTRUCTION_CHARS} characters")
+        if kind in ("task", "mission"):
             # execution mounts a frozen skills root; a mid-session out-of-band
             # mutation (some record added or removed since the boot seal) must
             # fail loudly rather than let a task run against skills it wasn't
@@ -1079,8 +1228,8 @@ def _process(rt: Runtime, path: Path) -> None:
             # a mission that finished under cancelled/ would be a lie in the
             # other direction.
             stopped = cancelled_run(
-                _run_task(brief, rt,
-                          cancelled=lambda: _cancel_requested(rt, brief_id)))
+                (_run_task if kind == "task" else _run_mission)(
+                    brief, rt, cancelled=lambda: _cancel_requested(rt, brief_id)))
         elif kind == "suite":
             stopped = _run_suite(brief, rt, brief_id,
                                  cancelled=lambda: _cancel_requested(rt, brief_id))

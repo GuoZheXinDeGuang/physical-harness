@@ -45,7 +45,7 @@ def test_fold_over_real_runs():
     by_id = {n["id"]: n for n in g["nodes"]}
     edges = {(e["rel"], e["src"], e["dst"]) for e in g["edges"]}
 
-    # the three mounted skills + the 25 cards + the 10 capabilities are all present
+    # the three mounted skills + the 26 cards + the 10 capabilities are all present
     # (12th card: the M7 clear_workspace persistent-episode mission; 13th: the
     # inactive embodiment_robocasa second-simulator card, listed like every card;
     # 14th-17th: the M7 robocasa persistent-episode missions -- kitchen_thaw,
@@ -55,9 +55,10 @@ def test_fold_over_real_runs():
     # inactive embodiment_libero third-simulator card; 21st: the planner_vlm
     # VLM-planner card, task_bindings-only like skill_toy; 22nd-24th: the PR #2
     # static-skill-library missions -- basket_smoke, pack_all, stack_blocks;
-    # 25th: the pure-data benchmark_robocasa suite card).
+    # 25th: the pure-data benchmark_robocasa suite card; 26th: the planner_library
+    # PlanRecord-first planner card, consumed by ref, no mounts).
     assert {STACK, ADC, EB} <= set(by_id)
-    assert sum(n["kind"] == "package" for n in g["nodes"]) == 25
+    assert sum(n["kind"] == "package" for n in g["nodes"]) == 26
     assert sum(n["kind"] == "capability" for n in g["nodes"]) == 10
 
     stack = by_id[STACK]

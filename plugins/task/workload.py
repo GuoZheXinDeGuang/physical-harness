@@ -22,7 +22,7 @@ from __future__ import annotations
 import importlib
 import itertools
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from harness import opstream, predicates, protocol
@@ -33,7 +33,7 @@ from harness.manifest import mount_params
 from harness.registry import load_provider
 from harness.skill_library import ARMS, RECORDS, rearm, skill_specs
 from harness.spec import EpisodeSpec
-from plugins.task.validate import NODE_KINDS, validate_plan
+from plugins.task.validate import NODE_KINDS, plan_to_graph, validate_plan
 
 #: The kernel consumer name every capability this workload resolves is
 #: accounted under (harness/kernel.py per-resolution audit trail).
@@ -494,13 +494,27 @@ assert set(_KIND_HANDLERS) == set(NODE_KINDS), \
 _TYPE_NAMES = {str: "str", int: "int", float: "float", bool: "bool"}
 
 
-def _graph(plan: Mapping, seed: int) -> dict:
-    """The plan's protocol-v0 ExecutionGraph shape: one task, nodes verbatim."""
-    return {"mission": plan.get("goal", ""), "seed": seed,
-            "tasks": [{"id": "t0", "goal": []}],
-            "nodes": [{"id": n["id"], "task": "t0", "skill": n["skill"],
-                       "args": dict(n["args"]), "after": list(n["after"])}
-                      for n in plan.get("nodes") or []]}
+def _graph(plan: Mapping, seed: int) -> protocol.ExecutionGraph:
+    """The plan's protocol ExecutionGraph: declared tasks (with goals) when the
+    plan carries them, else one implicit goal-less task."""
+    return plan_to_graph({**plan, "seed": seed})
+
+
+def _graph_sha(plan: Any) -> str | None:
+    """Chain identity of the graph proper: planner/rationale provenance excluded."""
+    if not isinstance(plan, Mapping):
+        return None
+    return protocol.content_id({k: v for k, v in plan.items()
+                                if k not in ("planner", "rationale")})
+
+
+def plans_for(skills, task: str, embodiment: str, arm: str) -> list[protocol.PlanRecord]:
+    """The mounted PlanRecords (``kind == "plan"``) for one (task, embodiment,
+    arm), best first (highest ``rule.lower``). Read-only over ``skills()``."""
+    hits = [protocol.PlanRecord.from_dict(r) for r in skills
+            if r.get("kind") == "plan" and r.get("task") == task
+            and r.get("embodiment") == embodiment and r.get("arm") == arm]
+    return sorted(hits, key=lambda p: (-float(p.rule.get("lower", 0.0)), p.id))
 
 
 def _records(brief: Mapping, catalogue: Mapping) -> dict[str, protocol.SkillRecordV0]:
@@ -661,7 +675,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     records = _records(brief, catalogue)
     facts, objects = _sigma0(brief, scene.snapshot(sigma), sigma, records)
     visible = sorted({r.name for r in records.values()})  # the planner-visible skill set
-    brief = {**brief, "facts": facts, "objects": objects}
+    # The mounted PlanRecords + the embodiment ref they are keyed by, for the
+    # planner_library wrapper harness_runtime mounts; the row's fallback planner
+    # is the wrapped ref (``inner``) when the mount is that wrapper.
+    planner_ref = (kernel.provider_params("task.planner").get("inner")
+                   or kernel.provider_ref("task.planner"))
+    embodiment = str(brief.get("embodiment") or env_ref)   # the binding's ref, not an overlay
+    brief = {**brief, "facts": facts, "objects": objects, "embodiment": embodiment,
+             "plans": [r for r in skills if r.get("kind") == "plan"]}
     while True:
         # Pre-episode there is no obs; the empty snapshot is the honest scene
         # until M2's World bridge feeds a live one. seed rides the brief so a
@@ -672,8 +693,11 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
         # A low-level segment gets a bounded retry in the same world and on the
         # same validated graph.  A controller miss is not evidence that the task
         # decomposition changed, so do not spend a VLM call or a replan on it.
+        # A brief carrying a composed ``graph`` (a mission: tasks with real goals,
+        # nodes labelled by task) is executed as-is; its planner provenance rides
+        # the graph, so the mounted planner is never asked.
         is_retry = retry_plan is not None
-        plan = retry_plan if is_retry else planner.plan(brief)
+        plan = retry_plan if is_retry else brief.get("graph") or planner.plan(brief)
         retry_plan = None
         ok, msg = validate_plan(
             plan, catalogue, oracles, done=tuple(done_specs.values()),
@@ -694,6 +718,14 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 "done": sorted(done_specs), "fault": brief.get("fault"),
                 "graph": plan if isinstance(plan, Mapping) else None,
                 "graph_id": protocol.content_id(plan) if isinstance(plan, Mapping) else None,
+                # The chain link a PlanRecord is minted from: the graph's own id
+                # (meta stripped) plus who planned it -- "library" when a mounted
+                # PlanRecord was replayed, else the mounted planner's ref.
+                "graph_sha": protocol.graph_sha(plan) if isinstance(plan, Mapping) else None,
+                "planner": (dict(plan.get("planner")) if isinstance(plan, Mapping)
+                            and isinstance(plan.get("planner"), Mapping)
+                            else {"provider": planner_ref}),
+                "embodiment": embodiment, "arm": arm,
                 "rationale": plan.get("rationale", "") if isinstance(plan, Mapping) else "",
                 "facts": facts, "objects": objects, "visible": visible,
                 "legal": ok, "problems": [] if ok else [msg], "block": brief.get("block")})
@@ -743,8 +775,15 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 opstream.emit("node_start", node=node["id"], skill=node["skill"],
                               node_kind=kind, actuation=actuations)
                 opstream.emit("actuation_start", node=node["id"], actuation=actuations)
+                # A composed graph namespaces ids by task ("thaw.survey"); a
+                # card's predicates read their OWN nodes by the card's ids, so a
+                # task-labelled node sees its task's entries under those too.
+                task = node.get("task")
+                local = {k[len(task) + 1:]: v for k, v in nodes_out.items()
+                         if task and k.startswith(f"{task}.")}
+                node_ctx = replace(ctx, nodes_out={**nodes_out, **local}) if local else ctx
                 try:
-                    result = _KIND_HANDLERS[kind](node, ctx)
+                    result = _KIND_HANDLERS[kind](node, node_ctx)
                 except ValueError as exc:
                     # A dispatch-time grounding refusal (an arg with no scene
                     # binding, an undeclared predicate): the planner's fault,

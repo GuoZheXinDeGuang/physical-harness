@@ -164,6 +164,15 @@ def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
 
 
 @mcp.tool()
+def plan_index(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Per (task, graph_sha, embodiment, arm) plan evidence {n, k, L_mean, seeds,
+    blocks, graph} projected from one session's chain -- the input to
+    scripts/publish_plans.py. ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.plan_index(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def trajectories_split(name: str = _DEFAULT_SESSION) -> dict:
     """``trajectories`` split ``{"dev": [...], "heldout": [...]}`` by ``o.role``
     (the seed's burned block role) -- the same rows ``storecli trajectories --out``

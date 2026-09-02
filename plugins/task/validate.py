@@ -19,6 +19,9 @@ _TYPE_NAME = {t: n for n, t in TYPES.items()}     # python type -> TYPES name
 #: The exact key set every node must carry: the 4-key graph dialect zos's
 #: cockpit renders is the same JSON this validator admits.
 _NODE_KEYS = frozenset({"id", "skill", "args", "after"})
+#: Admitted beside them: ``kind`` (dispatch), ``task`` (which declared task the
+#: node serves in a composed graph) and ``on_fail`` (protocol Node, inert today).
+_NODE_OPTIONAL = frozenset({"kind", "task", "on_fail"})
 
 #: The node KINDS the loop can dispatch. This frozenset is the single source of
 #: truth for the NAMES; ``workload._KIND_HANDLERS`` maps exactly these to their
@@ -57,12 +60,23 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
     nodes = plan.get("nodes")
     if not isinstance(nodes, list) or not nodes:
         return False, "plan.nodes must be a non-empty list of skill calls"
+    # A composed (mission) graph declares its tasks with GROUNDED goal preds;
+    # nodes then carry ``task``. Covered judges those goals in the protocol gate.
+    tasks = plan.get("tasks")
+    if tasks is not None:
+        if not isinstance(tasks, list) or not tasks:
+            return False, "plan.tasks must be a non-empty list of {id, goal}"
+        for i, t in enumerate(tasks):
+            if (not isinstance(t, Mapping) or not isinstance(t.get("id"), str)
+                    or not t["id"] or not isinstance(t.get("goal"), list)
+                    or not all(isinstance(g, str) and g for g in t["goal"])):
+                return False, f"tasks[{i}] must be {{id: str, goal: [pred ref strings]}}"
     ids: list[str] = []
     for i, node in enumerate(nodes):
         keys = set(node) if isinstance(node, Mapping) else set()
-        if not isinstance(node, Mapping) or keys - {"kind"} != _NODE_KEYS:
+        if not isinstance(node, Mapping) or keys - _NODE_OPTIONAL != _NODE_KEYS:
             return False, (f"node[{i}] must be an object with exactly "
-                           f"{sorted(_NODE_KEYS)} (optional 'kind')")
+                           f"{sorted(_NODE_KEYS)} (optional {sorted(_NODE_OPTIONAL)})")
         nid = node["id"]
         if not isinstance(nid, str) or not nid:
             return False, f"node[{i}].id must be a non-empty string"
@@ -91,7 +105,10 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
     records = {name: SkillRecordV0(id=name, name=name,
                                    args={k: _TYPE_NAME[t] for k, t in schema.items()})
                for name, schema in catalogue.items()}
-    ok, problems = validate_graph(plan_to_graph(plan), records, (), ())
+    # Goals stripped here: Covered needs contract-bearing records, which the
+    # workload's protocol gate (_graph_problems) supplies.
+    typed = {**plan, "tasks": [{"id": t["id"], "goal": []} for t in tasks or ()]}
+    ok, problems = validate_graph(plan_to_graph(typed), records, (), ())
     if not ok:
         return False, "; ".join(problems)
     verify = plan.get("verify")
@@ -186,7 +203,8 @@ def plan_to_graph(plan: Mapping) -> ExecutionGraph:
     tasks = tuple(Task(id=t["id"], goal=tuple(t.get("goal", ())))
                   for t in plan.get("tasks") or ()) or (Task(id="main", goal=()),)
     nodes = tuple(Node(id=n["id"], task=n.get("task", tasks[0].id), skill=n["skill"],
-                       args=dict(n["args"]), after=tuple(n["after"]))
+                       args=dict(n["args"]), after=tuple(n["after"]),
+                       on_fail=dict(n.get("on_fail") or {}))
                   for n in plan["nodes"])
     return ExecutionGraph(mission=plan["goal"], seed=int(plan.get("seed", 0)),
                           tasks=tasks, nodes=nodes)

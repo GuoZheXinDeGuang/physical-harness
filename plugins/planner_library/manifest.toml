@@ -1,0 +1,6 @@
+# The planner_library card: a TaskPlanner that answers from PUBLISHED PlanRecords
+# before asking a model. Consumed by ref (``plugins.planner_library:provider``
+# with ``inner=<planner ref>``) -- the mission runtime wraps every task binding's
+# planner in it; a card may also name it directly as a binding's planner. No
+# mounts, no bindings: the folded base plan sha is untouched.
+needs_sim = false

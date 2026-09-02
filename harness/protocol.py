@@ -9,6 +9,7 @@ Stdlib-only; hashes go through ``harness.config.sha_json``.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
@@ -437,6 +438,103 @@ def evidence_interval(ev: Evidence, z: float = 1.96) -> list[float]:
     return [round(max(0.0, c - h), 4), round(min(1.0, c + h), 4)]
 
 
+# ------------------------------------------------------------ PlanRecord
+
+#: Keys a planner stamps on its returned graph that are NOT the graph: strip
+#: them before hashing so the same graph from two providers has one id.
+_GRAPH_META = ("planner", "rationale")
+
+
+def graph_sha(graph: Mapping) -> str:
+    """Content id of a planner-format graph dict minus ``planner``/``rationale``."""
+    return content_id({k: v for k, v in graph.items() if k not in _GRAPH_META})
+
+
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued fraction for the regularized incomplete beta (NR ``betacf``)."""
+    tiny = 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c, d = 1.0, 1.0 - qab * x / qap
+    d = 1.0 / (d if abs(d) > tiny else tiny)
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        for aa in (m * (b - m) * x / ((qam + m2) * (a + m2)),
+                   -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))):
+            d = 1.0 + aa * d
+            d = 1.0 / (d if abs(d) > tiny else tiny)
+            c = 1.0 + aa / c
+            c = c if abs(c) > tiny else tiny
+            h *= d * c
+        if abs(d * c - 1.0) < 3e-14:
+            break
+    return h
+
+
+def _betainc(a: float, b: float, x: float) -> float:
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    bt = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+                  + a * math.log(x) + b * math.log(1.0 - x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
+
+
+def plan_lower_bound(n: int, k: int, alpha: float = 0.05) -> float:
+    """Jeffreys ``1 - alpha`` lower bound on k/n: the ``alpha/2`` quantile of
+    Beta(k + 1/2, n - k + 1/2). ``0.0`` when n == 0. Stdlib only (bisection on
+    the regularized incomplete beta), so ``harness/`` stays scipy-free."""
+    if n <= 0:
+        return 0.0
+    a, b, lo, hi = k + 0.5, n - k + 0.5, 0.0, 1.0
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        if _betainc(a, b, mid) < alpha / 2.0:
+            lo = mid
+        else:
+            hi = mid
+    return round(lo, 4)
+
+
+@dataclass(frozen=True)
+class PlanRecord:
+    """A whole-task graph promoted into the skills root (``kind == "plan"``),
+    next to the SkillRecords, through the same publish door, evolution mode
+    only. ``id`` is ``graph_sha(graph)``; ``graph`` is the planner-format dict
+    the ``task.plan`` row sealed (goal/nodes/verify, meta stripped) -- what the
+    library planner hands back verbatim. ``rule`` records the selection rule
+    the record passed (theta/n_min are config, never a hidden constant)."""
+    id: str
+    task: str
+    goal: tuple[str, ...]
+    graph: dict[str, Any]
+    embodiment: str
+    arm: str
+    evidence: dict[str, Any]        # {n, k, L_mean, seed_blocks, sessions}
+    rule: dict[str, Any]            # {theta, n_min, lower}
+    published_from: list[Any] = field(default_factory=list)   # chain refs
+    kind: str = "plan"
+
+    @classmethod
+    def from_dict(cls, d: Mapping) -> "PlanRecord":
+        d = dict(d)
+        d["goal"] = tuple(pred_ref_str(g) for g in d.get("goal", ()))
+        d["published_from"] = list(d.get("published_from", ()))
+        return cls(**d)
+
+    def execution_graph(self, seed: int = 0) -> dict[str, Any]:
+        """The ExecutionGraph dict ``validate_graph`` reads: one task named
+        after ``task`` carrying the record's real goal, nodes labelled by it."""
+        return {"mission": self.graph.get("goal", ""), "seed": seed,
+                "tasks": [{"id": self.task, "goal": list(self.goal)}],
+                "nodes": [{"id": n["id"], "task": self.task, "skill": n["skill"],
+                           "args": dict(n.get("args", {})), "after": list(n.get("after", ()))}
+                          for n in self.graph.get("nodes") or []]}
+
+
 def vlm_projection(records: Mapping[str, Any], sigma0_facts: Collection[Any],
                    sigma0_objects: Collection[str], done: Collection[Any],
                    fault: Any, *, show_evidence: bool = False) -> dict[str, Any]:
@@ -464,3 +562,34 @@ def vlm_projection(records: Mapping[str, Any], sigma0_facts: Collection[Any],
             "objects": sorted(str(o) for o in sigma0_objects),
             "done": to_plain(list(done)), "fault": to_plain(fault),
             "output_schema": VLM_OUTPUT_SCHEMA}
+
+
+# ---------------------------------------------------------- mission projection
+
+#: The exact reply shape a mission decomposer must emit: known-task references
+#: plus grounded goal preds drawn from the predicate catalogue.
+MISSION_DECOMPOSE_SCHEMA: dict[str, Any] = {
+    "tasks": [{"id": "<unique string>",
+               "task": "<a task name from known_tasks (omit only if none fits)>",
+               "goal": ["<grounded pred ref over objects, e.g. on(cubeA, cubeB); "
+                        "predicate name from predicates>"]}],
+    "rationale": "<string: why these tasks in this order achieve the mission>",
+}
+
+
+def mission_projection(known_tasks: Collection[Mapping[str, Any]],
+                       predicate_catalogue: Mapping[str, Any],
+                       objects: Collection[str]) -> dict[str, Any]:
+    """The decomposer-facing view: known tasks ({task, goal, description}), the
+    predicate catalogue (name -> arg names; values may be PredicateRecords or
+    arg sequences), objects and the output schema. Sorted and plain, so
+    ``content_id`` of it is stable."""
+    tasks = sorted(({"task": str(t["task"]),
+                     "goal": sorted(pred_ref_str(g) for g in t.get("goal", ())),
+                     "description": str(t.get("description", ""))}
+                    for t in known_tasks), key=lambda t: t["task"])
+    preds = {str(name): list(getattr(rec, "args", rec))
+             for name, rec in predicate_catalogue.items()}
+    return {"known_tasks": tasks, "predicates": dict(sorted(preds.items())),
+            "objects": sorted(str(o) for o in objects),
+            "output_schema": MISSION_DECOMPOSE_SCHEMA}

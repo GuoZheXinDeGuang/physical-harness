@@ -1121,6 +1121,47 @@ def trajectories(session_dir: str | Path, *, role_of_seed=None) -> list[dict]:
     return [{"id": t.id, **to_plain(t)} for t in out + episode]
 
 
+def plan_index(session_dir: str | Path) -> list[dict]:
+    """Per (task, graph_sha, embodiment, arm) plan evidence, a PURE projection of
+    one session's chain: one episode per legal replan-0 ``task.plan`` row that
+    carries ``graph_sha`` (older rows have none and are skipped), ``k`` from the
+    closing ``task.plan_complete``, ``L`` = nodes verified all-true under that
+    row. Rows sorted by key; each carries the graph (meta stripped) and the
+    first row's facts/objects so a publisher can re-run Legal(G) on it."""
+    keys, cur = {}, None
+    for row in chain_rows(session_dir):
+        kind, d = row["kind"], row["data"]
+        if kind == "task.plan":
+            cur = None
+            if d.get("legal") and d.get("replan") == 0 and d.get("graph_sha"):
+                key = (d.get("mission"), d["graph_sha"], d.get("embodiment"), d.get("arm"))
+                cur = keys.setdefault(key, {
+                    "task": key[0], "graph_sha": key[1], "embodiment": key[2], "arm": key[3],
+                    "graph": {k: v for k, v in (d.get("graph") or {}).items()
+                              if k not in ("planner", "rationale")},
+                    "facts": list(d.get("facts") or []), "objects": list(d.get("objects") or []),
+                    "seeds": [], "blocks": [], "seqs": [], "_L": [], "n": 0, "k": 0})
+                cur["seeds"].append(d.get("seed"))
+                if d.get("block") is not None and d["block"] not in cur["blocks"]:
+                    cur["blocks"].append(d["block"])
+                cur["seqs"].append(row.get("seq"))
+                cur["_L"].append(0)
+                cur["n"] += 1
+        elif kind == "task.verify" and cur is not None:
+            if all(v is True for v in d["results"].values()):
+                cur["_L"][-1] += 1
+        elif kind == "task.plan_complete" and cur is not None:
+            cur["k"] += bool(d.get("success"))
+            cur = None
+    out = []
+    for key in sorted(keys, key=lambda k: tuple(str(x) for x in k)):
+        e = keys[key]
+        L = e.pop("_L")
+        e["L_mean"] = round(sum(L) / len(L), 4) if L else 0.0
+        out.append(e)
+    return out
+
+
 def split_trajectories(samples: list[dict]) -> dict[str, list[dict]]:
     """``{"dev": [...], "heldout": [...]}`` by each sample's ``o.role``."""
     return {r: [t for t in samples if t["o"]["role"] == r] for r in ("dev", "heldout")}

@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.config import sha_json
-from harness.skill_record import CAPABILITY, validate_capability
+from harness.skill_record import CAPABILITY, PLAN, validate_capability
 
 
 class InMemorySkillGraph:
@@ -59,7 +59,7 @@ class InMemorySkillGraph:
         # byte-identically and their digests never move. A malformed capability
         # record is NOT storable: raise here rather than warn and write a row a
         # planner would later read as a measured claim.
-        if payload.get("kind") == CAPABILITY:
+        if payload.get("kind") in (CAPABILITY, PLAN):
             validate_capability(payload)
         digest = sha_json(payload)
         self._skills[digest] = payload

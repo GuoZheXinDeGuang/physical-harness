@@ -53,10 +53,16 @@ import re
 from collections.abc import Mapping, Sequence
 
 from harness.config import sha_json
+from harness.protocol import graph_sha, plan_lower_bound, validate_graph
 
 #: The ``kind`` discriminator. Any other value (including no ``kind`` at all) is
 #: some other record shape and passes through untouched.
 CAPABILITY = "capability"
+#: A promoted whole-task graph (``harness.protocol.PlanRecord``): same store,
+#: same door, told apart by kind.
+PLAN = "plan"
+PLAN_REQUIRED = frozenset({"kind", "id", "task", "goal", "graph", "embodiment", "arm",
+                           "evidence", "rule", "published_from"})
 
 #: Exactly the keys a capability record may carry. Unknown keys are REJECTED:
 #: a typo'd field name is how evidence gets silently dropped and a record ends
@@ -100,10 +106,54 @@ def _int(value, where: str) -> int:
     return value
 
 
-def validate_capability(record: Mapping) -> None:
+def validate_plan(record: Mapping, records: Mapping | None = None,
+                  facts=(), objects=()) -> None:
+    """Raise ``SkillRecordError`` unless ``record`` is a well-formed plan record:
+    ``id`` IS ``graph_sha(graph)``, the evidence is a real k-of-n, and ``rule``
+    is the bound the record actually clears. With ``records`` (SkillRecordV0 by
+    id/name) the graph is also run through ``validate_graph`` against
+    ``facts``/``objects`` -- the goal is non-empty here, so Covered bites."""
+    missing, unknown = sorted(PLAN_REQUIRED - set(record)), sorted(set(record) - PLAN_REQUIRED)
+    if missing or unknown:
+        raise SkillRecordError(f"plan record: missing {missing}, unknown {unknown}")
+    for key in ("task", "embodiment", "arm"):
+        if not isinstance(record[key], str) or not record[key]:
+            raise SkillRecordError(f"{key} must be a non-empty string, got {record[key]!r}")
+    graph = record["graph"]
+    if not isinstance(graph, Mapping) or not isinstance(graph.get("nodes"), list) or not graph["nodes"]:
+        raise SkillRecordError("graph must be a planner-format dict with non-empty nodes")
+    if record["id"] != graph_sha(graph):
+        raise SkillRecordError(f"id {record['id']!r} is not graph_sha(graph) {graph_sha(graph)!r}")
+    ev, rule = record["evidence"], record["rule"]
+    if not isinstance(ev, Mapping) or not isinstance(rule, Mapping):
+        raise SkillRecordError("evidence and rule must be objects")
+    n, k = _int(ev.get("n"), "evidence.n"), _int(ev.get("k"), "evidence.k")
+    if n <= 0 or not 0 <= k <= n:
+        raise SkillRecordError(f"evidence must be 0 <= k <= n with n > 0, got {k}/{n}")
+    for key in ("theta", "n_min", "lower"):
+        if key not in rule or isinstance(rule[key], bool) or not isinstance(rule[key], (int, float)):
+            raise SkillRecordError(f"rule.{key} must be a number, got {rule.get(key)!r}")
+    lower = plan_lower_bound(n, k)
+    if rule["lower"] != lower or lower < rule["theta"] or n < rule["n_min"]:
+        raise SkillRecordError(
+            f"rule {dict(rule)} is not the bound {k}/{n} clears (lower={lower})")
+    if records is not None:
+        from harness.protocol import PlanRecord   # local: keeps the module light
+        ok, problems = validate_graph(PlanRecord.from_dict(record).execution_graph(),
+                                      records, facts, objects)
+        if not ok:
+            raise SkillRecordError(f"plan graph is not Legal(G): {problems}")
+
+
+def validate_capability(record: Mapping, records: Mapping | None = None,
+                        facts=(), objects=()) -> None:
     """Raise ``SkillRecordError`` unless ``record`` is a well-formed capability
-    record. Called by the store at publish time -- a malformed record is not
-    storable, and the refusal is loud rather than a warning plus a bad row."""
+    record (or, by ``kind``, a well-formed plan record -- see ``validate_plan``,
+    which is where the optional ``records``/``facts``/``objects`` go). Called
+    by the store at publish time -- a malformed record is not storable, and
+    the refusal is loud rather than a warning plus a bad row."""
+    if record.get("kind") == PLAN:
+        return validate_plan(record, records, facts, objects)
     missing = sorted(REQUIRED - set(record))
     unknown = sorted(set(record) - REQUIRED - OPTIONAL)
     if missing or unknown:

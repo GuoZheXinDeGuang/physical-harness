@@ -171,16 +171,22 @@ def _wait(pred, timeout: float, what: str):
 
 
 class _Runtime:
-    def __init__(self, runs: Path):
+    """One real runtime subprocess over ``runs/session-main``. ``card`` /
+    ``canned`` / ``env`` let sibling e2e files ride the same boot with their own
+    task card, fake-endpoint reply (a list = a reply sequence) and extra env."""
+
+    def __init__(self, runs: Path, card: str | None = None, canned=None,
+                 env: dict | None = None):
         self.runs = runs
         self.session = runs / SESSION
         (runs / "plugins" / "e2e").mkdir(parents=True)
         (runs / "plugins" / "e2e" / "manifest.toml").write_text(
-            "".join(_CARD.format(task=t, planner=p) for t, p in _PLANNERS.items()))
-        (runs / "canned.json").write_text(json.dumps(_CANNED))
+            card if card is not None
+            else "".join(_CARD.format(task=t, planner=p) for t, p in _PLANNERS.items()))
+        (runs / "canned.json").write_text(json.dumps(_CANNED if canned is None else canned))
         env = {**os.environ, "PYTHONPATH": f"{REPO}:{REPO / 'tests'}",
                "PH_PLUGINS_EXTRA": str(runs / "plugins"),
-               "PH_MODEL_ENDPOINT_FAKE": str(runs / "canned.json")}
+               "PH_MODEL_ENDPOINT_FAKE": str(runs / "canned.json"), **(env or {})}
         env.pop("MUJOCO_GL", None)   # no headless-GL frames overlay on the fake env
         self.stderr = runs / "runtime.stderr"
         self.proc = subprocess.Popen(
@@ -192,7 +198,7 @@ class _Runtime:
               60, "the runtime to boot")
         assert self.proc.poll() is None, self.stderr.read_text()
 
-    def run(self, brief: dict) -> tuple[str, list[dict]]:
+    def run(self, brief: dict, expect: str = "done") -> tuple[str, list[dict]]:
         """submit_brief -> the brief's chain rows once it is filed (serial runtime)."""
         before = len(bs.chain_rows(self.session))
         res = bs.submit_brief(self.runs, json.dumps(brief), session=SESSION)
@@ -200,7 +206,7 @@ class _Runtime:
         where = lambda: [d for d in ("done", "failed", "cancelled")
                          if (self.session / d / name).exists()]
         _wait(lambda: where() or self.proc.poll() is not None, 120, f"{name} to be filed")
-        assert where() == ["done"], (where(), self.proc.poll(), self.stderr.read_text(),
+        assert where() == [expect], (where(), self.proc.poll(), self.stderr.read_text(),
                                      bs.chain_rows(self.session)[before:])
         return name, bs.chain_rows(self.session)[before:]
 
