@@ -2,6 +2,7 @@
  "id": "grasp_can4",
  "name": "grasp_can4",
  "kind": "segment",
+ "class": "grasp",
  "lineage": {},
  "args": {},
  "requires": [

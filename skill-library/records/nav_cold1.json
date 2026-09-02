@@ -2,6 +2,7 @@
  "id": "nav_cold1",
  "name": "nav_cold1",
  "kind": "segment",
+ "class": "nav",
  "lineage": {},
  "args": {},
  "requires": [

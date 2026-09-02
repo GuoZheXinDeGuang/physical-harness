@@ -2,6 +2,7 @@
  "id": "v_pot_held",
  "name": "v_pot_held",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

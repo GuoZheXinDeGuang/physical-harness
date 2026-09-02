@@ -2,6 +2,7 @@
  "id": "grasp_meat",
  "name": "grasp_meat",
  "kind": "segment",
+ "class": "grasp",
  "lineage": {},
  "args": {},
  "requires": [

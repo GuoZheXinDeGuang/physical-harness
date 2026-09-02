@@ -2,6 +2,7 @@
  "id": "v_grasped_hot1",
  "name": "v_grasped_hot1",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

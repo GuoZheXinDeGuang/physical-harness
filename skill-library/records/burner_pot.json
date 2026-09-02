@@ -2,6 +2,7 @@
  "id": "burner_pot",
  "name": "burner_pot",
  "kind": "segment",
+ "class": "burner",
  "lineage": {},
  "args": {},
  "requires": [

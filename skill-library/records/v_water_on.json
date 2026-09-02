@@ -2,6 +2,7 @@
  "id": "v_water_on",
  "name": "v_water_on",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

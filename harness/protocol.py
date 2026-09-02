@@ -162,10 +162,14 @@ class SkillRecordV0:
     bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
     evidence: dict[str, Evidence] = field(default_factory=dict)
     description: str = ""
+    #: Serialised as ``"class"``; empty means "derive it" (``skill_class``).
+    class_: str = ""
 
     @classmethod
     def from_dict(cls, d: Mapping) -> "SkillRecordV0":
         d = dict(d)
+        if "class" in d:
+            d["class_"] = d.pop("class")
         for k in ("requires", "ensures", "clobbers", "failure_modes"):
             d[k] = tuple(pred_ref_str(r) if k != "failure_modes" else r
                          for r in d.get(k, ()))
@@ -180,6 +184,80 @@ def executors_of(rec: SkillRecordV0) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {"scripted": {}}
     for b in rec.bindings.values():
         out.update(b.get("policies") or {})
+    return out
+
+
+# -------------------------------------------------------------- skill graph
+
+#: Kinds that are their own class; every other record classes by name.
+_KIND_CLASSES = frozenset({"verify", "decide", "perceive"})
+
+
+def skill_class(rec: SkillRecordV0 | Mapping) -> str:
+    """Declared ``class`` or the derived one: a verify/decide/perceive kind is
+    its own class, anything else is the name's first ``_`` token
+    (grasp_can1 -> grasp, nav_fridge -> nav, carry -> carry). ``rec`` may be
+    the raw record dict (board reads records as data)."""
+    if isinstance(rec, Mapping):
+        rec = SkillRecordV0.from_dict(rec)
+    if rec.class_:
+        return rec.class_
+    return rec.kind if rec.kind in _KIND_CLASSES else rec.name.split("_", 1)[0]
+
+
+def _skills_and_plans(records: Any) -> tuple[list[SkillRecordV0], list[tuple[str, str, list]]]:
+    """Split a records mapping/iterable into SkillRecordV0s and
+    ``(plan id, task, graph nodes)`` for plan-kind records; raw record dicts
+    are accepted next to the dataclasses (board reads records as data)."""
+    recs = list(records.values()) if isinstance(records, Mapping) else list(records)
+    skills, plans = [], []
+    for r in recs:
+        if isinstance(r, PlanRecord):
+            plans.append((r.id, r.task, list(r.graph.get("nodes") or [])))
+        elif isinstance(r, Mapping) and r.get("kind") == "plan":
+            plans.append((str(r["id"]), str(r["task"]), list((r.get("graph") or {}).get("nodes") or [])))
+        elif isinstance(r, Mapping):
+            skills.append(SkillRecordV0.from_dict(r))
+        elif isinstance(r, SkillRecordV0):
+            skills.append(r)
+    return skills, plans
+
+
+def skill_dependencies(records: Any) -> list[tuple[str, str, str]]:
+    """``(src, dst, rule)`` edges over ``records``: ``causal`` when
+    ``src.requires`` meets ``dst.ensures`` (canonical pred refs, src != dst),
+    ``uses`` when plan record ``src``'s graph names skill ``dst``."""
+    skills, plans = _skills_and_plans(records)
+    out: dict[tuple[str, str, str], None] = {}
+    for src in skills:
+        req = {pred_ref_str(p) for p in src.requires}
+        for dst in skills:
+            if dst.name != src.name and req & {pred_ref_str(p) for p in dst.ensures}:
+                out[(src.name, dst.name, "causal")] = None
+    for pid, _task, nodes in plans:
+        for n in nodes:
+            if n.get("skill"):
+                out[(pid, str(n["skill"]), "uses")] = None
+    return list(out)
+
+
+def skill_benchmarks(records: Any, benchmark_cards: Mapping[str, Mapping[str, Any]]
+                     ) -> dict[str, list[str]]:
+    """Skill name -> benchmark names. A skill is in a benchmark when it is bound
+    on the card's ``embodiment`` and a plan record for one of the card's
+    ``tasks`` uses it (or the card lists no tasks)."""
+    skills, plans = _skills_and_plans(records)
+    used: dict[str, set[str]] = {}
+    for _pid, task, nodes in plans:
+        used.setdefault(task, set()).update(str(n["skill"]) for n in nodes if n.get("skill"))
+    out: dict[str, list[str]] = {}
+    for r in skills:
+        out[r.name] = []
+        for bname, card in sorted(benchmark_cards.items()):
+            tasks = card.get("tasks") or ()
+            if card.get("embodiment") in r.bindings and (
+                    not tasks or any(r.name in used.get(t, ()) for t in tasks)):
+                out[r.name].append(bname)
     return out
 
 
@@ -259,7 +337,7 @@ class Trajectory:
 def to_plain(obj: Any) -> Any:
     """JSON-able form: dataclasses -> dicts, tuples -> lists, sets -> sorted lists."""
     if is_dataclass(obj) and not isinstance(obj, type):
-        return {f.name: to_plain(getattr(obj, f.name)) for f in fields(obj)}
+        return {f.name.rstrip("_"): to_plain(getattr(obj, f.name)) for f in fields(obj)}
     if isinstance(obj, Mapping):
         return {str(k): to_plain(v) for k, v in obj.items()}
     if isinstance(obj, (set, frozenset)):

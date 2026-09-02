@@ -194,3 +194,47 @@ def test_insert_recovery_is_the_progress_a_no_progress_fault_asks_for():
     assert P.insert_recovery(g2, "b", "reapproach") == g2     # idempotent
     with pytest.raises(KeyError):
         P.insert_recovery(g, "zz", "reapproach")
+
+
+@pytest.mark.parametrize("name,kind,want", [
+    ("grasp_can1", "segment", "grasp"), ("nav_fridge", "segment", "nav"),
+    ("place_meat", "segment", "place"), ("drop_can1", "segment", "drop"),
+    ("pack_hot0", "segment", "pack"), ("carry", "segment", "carry"),
+    ("v_at_can1", "verify", "verify"), ("plan", "decide", "decide"), ("survey", "perceive", "perceive"),
+])
+def test_skill_class_derivation(name, kind, want):
+    assert P.skill_class(P.SkillRecordV0(id=name, name=name, kind=kind)) == want
+    declared = P.SkillRecordV0.from_dict({"id": name, "name": name, "kind": kind, "class": "x"})
+    assert P.skill_class(declared) == "x" and P.to_plain(declared)["class"] == "x"
+    assert "class_" not in P.to_plain(declared)
+
+
+PLAN = P.PlanRecord(id="p1", task="thaw", goal=("in(apple,microwave)",), graph=GOOD,
+                    embodiment="e", arm="scripted", evidence={}, rule={})
+
+
+def test_skill_dependencies_causal_and_uses():
+    deps = P.skill_dependencies([GRASP, PLACE, LOOK, PLAN])
+    assert ("place", "grasp", "causal") in deps          # place requires holding, grasp ensures it
+    assert ("grasp", "place", "causal") in deps          # grasp requires gripper_free, place ensures it
+    assert ("look", "grasp", "causal") not in deps and not any(s == d for s, d, _ in deps)
+    assert [e for e in deps if e[2] == "uses"] == [("p1", "grasp", "uses"), ("p1", "place", "uses")]
+    assert P.skill_dependencies({"g": GRASP, "p": P.to_plain(PLAN)}) == [("p1", "grasp", "uses"),
+                                                                          ("p1", "place", "uses")]
+
+
+def test_skill_benchmarks_membership():
+    bound = {n: P.SkillRecordV0(id=n, name=n, bindings={"e": {}}) for n in ("grasp", "place", "look")}
+    cards = {"b_tasks": {"embodiment": "e", "tasks": ["thaw"]},
+             "b_all": {"embodiment": "e", "tasks": []},
+             "b_other": {"embodiment": "other", "tasks": ["thaw"]}}
+    out = P.skill_benchmarks([*bound.values(), PLAN], cards)
+    assert out == {"grasp": ["b_all", "b_tasks"], "place": ["b_all", "b_tasks"], "look": ["b_all"]}
+    assert P.skill_benchmarks([GRASP, PLAN], cards) == {"grasp": []}     # unbound: nowhere
+
+
+def test_skill_helpers_take_raw_record_dicts():
+    raw = {n: P.to_plain(r) for n, r in RECS.items()}
+    assert P.skill_class(raw["grasp"]) == "grasp"
+    assert ("place", "grasp", "causal") in P.skill_dependencies(raw)
+    assert P.skill_benchmarks(raw, {"b": {"embodiment": "e", "tasks": []}}) == {n: [] for n in raw}

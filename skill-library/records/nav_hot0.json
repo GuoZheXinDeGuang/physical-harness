@@ -2,6 +2,7 @@
  "id": "nav_hot0",
  "name": "nav_hot0",
  "kind": "segment",
+ "class": "nav",
  "lineage": {},
  "args": {},
  "requires": [

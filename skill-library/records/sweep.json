@@ -2,6 +2,7 @@
  "id": "sweep",
  "name": "sweep",
  "kind": "perceive",
+ "class": "perceive",
  "lineage": {},
  "args": {},
  "requires": [

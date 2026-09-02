@@ -2,6 +2,7 @@
  "id": "sink_veg",
  "name": "sink_veg",
  "kind": "segment",
+ "class": "sink",
  "lineage": {},
  "args": {},
  "requires": [

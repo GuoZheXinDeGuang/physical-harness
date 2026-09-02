@@ -2,6 +2,7 @@
  "id": "v_closed",
  "name": "v_closed",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

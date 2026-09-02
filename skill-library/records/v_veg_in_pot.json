@@ -2,6 +2,7 @@
  "id": "v_veg_in_pot",
  "name": "v_veg_in_pot",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

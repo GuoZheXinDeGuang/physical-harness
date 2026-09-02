@@ -2,6 +2,7 @@
  "id": "sort_temp",
  "name": "sort_temp",
  "kind": "decide",
+ "class": "decide",
  "lineage": {},
  "args": {},
  "requires": [

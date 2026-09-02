@@ -2,6 +2,7 @@
  "id": "report",
  "name": "report",
  "kind": "decide",
+ "class": "decide",
  "lineage": {},
  "args": {},
  "requires": [

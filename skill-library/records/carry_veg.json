@@ -2,6 +2,7 @@
  "id": "carry_veg",
  "name": "carry_veg",
  "kind": "segment",
+ "class": "carry",
  "lineage": {},
  "args": {},
  "requires": [

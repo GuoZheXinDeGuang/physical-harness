@@ -2,6 +2,7 @@
  "id": "pick",
  "name": "pick",
  "kind": "manipulate",
+ "class": "pick",
  "lineage": {},
  "args": {
   "object": "str"

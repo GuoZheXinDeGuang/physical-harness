@@ -2,6 +2,7 @@
  "id": "carry",
  "name": "carry",
  "kind": "segment",
+ "class": "carry",
  "lineage": {},
  "args": {
   "object": "str",

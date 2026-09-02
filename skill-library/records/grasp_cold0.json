@@ -2,6 +2,7 @@
  "id": "grasp_cold0",
  "name": "grasp_cold0",
  "kind": "segment",
+ "class": "grasp",
  "lineage": {},
  "args": {},
  "requires": [

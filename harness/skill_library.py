@@ -18,15 +18,18 @@ one -- the handover shape.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
 from harness.manifest import discover
-from harness.protocol import TYPES, SkillRecordV0
+from harness.protocol import TYPES, SkillRecordV0, skill_class
 from harness.skill_executor import TRANSPORTS
 
 ROOT = Path(__file__).resolve().parent.parent / "skill-library" / "records"
+#: A skill class is one lowercase token (``grasp``, ``nav``, ``verify``).
+CLASS_TOKEN = re.compile(r"[a-z][a-z0-9]*")
 
 
 def load_records(root: Path = ROOT) -> dict[str, SkillRecordV0]:
@@ -38,6 +41,8 @@ def load_records(root: Path = ROOT) -> dict[str, SkillRecordV0]:
         bad = {k: t for k, t in rec.args.items() if t not in TYPES}
         if bad:
             raise ValueError(f"skill {rec.name!r} args have unknown types {bad}")
+        if not CLASS_TOKEN.fullmatch(skill_class(rec)):
+            raise ValueError(f"skill {rec.name!r} class {skill_class(rec)!r} is not a lowercase token")
         for b in rec.bindings.values():
             for key, p in (b.get("policies") or {}).items():
                 if p.get("transport", "inproc") not in TRANSPORTS:

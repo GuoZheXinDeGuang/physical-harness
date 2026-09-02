@@ -2,6 +2,7 @@
  "id": "nav_can1",
  "name": "nav_can1",
  "kind": "segment",
+ "class": "nav",
  "lineage": {},
  "args": {},
  "requires": [

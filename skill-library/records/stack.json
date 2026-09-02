@@ -2,6 +2,7 @@
  "id": "stack",
  "name": "stack",
  "kind": "manipulate",
+ "class": "stack",
  "lineage": {},
  "args": {
   "object": "str",

@@ -72,7 +72,7 @@ REQUIRED = frozenset({"kind", "skill", "task", "binding", "preconditions",
                       "effects", "measured"})
 #: Permitted but not required. ``mount_plan_sha`` is the base the measurement ran
 #: against, the same field the recovery records already carry.
-OPTIONAL = frozenset({"mount_plan_sha"})
+OPTIONAL = frozenset({"mount_plan_sha", "class"})
 
 #: Scene splits a rate may be attributed to. RoboCasa: ``train`` = layouts 11-60,
 #: ``test`` = layouts 1-10. A rate without one does not say whether it is
@@ -225,6 +225,8 @@ def validate_capability(record: Mapping, records: Mapping | None = None,
 
     if "mount_plan_sha" in record:
         _sha(record["mount_plan_sha"], "mount_plan_sha")
+    if "class" in record and not re.fullmatch(r"[a-z][a-z0-9]*", str(record["class"])):
+        raise SkillRecordError(f"class must be a lowercase token, got {record['class']!r}")
 
 
 def skill_index(records: Sequence[Mapping]) -> dict:

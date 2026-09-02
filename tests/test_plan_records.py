@@ -137,3 +137,14 @@ def test_validate_capability_plan_kind(tmp_path):
         validate_capability({**rec, "rule": {**rec["rule"], "theta": 0.9}})
     with pytest.raises(SkillRecordError):
         InMemorySkillGraph().publish({**rec, "evidence": {"n": 0, "k": 0}})
+
+
+def test_every_record_file_declares_its_derived_class():
+    from harness.protocol import SkillRecordV0, skill_class
+    from harness.skill_library import CLASS_TOKEN, ROOT
+    for path in sorted(ROOT.glob("*.json")):
+        d = json.loads(path.read_text())
+        rec = SkillRecordV0.from_dict(d)
+        assert d.get("class") == skill_class(SkillRecordV0.from_dict({**d, "class": ""})), path.name
+        assert CLASS_TOKEN.fullmatch(d["class"]), path.name
+    assert all(skill_class(r) == r.class_ for r in load_records().values())

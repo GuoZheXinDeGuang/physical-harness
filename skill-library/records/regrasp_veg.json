@@ -2,6 +2,7 @@
  "id": "regrasp_veg",
  "name": "regrasp_veg",
  "kind": "segment",
+ "class": "regrasp",
  "lineage": {},
  "args": {},
  "requires": [

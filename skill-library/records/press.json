@@ -2,6 +2,7 @@
  "id": "press",
  "name": "press",
  "kind": "segment",
+ "class": "press",
  "lineage": {},
  "args": {},
  "requires": [

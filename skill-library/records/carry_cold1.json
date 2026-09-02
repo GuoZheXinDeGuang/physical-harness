@@ -2,6 +2,7 @@
  "id": "carry_cold1",
  "name": "carry_cold1",
  "kind": "segment",
+ "class": "carry",
  "lineage": {},
  "args": {},
  "requires": [

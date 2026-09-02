@@ -2,6 +2,7 @@
  "id": "grasp",
  "name": "grasp",
  "kind": "segment",
+ "class": "grasp",
  "lineage": {},
  "args": {
   "object": "str"

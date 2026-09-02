@@ -2,6 +2,7 @@
  "id": "pot_veg",
  "name": "pot_veg",
  "kind": "segment",
+ "class": "pot",
  "lineage": {},
  "args": {},
  "requires": [

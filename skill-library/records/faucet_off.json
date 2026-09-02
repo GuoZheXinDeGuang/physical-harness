@@ -2,6 +2,7 @@
  "id": "faucet_off",
  "name": "faucet_off",
  "kind": "segment",
+ "class": "faucet",
  "lineage": {},
  "args": {},
  "requires": [

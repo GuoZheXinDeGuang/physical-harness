@@ -183,3 +183,105 @@ def test_vault_doctor_red_dangling_see_also(tmp_path):
     graph, ann_dir = _graph_with(tmp_path, {"see_also": ["does_not_exist"]})
     errs = bv.vault_doctor(graph, ann_dir)
     assert errs and "see_also target" in errs[0]
+
+
+# --- the one skill graph: library records + classes + benchmark cards -------
+
+
+def _library_tree(tmp_path):
+    """Two library records (grasp ensures what carry requires), one benchmark
+    card, one package the carry binding refs -- all under tmp so the fold is
+    exercised on a known tree, not the live library."""
+    lib = tmp_path / "records"
+    lib.mkdir()
+    (lib / "grasp_x.json").write_text(json.dumps({
+        "id": "grasp_x", "name": "grasp_x", "kind": "segment", "class": "grasp",
+        "args": {"object": "str"}, "requires": ["present(object)"],
+        "ensures": ["holding(object)"], "clobbers": [], "limits": {}, "failure_modes": [],
+        "bindings": {"robocasa": {"backend": "scripted"}}, "evidence": {}}))
+    (lib / "carry_x.json").write_text(json.dumps({
+        "id": "carry_x", "name": "carry_x", "kind": "segment", "class": "carry",
+        "args": {"object": "str"}, "requires": ["holding(object)"],
+        "ensures": ["reachable(object)"], "clobbers": [], "limits": {}, "failure_modes": [],
+        "bindings": {"robocasa": {"policies": {
+            "scripted": {"transport": "inproc"},
+            "pi05": {"transport": "ssp", "ref": "plugins.policy_fake:provider",
+                     "checkpoint_sha": "ab" * 32}}}},
+        "evidence": {"robocasa": {"n": 10, "k": 7, "by_executor": {"pi05": {"n": 4, "k": 3}}}}}))
+    (lib / "plan_t1.json").write_text(json.dumps({
+        "kind": "plan", "id": "p1", "task": "t1", "goal": [], "embodiment": "robocasa",
+        "arm": "scripted", "evidence": {}, "rule": {},
+        "graph": {"nodes": [{"id": "n1", "skill": "carry_x"}]}}))
+    plugins = tmp_path / "plugins"
+    (plugins / "benchmark_fake").mkdir(parents=True)
+    (plugins / "benchmark_fake" / "manifest.toml").write_text(
+        '[benchmarks.fake_v0]\nembodiment = "robocasa"\ntasks = ["t1"]\narms = ["scripted", "pi05"]\n')
+    (plugins / "policy_fake").mkdir()
+    (plugins / "policy_fake" / "manifest.toml").write_text('name = "policy_fake"\n')
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    return runs, plugins, lib
+
+
+def _fold(tmp_path):
+    runs, plugins, lib = _library_tree(tmp_path)
+    return bv.build_graph(runs, plugins, annotations=None, library=lib)
+
+
+def test_library_record_folds_to_skill_class_nodes(tmp_path):
+    g = _fold(tmp_path)
+    by_id = {n["id"]: n for n in g["nodes"]}
+    edges = {(e["rel"], e["src"], e["dst"]) for e in g["edges"]}
+    carry = by_id["skill:carry_x"]
+    assert carry["kind"] == "skill" and carry["status"] == "library" and carry["class"] == "carry"
+    assert carry["requires"] == ["holding(object)"] and carry["ensures"] == ["reachable(object)"]
+    assert carry["bindings"]["robocasa"]["pi05"] == {
+        "transport": "ssp", "ref": "plugins.policy_fake:provider", "checkpoint_sha": "ab" * 32}
+    assert carry["evidence"]["robocasa"] == {"n": 10, "k": 7, "by_executor": {"pi05": {"n": 4, "k": 3}}}
+    assert by_id["class:carry"] == {"kind": "class", "id": "class:carry", "name": "carry",
+                                    "skills": 1, "annotations": None}
+    assert ("IN_CLASS", "skill:carry_x", "class:carry") in edges
+    assert ("IN_CLASS", "skill:grasp_x", "class:grasp") in edges
+    assert ("BOUND_TO", "skill:carry_x", "plugins/policy_fake") in edges
+    # nothing in the fold is nameless: every edge endpoint is a node
+    assert {e["src"] for e in g["edges"]} | {e["dst"] for e in g["edges"]} <= set(by_id)
+    assert bv.vault_doctor(g, tmp_path / "no-annotations") == []
+
+
+def test_requires_ensures_pair_yields_depends_on(tmp_path):
+    g = _fold(tmp_path)
+    dep = [e for e in g["edges"] if e["rel"] == "DEPENDS_ON"]
+    assert [(e["src"], e["dst"]) for e in dep] == [("skill:carry_x", "skill:grasp_x")]
+    assert dep[0]["rule"] == "requires∩ensures" and dep[0]["via"] == "skill-library/records/carry_x.json"
+
+
+def test_benchmark_card_yields_evidenced_on(tmp_path):
+    g = _fold(tmp_path)
+    by_id = {n["id"]: n for n in g["nodes"]}
+    assert by_id["benchmark:fake_v0"] == {
+        "kind": "benchmark", "id": "benchmark:fake_v0", "name": "fake_v0", "embodiment": "robocasa",
+        "tasks": ["t1"], "arms": ["scripted", "pi05"], "card": "plugins/benchmark_fake",
+        "annotations": None}
+    ev = {e["src"]: e for e in g["edges"] if e["rel"] == "EVIDENCED_ON"}
+    assert set(ev) == {"skill:carry_x"}  # grasp_x: no plan for t1 uses it
+    assert ev["skill:carry_x"]["dst"] == "benchmark:fake_v0"
+    assert (ev["skill:carry_x"]["n"], ev["skill:carry_x"]["k"]) == (10, 7)  # verbatim
+
+
+def test_library_fold_byte_deterministic(tmp_path):
+    runs, plugins, lib = _library_tree(tmp_path)
+    a = json.dumps(bv.build_graph(runs, plugins, annotations=None, library=lib), sort_keys=True)
+    b = json.dumps(bv.build_graph(runs, plugins, annotations=None, library=lib), sort_keys=True)
+    assert a == b
+    g = json.loads(a)
+    assert [(n["kind"], n["id"]) for n in g["nodes"]] == sorted((n["kind"], n["id"]) for n in g["nodes"])
+    assert [(e["rel"], e["src"], e["dst"]) for e in g["edges"]] == sorted(
+        (e["rel"], e["src"], e["dst"]) for e in g["edges"])
+
+
+def test_live_library_is_in_the_graph():
+    """The checked-in library and the benchmark card fold without runs/."""
+    g = bv.build_graph(RUNS)
+    ids = {n["id"] for n in g["nodes"]}
+    assert "skill:carry" in ids and "benchmark:robocasa_v0" in ids
+    assert any(n["kind"] == "class" for n in g["nodes"])

@@ -2,6 +2,7 @@
  "id": "v_placed_can4",
  "name": "v_placed_can4",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

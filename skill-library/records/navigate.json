@@ -2,6 +2,7 @@
  "id": "navigate",
  "name": "navigate",
  "kind": "segment",
+ "class": "navigate",
  "lineage": {},
  "args": {
   "object": "str"

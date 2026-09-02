@@ -2,6 +2,7 @@
  "id": "pack_hot1",
  "name": "pack_hot1",
  "kind": "segment",
+ "class": "pack",
  "lineage": {},
  "args": {},
  "requires": [

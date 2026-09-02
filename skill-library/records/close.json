@@ -2,6 +2,7 @@
  "id": "close",
  "name": "close",
  "kind": "segment",
+ "class": "close",
  "lineage": {},
  "args": {},
  "requires": [

@@ -2,6 +2,7 @@
  "id": "nav_micro",
  "name": "nav_micro",
  "kind": "segment",
+ "class": "nav",
  "lineage": {},
  "args": {},
  "requires": [

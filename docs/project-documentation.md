@@ -1443,10 +1443,12 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 |---|---|---|
 | 状态字典 σ | `key -> 值`；每个键的来源是 `sensed` 或 `privileged`。谓词只在 σ 上求值 | 卡的 `env.py` / `predicates.py` |
 | Predicate | `id, name, args, reads(读哪些键), bindings{本体: "module:attr"}, audit{本体: {n,tp,fp,tn,fn,seed_block,store}}`。**三值**：读键缺失 → `None`（未知），绝不伪造 False。审计门 `sens>=th_s ∧ spec>=th_p ∧ eps<=base_rate<=1-eps`，阈值是参数不是常量 | `PredicateRecord` / `Audit.passes`；本体卡 manifest `[[provides]] kind="predicate"` 声明，`harness/predicates.py` 的 `records()` / `evaluate()` / `audit_gate()` |
-| SkillRecord | `id, name, kind, lineage{parent,round}, args(模式), requires / ensures / clobbers（谓词引用，`clobbers` 是 STRIPS 删除表）, limits, failure_modes, bindings{本体}, evidence{本体}`。symbolic 半边与本体无关，绑定与证据按本体分开。入库规则：`ensures` 非空，且引用的每个谓词对目标本体都有审计记录 | `SkillRecordV0`；`skill-library/records/<name>.json`，`harness/skill_library.py` 加载 |
+| SkillRecord | `id, name, kind, class, lineage{parent,round}, args(模式), requires / ensures / clobbers（谓词引用，`clobbers` 是 STRIPS 删除表）, limits, failure_modes, bindings{本体}, evidence{本体}`。symbolic 半边与本体无关，绑定与证据按本体分开。入库规则：`ensures` 非空，且引用的每个谓词对目标本体都有审计记录 | `SkillRecordV0`；`skill-library/records/<name>.json`，`harness/skill_library.py` 加载 |
 | ExecutionGraph G | `{mission, seed, tasks[{id, goal[谓词]}], nodes[{id, task, skill, args, after[], on_fail{policy: replan\|recovery\|abort, budget?, rule?}}], rationale, planner{}}` | `ExecutionGraph.from_dict`；`plugins/task/validate.py:plan_to_graph` 把 planner 的 `{goal,nodes,verify}` 形状抬成它 |
 | Trajectory τ | `(x, y, o)`：x = {mission, σ₀ 的 sensed 投影, 可见技能 id, show_evidence, done, fault}，y = {graph id, rationale}，o = {legal, 每节点 verify, L, success, replans, seed, block, role∈{dev,heldout}}。`id = hash(x, y)`。**纯投影**，从链行算出来，不另存 | `board.store.trajectories(session)`；storecli / MCP 同名 |
 | 种子账本 B | 所有**已封存** prereg 的 gate/heldout 区间之并，再并上 STATUS.md 的已烧行（store 格式之前的历史：phase 1/2 区块、held-out 复评；标定块永不烧）。`alloc(block, role)` 合法 ⇔ block ∩ B = ∅。没有任何 store ⇒ **拒绝**分配 gate/heldout，不是「没烧过」 | `board.store.burned_blocks(runs/)`；`rsi_campaign.allocate` / `harness_runtime._assert_unburned` 消费 |
+
+`class` 是技能的粗分组（小写 token，`[a-z][a-z0-9]*`），也是唯一的可选新字段。推导规则（`protocol.skill_class`）：显式声明优先；否则 `kind` ∈ {verify, decide, perceive} 就取 `kind`；再否则取 `name` 的第一段（`name.split("_", 1)[0]`）。库里 99 条记录都已显式写上。
 
 谓词引用的规范串是 `name(a,b)`（零元 `name()`）；record 里的 `holding(object)` 是模板，
 派发时用节点 args 实例化成 `holding(apple)`（`protocol.instantiate`）。
@@ -1563,6 +1565,20 @@ workload 经 episode driver 的 `make_recovery` 缝在持久世界上跑完 acto
 - 段执行器接入点（`plugins/task/workload.py::_segment`）：rearm 后若 `is_segment(executor)`，不走 driver.act 循环，调 `run({skill,args,sigma}, SEGMENT_DEADLINE_S)`；stage driver 仍 `enter_segment`，其 `segment_success` 与图上的 verify 谓词照常判定——执行器的 ok 只是主张，验证永不外包；ok=false → 该节点 fault → replan。
 - 首个 MCP 段执行器卡 `plugins/executor_mcp_segment/`（provides executor `mcp_segment`, transport mcp）：`provider(command=[...])` 起子进程，stdio 上按行 JSON-RPC 2.0（MCP stdio）：`initialize` → `notifications/initialized` → `tools/call run_segment {skill,args,sigma,deadline_s}`；handshake = initialize 的 serverInfo。零新依赖（~40 行客户端）。
 - e2e：`tests/test_skill_executor.py`；`tests/test_executor_mcp_e2e.py`（真 runtime，假服务 `tests/fakes/mcp_segment_service.py` 记录调用到 `$PH_FAKE_MCP_LOG`、`args.fail` → ok=false）：handshake.transport=="mcp"、服务收到节点 spec、ok=false 产生 task.fault 与 replan。
+
+### 9.10 技能图：class、依赖、benchmark
+
+三条派生关系全部在 `harness/protocol.py` 上算，只读记录，不依赖任何卡：
+
+- `skill_class(rec)` → 上面 9.1 的推导规则，一条技能一个 class。
+- `skill_dependencies(records)` → `(src, dst, rule)`：`causal` = `src.requires ∩ dst.ensures ≠ ∅`（谓词规范串比较，自环排除）；`uses` = plan 记录图上每个节点的 `(plan.id, node.skill)`，去重保序。
+- `skill_benchmarks(records, cards)` → `{技能: [benchmark]}`：卡的 `embodiment` 在记录 `bindings` 里，且（卡没写 `tasks`，或某条 plan 记录的 task 在 `tasks` 里且用了该技能）。benchmark 卡的 `embodiment` / `tasks` 从 `plugins/benchmark_*/manifest.toml` 的 `[benchmarks.<name>]` 读，当数据看。
+
+`board/vault.py:build_graph` 把静态技能库和这三条关系折进**同一张图**——控制台看到的技能图就是这一张，没有第二处：
+
+- 节点：`skill:<name>`（库记录，status `library`）、`class:<c>`、`benchmark:<name>`，与既有的 `package` / `capability` 并列（5 类）。
+- 边：`IN_CLASS`、`DEPENDS_ON`（rule `requires∩ensures` / `plan uses`）、`BOUND_TO`（bindings 的 `plugins.<card>:attr` → 卡目录）、`EVIDENCED_ON`（有证据时额外带 `n` / `k`），与既有血缘边并列（13 种关系）。
+- 记录当数据读（json → `SkillRecordV0.from_dict`，读不动的文件跳过），`board/` 依旧零插件导入。
 
 ---
 

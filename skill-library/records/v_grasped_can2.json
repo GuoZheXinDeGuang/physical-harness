@@ -2,6 +2,7 @@
  "id": "v_grasped_can2",
  "name": "v_grasped_can2",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

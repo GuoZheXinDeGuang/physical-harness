@@ -11,10 +11,15 @@ graph (nodes sorted by ``(kind, id)``, edges by ``(rel, src, dst)``). It invents
 no statistic: every number is verbatim from ``bundle_evidence``/``effects``; the
 only derived scalar is ``board.store._delta`` (governed_rate - base_rate).
 
-Three node kinds (skill / package / capability), one edge kind with a fixed
-9-relation vocabulary (DESCENDS_FROM, GOVERNS, REQUIRES, PROVIDES, BINDS,
-EVIDENCED_BY, CLAIMS, SUPERSEDES, MOUNTED_IN); each edge names its mechanical
-``rule`` and the ``via`` artifact it was read from, so an auditor re-derives it.
+Five node kinds (skill / class / benchmark / package / capability), one edge
+kind with a fixed 13-relation vocabulary (DESCENDS_FROM, GOVERNS, REQUIRES,
+PROVIDES, BINDS, EVIDENCED_BY, CLAIMS, SUPERSEDES, MOUNTED_IN, IN_CLASS,
+DEPENDS_ON, BOUND_TO, EVIDENCED_ON); each edge names its mechanical ``rule`` and
+the ``via`` artifact it was read from, so an auditor re-derives it. Skill nodes
+come from two doors: legacy promoted records (``runs/*/skills``, id = digest,
+status from the store) and the static library (``skill-library/records``,
+id = ``skill:<name>``, status ``library``); the symbolic half of a library record
+(class / requires / ensures) is folded with harness.protocol, never a plugin.
 
 Stays plugin-free like the rest of board/: it reads the sealed artifacts as data
 via board.store (never imports plugins.rsi), so folding the chassis can never run
@@ -32,12 +37,16 @@ from board import cards as bc
 from board import store as bs
 from harness.definitions import CAPABILITIES
 from harness.manifest import PLUGINS_ROOT
+from harness.protocol import SkillRecordV0, skill_benchmarks, skill_class, skill_dependencies
 
 SCHEMA_VERSION = 1
 
 #: Optional additive annotation sidecars (see vault_doctor); absent by default.
 ANNOTATIONS_DIR = Path("docs/vault/annotations")
 ANNOTATION_KEYS = {"note", "tags", "see_also"}
+
+#: The static skill library (harness/skill_library.py loads it; here it is data).
+LIBRARY_ROOT = Path(__file__).resolve().parent.parent / "skill-library" / "records"
 
 #: REQUIRES target: the feature namespace IS the declaration (harness/features.py).
 _FEATURE_CAP = {"privileged": "embodiment.ground_truth", "observable": "percept.model"}
@@ -127,6 +136,72 @@ def _skill_node(digest: str, rec: dict, status: str, evidenced_by: str | None) -
     }
 
 
+# --- library skill / class / benchmark nodes --------------------------------
+
+
+def _library_records(library):
+    """``skill-library/records/*.json`` as data: (name -> SkillRecordV0, plan-kind
+    raw dicts). Unreadable/unparsable files are skipped, never fatal (the loud
+    loader is harness.skill_library; plans feed skill_benchmarks only)."""
+    skills: dict[str, SkillRecordV0] = {}
+    plans: list[dict] = []
+    for f in sorted(Path(library).glob("*.json")):
+        try:
+            rec = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(rec, dict):
+            continue
+        if rec.get("kind") == "plan":
+            plans.append(rec)
+            continue
+        try:
+            skills.setdefault(rec["name"], SkillRecordV0.from_dict(rec))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return skills, plans
+
+
+def _library_node(rec: SkillRecordV0, cls: str) -> dict:
+    bindings = {}
+    for emb, b in sorted(rec.bindings.items()):
+        policies = (b or {}).get("policies") or {"scripted": {}}
+        bindings[emb] = {key: {"transport": p.get("transport", "inproc"), "ref": p.get("ref"),
+                               "checkpoint_sha": p.get("checkpoint_sha")}
+                         for key, p in sorted(policies.items())}
+    evidence = {emb: {"n": ev.n, "k": ev.k,
+                      "by_executor": {key: {"n": e.get("n"), "k": e.get("k")}
+                                      for key, e in sorted(ev.by_executor.items())}}
+                for emb, ev in sorted(rec.evidence.items())}
+    return {
+        "kind": "skill",
+        "id": f"skill:{rec.name}",
+        "name": rec.name,
+        "skill_kind": rec.kind,
+        "class": cls,
+        "description": rec.description,
+        "args": dict(rec.args),
+        "requires": list(rec.requires),
+        "ensures": list(rec.ensures),
+        "clobbers": list(rec.clobbers),
+        "limits": dict(rec.limits),
+        "failure_modes": list(rec.failure_modes),
+        "bindings": bindings,
+        "evidence": evidence,
+        "status": "library",
+        "annotations": None,
+    }
+
+
+def _benchmark_cards(cards: list[dict]) -> dict[str, dict]:
+    """``[benchmarks.<name>]`` tables across cards, name -> spec (+ ``card`` dir)."""
+    out: dict[str, dict] = {}
+    for c in cards:
+        for name, spec in (c["manifest"].get("benchmarks") or {}).items():
+            out.setdefault(name, dict(spec, card=c["dir"]))
+    return out
+
+
 # --- package + capability nodes ---------------------------------------------
 
 
@@ -178,7 +253,8 @@ def _capability_nodes() -> list[dict]:
 # --- the fold ---------------------------------------------------------------
 
 
-def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR) -> dict:
+def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR,
+                library=LIBRARY_ROOT) -> dict:
     """The whole vault: ``{schema_version, generated_from, nodes[], edges[]}``.
 
     Pure fold over the sealed tree; re-run on an unchanged tree -> byte-identical
@@ -200,10 +276,10 @@ def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR) 
             claimed.add(dig)
             claims_edges.append((c["dir"], dig, store))
 
-    edges: set[tuple[str, str, str, str, str]] = set()  # (rel, src, dst, rule, via)
+    edges: set[tuple] = set()  # (rel, src, dst, rule, via, evidence|None)
 
-    def add(rel, src, dst, rule, via):
-        edges.add((rel, src, dst, rule, via))
+    def add(rel, src, dst, rule, via, evidence=None):
+        edges.add((rel, src, dst, rule, via, evidence))
 
     # DESCENDS_FROM (within-store generation chain) + REQUIRES + EVIDENCED_BY
     for store, digs in store_digests.items():
@@ -273,26 +349,62 @@ def build_graph(runs="runs", plugins=PLUGINS_ROOT, annotations=ANNOTATIONS_DIR) 
                     add("GOVERNS", dig, f"{sess_dir.name}/{nid}",
                         "plan_complete.node.governance.skills", via)
 
+    # library skills: IN_CLASS / DEPENDS_ON / BOUND_TO / EVIDENCED_ON
+    library_recs, plans = _library_records(library)
+    benchmarks = _benchmark_cards(cards)
+    package_ids = {p["id"] for p in package_nodes}
+    classes: dict[str, int] = {}
+    library_nodes = []
+    for name, rec in library_recs.items():
+        via = f"skill-library/records/{name}.json"
+        cls = skill_class(rec)
+        library_nodes.append(_library_node(rec, cls))
+        classes[cls] = classes.get(cls, 0) + 1
+        add("IN_CLASS", f"skill:{name}", f"class:{cls}", "declared class", via)
+        for b in rec.bindings.values():
+            for p in ((b or {}).get("policies") or {}).values():
+                module = (p.get("ref") or "").split(":")[0]
+                card = "plugins/" + module.split(".")[1] if module.startswith("plugins.") else None
+                if card in package_ids:
+                    add("BOUND_TO", f"skill:{name}", card, "bindings ref module -> card dir", via)
+    for src, dst, rule in skill_dependencies(library_recs):
+        if src in library_recs and dst in library_recs:  # plan "uses" rows have no plan node
+            add("DEPENDS_ON", f"skill:{src}", f"skill:{dst}",
+                {"causal": "requires∩ensures", "uses": "plan uses"}.get(rule, rule),
+                f"skill-library/records/{src}.json")
+    for name, benches in skill_benchmarks(list(library_recs.values()) + plans, benchmarks).items():
+        for bench in benches:
+            ev = library_recs[name].evidence.get(benchmarks[bench].get("embodiment"))
+            add("EVIDENCED_ON", f"skill:{name}", f"benchmark:{bench}", "harness.protocol.skill_benchmarks",
+                benchmarks[bench]["card"], (ev.n, ev.k) if ev else None)
+    class_nodes = [{"kind": "class", "id": f"class:{c}", "name": c, "skills": n, "annotations": None}
+                   for c, n in classes.items()]
+    benchmark_nodes = [{"kind": "benchmark", "id": f"benchmark:{b}", "name": b,
+                        "embodiment": spec.get("embodiment"), "tasks": list(spec.get("tasks") or []),
+                        "arms": list(spec.get("arms") or []), "card": spec["card"], "annotations": None}
+                       for b, spec in benchmarks.items()]
+
     # status: promoted (claimed + judgement-established) / candidate; then retire
     # a promoted record a same-lineage promoted successor DESCENDS_FROM.
     status: dict[str, str] = {}
     for dig, rec in records.items():
         status[dig] = ("promoted" if dig in claimed and rec.get("heldout_judgement_established")
                        else "candidate")
-    desc = [(s, d) for (rel, s, d, _r, _v) in edges if rel == "DESCENDS_FROM"]
+    desc = [(s, d) for (rel, s, d, *_rest) in edges if rel == "DESCENDS_FROM"]
     for src, dst in desc:
         if status.get(dst) == "promoted" and status.get(src) == "promoted" and _same_lineage(records, src, dst):
             status[dst] = "retired"
 
     skill_nodes = [_skill_node(d, records[d], status[d], evidenced.get(d)) for d in records]
-    nodes = skill_nodes + package_nodes + _capability_nodes()
+    nodes = skill_nodes + library_nodes + class_nodes + benchmark_nodes + package_nodes + _capability_nodes()
     nodes.sort(key=lambda n: (n["kind"], n["id"]))
 
     if annotations is not None:
         _attach_annotations(nodes, annotations)
 
-    edge_list = [{"rel": rel, "src": src, "dst": dst, "rule": rule, "via": via}
-                 for (rel, src, dst, rule, via) in edges]
+    edge_list = [{"rel": rel, "src": src, "dst": dst, "rule": rule, "via": via,
+                  **({"n": nk[0], "k": nk[1]} if nk else {})}
+                 for (rel, src, dst, rule, via, nk) in edges]
     # Full-tuple key: (rel,src,dst) can repeat with different rule/via, and the
     # collection set's iteration order varies per process (hash randomization).
     edge_list.sort(key=lambda e: (e["rel"], e["src"], e["dst"], e["rule"], e["via"]))

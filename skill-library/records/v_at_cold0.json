@@ -2,6 +2,7 @@
  "id": "v_at_cold0",
  "name": "v_at_cold0",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

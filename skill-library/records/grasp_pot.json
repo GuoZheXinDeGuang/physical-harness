@@ -2,6 +2,7 @@
  "id": "grasp_pot",
  "name": "grasp_pot",
  "kind": "segment",
+ "class": "grasp",
  "lineage": {},
  "args": {},
  "requires": [

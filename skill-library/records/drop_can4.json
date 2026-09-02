@@ -2,6 +2,7 @@
  "id": "drop_can4",
  "name": "drop_can4",
  "kind": "segment",
+ "class": "drop",
  "lineage": {},
  "args": {},
  "requires": [

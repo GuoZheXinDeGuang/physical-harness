@@ -2,6 +2,7 @@
  "id": "v_pot_on_burner",
  "name": "v_pot_on_burner",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

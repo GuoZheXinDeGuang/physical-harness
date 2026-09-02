@@ -2,6 +2,7 @@
  "id": "place_on",
  "name": "place_on",
  "kind": "segment",
+ "class": "place",
  "lineage": {},
  "args": {
   "object": "str",

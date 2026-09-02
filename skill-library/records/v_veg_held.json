@@ -2,6 +2,7 @@
  "id": "v_veg_held",
  "name": "v_veg_held",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

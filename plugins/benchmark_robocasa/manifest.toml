@@ -6,6 +6,7 @@
 # content-addressed suite artifact under <session>/suites/. It declares no
 # mounts, so base_profile's sha is untouched.
 [benchmarks.robocasa_v0]
+embodiment = "robocasa"
 tasks = ["kitchen_thaw", "pack_lunch", "recycle_cans", "steam_prep"]
 # scripted = kitchen_driver stage drivers; pi05 = the fine-tuned pi0.5 through
 # plugins/policy_vla_remote on segments that have a binding, scripted elsewhere

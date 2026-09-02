@@ -2,6 +2,7 @@
  "id": "plan",
  "name": "plan",
  "kind": "decide",
+ "class": "decide",
  "lineage": {},
  "args": {},
  "requires": [

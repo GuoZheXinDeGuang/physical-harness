@@ -2,6 +2,7 @@
  "id": "v_veg_in_sink",
  "name": "v_veg_in_sink",
  "kind": "verify",
+ "class": "verify",
  "lineage": {},
  "args": {},
  "requires": [

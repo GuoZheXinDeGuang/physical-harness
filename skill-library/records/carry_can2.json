@@ -2,6 +2,7 @@
  "id": "carry_can2",
  "name": "carry_can2",
  "kind": "segment",
+ "class": "carry",
  "lineage": {},
  "args": {},
  "requires": [

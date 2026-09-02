@@ -2,6 +2,7 @@
  "id": "survey",
  "name": "survey",
  "kind": "perceive",
+ "class": "perceive",
  "lineage": {},
  "args": {},
  "requires": [],
