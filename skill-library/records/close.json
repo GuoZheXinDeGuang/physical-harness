@@ -2,7 +2,7 @@
  "id": "close",
  "name": "close",
  "kind": "segment",
- "class": "close",
+ "class": "actuate",
  "lineage": {},
  "args": {},
  "requires": [

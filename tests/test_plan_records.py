@@ -139,12 +139,13 @@ def test_validate_capability_plan_kind(tmp_path):
         InMemorySkillGraph().publish({**rec, "evidence": {"n": 0, "k": 0}})
 
 
-def test_every_record_file_declares_its_derived_class():
-    from harness.protocol import SkillRecordV0, skill_class
-    from harness.skill_library import CLASS_TOKEN, ROOT
+def test_every_record_file_declares_a_class():
+    """Every shipped record declares its class explicitly (a lowercase token) --
+    the derivation rule is the default for NEW records, but shipped ones may
+    override it to fold synonyms into one family (pick -> grasp, navigate ->
+    nav, stack/pot_veg -> place, faucet/close/press -> actuate)."""
+    from harness.skill_library import CLASS_TOKEN, ROOT, load_records
     for path in sorted(ROOT.glob("*.json")):
         d = json.loads(path.read_text())
-        rec = SkillRecordV0.from_dict(d)
-        assert d.get("class") == skill_class(SkillRecordV0.from_dict({**d, "class": ""})), path.name
-        assert CLASS_TOKEN.fullmatch(d["class"]), path.name
-    assert all(skill_class(r) == r.class_ for r in load_records().values())
+        assert CLASS_TOKEN.fullmatch(d.get("class", "")), path.name
+    assert all(r.class_ for r in load_records().values())

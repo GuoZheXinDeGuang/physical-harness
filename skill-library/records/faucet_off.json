@@ -2,7 +2,7 @@
  "id": "faucet_off",
  "name": "faucet_off",
  "kind": "segment",
- "class": "faucet",
+ "class": "actuate",
  "lineage": {},
  "args": {},
  "requires": [

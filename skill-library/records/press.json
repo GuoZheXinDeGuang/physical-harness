@@ -2,7 +2,7 @@
  "id": "press",
  "name": "press",
  "kind": "segment",
- "class": "press",
+ "class": "actuate",
  "lineage": {},
  "args": {},
  "requires": [

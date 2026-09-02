@@ -2,7 +2,7 @@
  "id": "pick",
  "name": "pick",
  "kind": "manipulate",
- "class": "pick",
+ "class": "grasp",
  "lineage": {},
  "args": {
   "object": "str"
