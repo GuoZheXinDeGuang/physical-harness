@@ -1389,6 +1389,73 @@ def rsi_frames(session_dir: str | Path, task: str, round: int) -> list[str]:
     return []
 
 
+# --- proposals inbox --------------------------------------------------------
+#
+# ``<session>/proposals/<id>.json``: what an outside proposer (the skill-author
+# preset, an operator) asks the lightweight evolve loop to try next. One entry =
+# ``{task, kind, payload, note}``; scripts/evolve.py consumes the oldest pending
+# one for its task at the start of each round and stamps ``applied`` in place.
+
+PROPOSAL_KINDS = ("tunables", "executor", "card")
+
+
+def _proposal_error(doc) -> str | None:
+    """The shape gate at the trust boundary (an LLM writes these): exactly
+    ``{task:str, kind:PROPOSAL_KINDS, payload:dict, note?:str}``."""
+    if not isinstance(doc, dict):
+        return "proposal must be a JSON object"
+    extra = set(doc) - {"task", "kind", "payload", "note"}
+    if extra:
+        return f"unknown proposal keys {sorted(extra)}"
+    if not isinstance(doc.get("task"), str) or not doc["task"]:
+        return "proposal needs task: str"
+    if doc.get("kind") not in PROPOSAL_KINDS:
+        return f"proposal kind must be one of {list(PROPOSAL_KINDS)}"
+    if not isinstance(doc.get("payload"), dict):
+        return "proposal needs payload: object"
+    if not isinstance(doc.get("note", ""), str):
+        return "proposal note must be a string"
+    return None
+
+
+def submit_proposal(session_dir: str | Path, raw: str) -> dict:
+    """Atomically drop ``raw`` (a proposal JSON string) into ``<session>/proposals/``.
+    The ONE write both faces share: ``{"submitted": <id>, "inbox": <dir>}`` or
+    ``{"error": ...}`` when the shape gate rejects it. Ids sort in submission order."""
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {"error": f"proposal is not JSON: {exc}"}
+    err = _proposal_error(doc)
+    if err:
+        return {"error": err}
+    inbox = Path(session_dir) / "proposals"
+    inbox.mkdir(parents=True, exist_ok=True)
+    pid = f"proposal-{time.time_ns():019d}-{uuid.uuid4().hex[:8]}"
+    drop(inbox, f"{pid}.json", json.dumps(
+        {"task": doc["task"], "kind": doc["kind"], "payload": doc["payload"],
+         "note": doc.get("note", ""), "applied": None}, sort_keys=True))
+    return {"submitted": pid, "inbox": str(inbox)}
+
+
+def proposals(session_dir: str | Path) -> list[dict]:
+    """Every proposal in the session's inbox, oldest first:
+    ``{id, task, kind, payload, note, applied}`` -- ``applied`` is None while
+    pending, else ``{round, ts}`` stamped by scripts/evolve.py. [] when none."""
+    inbox = Path(session_dir) / "proposals"
+    out = []
+    for p in sorted(inbox.glob("proposal-*.json")) if inbox.is_dir() else ():
+        try:
+            doc = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(doc, dict):
+            out.append({"id": p.stem, "task": doc.get("task"), "kind": doc.get("kind"),
+                        "payload": doc.get("payload"), "note": doc.get("note", ""),
+                        "applied": doc.get("applied")})
+    return out
+
+
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once.

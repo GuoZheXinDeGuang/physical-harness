@@ -20,6 +20,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from harness.manifest import discover
 from harness.protocol import TYPES, SkillRecordV0
 
 ROOT = Path(__file__).resolve().parent.parent / "skill-library" / "records"
@@ -37,7 +38,24 @@ def load_records(root: Path = ROOT) -> dict[str, SkillRecordV0]:
         out[rec.name] = rec
     if not out:
         raise ValueError(f"no skill records under {root}")
+    bind_executors(out, discover().executors)
     return out
+
+
+def bind_executors(records: dict[str, SkillRecordV0], executors: Iterable[Mapping]) -> None:
+    """Fold each mounted card's ``[executors.<key>]`` (harness.manifest) into
+    ``bindings.<emb>.policies.<key> = {transport, ref}`` -- a candidate card binds
+    its executor onto a skill only while mounted (PH_PLUGINS_EXTRA); the record
+    files stay untouched until evolve publishes a measured row. Loud on a skill the
+    library lacks (a mis-declared candidate must not silently bind nothing)."""
+    for e in executors:
+        if e["skill"] not in records:
+            raise ValueError(f"plugin {e['plugin']!r} binds executor {e['key']!r} to unknown "
+                             f"skill {e['skill']!r}")
+        b = records[e["skill"]].bindings.setdefault(e["embodiment"], {})
+        pols = b.setdefault("policies", {})
+        pols.setdefault("scripted", {})  # the record's own task stays the scripted base
+        pols[e["key"]] = {"transport": e["transport"], "ref": e["ref"]}
 
 
 def _binding(rec: SkillRecordV0, embodiment: str) -> dict[str, Any] | None:

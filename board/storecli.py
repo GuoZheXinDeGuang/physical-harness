@@ -93,6 +93,17 @@ def dispatch(fn: str, name: str | None, runs: Path, status: Path, progress: Path
             raise ValueError(f"{fn} needs a brief id as the name argument")
         return (bs.brief_status(path, name, wait_ms) if fn == "brief_status"
                 else bs.cancel_brief(path, name))
+    if fn in ("submit_proposal", "proposals"):
+        # The session is the addressed thing (shared guard); submit_proposal's
+        # raw JSON rides --brief into the ONE shared store write.
+        path = bs.safe_child(runs, session or "session-main", bs.is_session)
+        if path is None:
+            raise ValueError("unknown session")
+        if fn == "proposals":
+            return bs.proposals(path)
+        if brief is None:
+            raise ValueError("submit_proposal needs --brief (the proposal JSON)")
+        return bs.submit_proposal(path, brief)
     if fn in ("rsi_run", "rsi_series", "rsi_frames"):
         # The TASK rides the `name` slot; the session is the addressed thing
         # (the brief_status pattern) and goes through the shared guard.
@@ -250,9 +261,9 @@ def serve(stdin, stdout, runs: Path, status: Path, progress: Path) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|rsi_run|rsi_series|rsi_frames|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|skill_evidence|skills|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
+    parser.add_argument("fn", help="serve|health|submit_brief|brief_status|cancel_brief|submit_proposal|proposals|rsi_run|rsi_series|rsi_frames|list_stores|store|heldout|campaign_progress|sessions|session|session_progress|suite_result|trajectories|plan_index|skill_evidence|skills|runtime_status|runtime_frame|runtime_rollout|runtime_keyframes|runtime_keyframe|runtime_events|host_vitals|model_server|ledger|rounds|cards|vault|vault_node|vault_neighbors")
     parser.add_argument("name", nargs="?", default=None, help="store/session name, vault node id for vault_node/vault_neighbors, the brief id for brief_status/cancel_brief, the task for rsi_run/rsi_series/rsi_frames, the model_server action (status|start|stop, default status), or the console port for health")
-    parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority)")
+    parser.add_argument("--brief", default=None, help="submit_brief: the raw brief JSON string, dropped verbatim (zero validation; the runtime is the sole authority); submit_proposal: the raw proposal JSON {task, kind, payload, note}")
     parser.add_argument("--session", default="session-main", help="the runtime session addressed: whose inbox submit_brief routes into, whose brief brief_status/cancel_brief names, and whose evolve campaign rsi_run/rsi_series/rsi_frames reads (default: session-main)")
     parser.add_argument("--relation", default=None, help="vault_neighbors: restrict adjacency to one rel")
     parser.add_argument("--runs", type=Path, default=Path("runs"), help="campaign runs directory (default: runs)")

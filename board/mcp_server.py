@@ -179,6 +179,29 @@ def rsi_frames(task: str, round: int, name: str = _DEFAULT_SESSION) -> list[str]
 
 
 @mcp.tool()
+def submit_proposal(proposal: dict, session: str = _DEFAULT_SESSION) -> dict:
+    """Drop one proposal for the lightweight evolve loop into
+    ``runs/<session>/proposals/``: ``{"task": <task>, "kind": "tunables"|"executor"|"card",
+    "payload": {...}, "note": <why>}``. scripts/evolve.py consumes the oldest pending
+    one for its task at the start of each round (sealed as ``rsi_proposal_applied``)
+    and tries it INSTEAD of its built-in proposer; it still publishes only when the
+    same-seed success count improves. Payloads: tunables ``{ref, path:[...], to,
+    node?}``; executor ``{to, node?}``; card ``{path: plugins/candidates/<name>, to:
+    <executor key>, ref: "module:attr", params?, node?}``. ``node`` defaults to the
+    suite's commonest first-death node. Records are never written here."""
+    path = bs.safe_child(_Cfg.runs, session, bs.is_session)
+    return bs.submit_proposal(path, json.dumps(proposal)) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
+def proposals(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """The session's proposal inbox, oldest first: ``{id, task, kind, payload,
+    note, applied}`` (``applied`` = null while pending, else ``{round, ts}``)."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.proposals(path) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
     """Protocol-v0 trajectory samples projected from one session's chain: one
     per plan/replan decision (x: mission/sigma0/skills/done/fault, y: graph id +

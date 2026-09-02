@@ -63,6 +63,10 @@ class KitchenThawDriver:
         #: segment by the base's ``enter_segment(..., executor=)``; None -> the
         #: stage driver acts. Either way the stage's done() is the sub-goal truth.
         self._executor: Any = None
+        #: True when the executor bound the live env itself (``bind(env, target=)``,
+        #: a code-as-policy candidate): raw obs in, 12-dim env action out -- no
+        #: lerobot contract in between.
+        self._native: bool = False
         self._prompt: str = ""
         #: policy-owned step clock the base loop reads (``getattr(driver, "k", k)``)
         #: and the segment cap counts against.
@@ -77,7 +81,9 @@ class KitchenThawDriver:
     def act(self, obs) -> np.ndarray:
         """Relay one control step to the active stage driver on the bound env --
         or to the bound executor, through the pi0.5 obs/action contract."""
-        if self._executor is not None:
+        if self._native:
+            a = self._executor.act(obs)
+        elif self._executor is not None:
             a = vla_io.lerobot_to_env(self._executor.act(vla_io.build_obs(obs, self._prompt)))
         else:
             a = self._stage.act(self._env, obs)
@@ -137,9 +143,12 @@ class KitchenThawDriver:
         self._cap = cap
         self.k = 0
         self._executor = executor
+        self._native = hasattr(executor, "bind")
         if executor is not None:
             executor.reset()  # a chunk computed for another situation is stale
             self._prompt = str(env.get_ep_meta().get("lang") or task)
+        if self._native:  # the stage's target (make_recovery's seam) is the executor's too
+            executor.bind(env, target=getattr(self._stage, "obj_name", None))
 
     def segment_success(self, env) -> bool:
         """The sub-goal truth: the stage driver's OWN live-state predicate (arrived

@@ -61,6 +61,12 @@ class Registry:
     #: ``[benchmarks.<name>]`` pure-data suite cards (tasks, arms, max_replans):
     #: the runtime's ``suite`` brief selector, folded exactly like campaigns.
     benchmarks: dict[str, dict] = field(default_factory=dict)
+    #: ``[executors.<key>] skill = ..., embodiment = ..., ref = ..., transport?``:
+    #: a card (typically a candidate mounted through PH_PLUGINS_EXTRA) binding an
+    #: executor key onto a skill record for as long as it is mounted --
+    #: ``harness.skill_library.bind_executors`` folds each into
+    #: ``bindings.<emb>.policies.<key>``; the record file itself is untouched.
+    executors: tuple[dict, ...] = ()
 
 
 PROVIDES_KINDS = frozenset({"embodiment", "predicate", "recovery", "skill", "planner"})
@@ -93,7 +99,11 @@ def card_provides(data: dict, plugin: str) -> list[dict]:
 
 
 def _load(root: Path) -> list[tuple[str, dict]]:
-    """(plugin dir name, parsed manifest), in a deterministic scan order."""
+    """(plugin dir name, parsed manifest), in a deterministic scan order. A root
+    that is itself ONE card (``plugins/candidates/<name>`` via PH_PLUGINS_EXTRA)
+    loads as that single card."""
+    if (root / "manifest.toml").is_file():
+        return [(root.name, tomllib.loads((root / "manifest.toml").read_text()))]
     return [(mf.parent.name, tomllib.loads(mf.read_text()))
             for mf in sorted(root.glob("*/manifest.toml"))]
 
@@ -176,6 +186,7 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     recov_owner: dict = {}
     benchmarks: dict[str, dict] = {}
     bench_owner: dict = {}
+    executors: list[dict] = []
 
     # PH_PLUGINS_EXTRA: colon-separated extra card roots folded after ``root``
     # (a test's tmp card beside the installed ones; same collision rules).
@@ -230,6 +241,11 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, mounts_ in card_bundles(data).items():
             _claim(bundles, bundle_owner, name, tuple(mounts_),
                    kind="bundle", plugin=plugin)
+        for key, spec in data.get("executors", {}).items():
+            executors.append({"key": key, "skill": spec["skill"], "embodiment": spec["embodiment"],
+                              "ref": spec["ref"], "transport": spec.get("transport", "inproc"),
+                              "plugin": plugin})
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
-                    third_party, bundles, recoveries, tuple(provides), benchmarks)
+                    third_party, bundles, recoveries, tuple(provides), benchmarks,
+                    tuple(executors))

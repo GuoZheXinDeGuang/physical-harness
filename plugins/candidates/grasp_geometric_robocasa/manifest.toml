@@ -1,0 +1,31 @@
+# The first code candidate: a code-as-policy executor for one robocasa pick skill.
+# Lives under plugins/candidates/ -- NOT scanned at boot; evolve mounts it with
+# PH_PLUGINS_EXTRA=plugins/candidates, and only then does [executors.geometric]
+# bind onto grasp_meat's record (bindings.robocasa.policies.geometric =
+# {transport: "inproc", ref}). The record file is untouched until evolve publishes
+# a measured by_executor row. needs_sim: it drives a live kitchen; the robocasa
+# primitives are reached by ref (PRIMITIVES_REF in __init__.py), never imported,
+# so it owns no third_party of its own.
+needs_sim = true
+
+[executors.geometric]
+skill = "grasp_meat"
+embodiment = "robocasa"
+ref = "plugins.candidates.grasp_geometric_robocasa:provider"
+transport = "inproc"
+
+# Calibration knobs (metres / ticks): hover height above the live object pose,
+# the xy/z arrival tolerances, how far below the object's centre the descent
+# aims, the in-place close hold, the lift and its per-step command cap, and the
+# object rise that proves an enclosure (a pinch on air never lifts the object).
+# The provider reads this table as defaults; a mounted {tunables = {...}} param
+# (PH_MOUNT_PARAMS_OVERRIDE / an evolve tunables proposal) overrides per key.
+[tunables]
+hover = 0.08
+xy_tol = 0.03
+z_tol = 0.02
+descend_below = 0.01
+close_ticks = 12
+lift_dz = 0.12
+lift_cap = 0.3
+secure_dz = 0.03

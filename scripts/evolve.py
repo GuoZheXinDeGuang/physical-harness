@@ -13,6 +13,11 @@ the measured ``by_executor`` row folded in goes through the evolution-only skill
 root door (``InMemorySkillGraph.publish``, the same one scripts/publish_plans.py
 uses). Every round lands atomically in ``campaigns/evolve-<task>/campaign.json``
 (rounds[], best, cursor, status); the runtime seals the ``rsi_step`` rows off it.
+The ``proposals/`` inbox (board.store.submit_proposal) comes first: a pending entry
+for this task is consumed at the start of the round (``rsi_proposal_applied``) and
+tried instead of the built-in proposer -- a ``card`` proposal mounts its candidate
+dir through ``PH_PLUGINS_EXTRA`` for that round's suite and, if it wins, its
+binding is published into the record.
 Cancel is checked at the round boundary (``--cancel-marker``); a resubmitted task
 resumes from ``cursor``. Media never enters this file's outputs beyond paths read
 from ``media/<task>/<seed>/index.json``.
@@ -24,6 +29,7 @@ from ``media/<task>/<seed>/index.json``.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
@@ -45,11 +51,17 @@ from harness.skill_library import rearm, segment_specs
 from plugins.graphs import InMemorySkillGraph
 from plugins.task import workload
 from scripts import harness_runtime as hr
+from scripts.brief_drop import drop
+from board import store as bs
 
 MODES = ("execution", "evolution")
 #: JSON ``{provider ref: {param: value}}`` merged over a card's mount params by
 #: ``harness.manifest.mount_params`` -- how a tunables trial reaches a driver.
 OVERRIDE_ENV = "PH_MOUNT_PARAMS_OVERRIDE"
+#: Extra card roots (harness.manifest.discover); a ``card`` proposal appends its
+#: candidate dir for the round's suite, on top of whatever the process was given.
+EXTRA_ENV = "PH_PLUGINS_EXTRA"
+_BASE_EXTRA = os.environ.get(EXTRA_ENV, "")
 PLANNER_REF = "scripts.evolve:planner_provider"
 
 
@@ -115,8 +127,20 @@ def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path
     """{count, seeds: {seed: {success, first_death, fault, nodes}}, sha}. ``media_dir``
     (<session>/media) turns on the workload's segment recorder: kept-on-success clips."""
     os.environ[OVERRIDE_ENV] = json.dumps(applied["tunables"])
+    cards = applied.get("cards") or {}
+    os.environ[EXTRA_ENV] = ":".join(r for r in (_BASE_EXTRA, *(c["path"] for c in cards.values())) if r)
     per = {}
     brief = {**hr.task_brief(task, binding), "arm": arm}
+    if cards:   # a candidate card's executor: bind it into this suite's records (the plan
+        # validator's view) and segment specs (rearm's route) -- in memory, never on disk
+        specs = brief["segment_specs"] = copy.deepcopy(brief.get("segment_specs") or {})
+        recs = brief["records"] = {k: to_plain(v) if isinstance(v, SkillRecordV0) else copy.deepcopy(v)
+                                   for k, v in (brief.get("records") or {}).items()}
+        for key, c in cards.items():
+            specs.setdefault(c["skill"], {}).setdefault("policies", {})[key] = _binding(c)
+            emb = brief["embodiment"]
+            rec = recs.setdefault(c["skill"], {"id": c["skill"], "name": c["skill"]})
+            rec.setdefault("bindings", {}).setdefault(emb, {}).setdefault("policies", {})[key] = _binding(c)
     if media_dir is not None:
         brief["media_dir"] = str(media_dir)
     for seed in range(int(seeds[0]), int(seeds[1]) + 1):
@@ -142,10 +166,54 @@ def run_suite(task: str, binding: dict, seeds: list, arm: str, skills_root: Path
     return {"count": sum(s["success"] for s in per.values()), "seeds": per, "sha": sha_json(per)}
 
 
-# ── try: the built-in proposer ────────────────────────────────────────────────────
+# ── try: the proposals inbox first, then the built-in proposer ────────────────────
 
 def _none(reason: str, node=None) -> dict:
     return {"kind": "none", "node": node, "detail": {"reason": reason}}
+
+
+def _binding(c: dict) -> dict:
+    return {"ref": c["ref"], "params": dict(c.get("params") or {}),
+            "transport": c.get("transport", "inproc")}
+
+
+def _first_death(before: dict):
+    deaths = Counter(s["first_death"] for s in before["seeds"].values() if s["first_death"])
+    return deaths.most_common(1)[0][0] if deaths else None
+
+
+def take_proposal(session: Path, task: str, round_no: int) -> dict | None:
+    """The oldest pending inbox proposal for ``task`` (board.store.proposals), stamped
+    ``applied={round, ts}`` in place (atomic rewrite) so it is consumed exactly once."""
+    for p in bs.proposals(session):
+        if p["task"] == task and p["applied"] is None:
+            path = session / "proposals" / f"{p['id']}.json"
+            doc = json.loads(path.read_text())
+            doc["applied"] = {"round": round_no, "ts": time.time()}
+            drop(path.parent, path.name, json.dumps(doc, sort_keys=True))
+            return {**p, "applied": doc["applied"]}
+    return None
+
+
+def from_proposal(p: dict, before: dict) -> dict:
+    """A proposal as this round's ``tried`` -- the same {kind, node, detail} shape the
+    built-in proposer emits (so apply/publish need no second path), plus
+    ``detail.proposal`` (id) and ``detail.note``. ``payload.node`` else the commonest
+    first-death node; a node the suite never ran is an honest ``none``."""
+    pay = dict(p["payload"])
+    node = pay.pop("node", None) or _first_death(before)
+    runs = [s["nodes"][node] for s in before["seeds"].values() if node in s["nodes"]]
+    tag = {"proposal": p["id"], "note": p["note"]}
+    if not runs:
+        return {"kind": "none", "node": node,
+                "detail": {**tag, "reason": f"proposal names no node the suite ran ({node!r})"}}
+    need = {"tunables": ("ref", "path", "to"), "executor": ("to",), "card": ("path", "to", "ref")}[p["kind"]]
+    if missing := [k for k in need if k not in pay]:
+        return {"kind": "none", "node": node,
+                "detail": {**tag, "reason": f"{p['kind']} proposal lacks {missing}"}}
+    return {"kind": p["kind"], "node": node,
+            "detail": {"skill": runs[0]["skill"], "executor": runs[0]["executor"],
+                       "from": runs[0]["executor"], **tag, **pay}}
 
 
 def _tunables(params: dict) -> tuple[dict, list]:
@@ -193,10 +261,16 @@ def propose(before: dict, records: dict, emb: str, arm: str, binding: dict,
 
 def apply(tried: dict, applied: dict) -> dict:
     out = {"executors": dict(applied["executors"]),
-           "tunables": json.loads(json.dumps(applied["tunables"]))}
+           "tunables": json.loads(json.dumps(applied["tunables"])),
+           "cards": dict(applied.get("cards") or {})}
     d = tried["detail"]
     if tried["kind"] == "executor":
         out["executors"][tried["node"]] = d["to"]
+    elif tried["kind"] == "card":
+        out["executors"][tried["node"]] = d["to"]
+        out["cards"][d["to"]] = {"skill": d["skill"], "path": d["path"], "ref": d["ref"],
+                                 "params": dict(d.get("params") or {}),
+                                 "transport": d.get("transport", "inproc")}
     elif tried["kind"] == "tunables":
         cur = out["tunables"].setdefault(d["ref"], {})
         for p in d["path"][:-1]:
@@ -210,12 +284,15 @@ def apply(tried: dict, applied: dict) -> dict:
 def publish(skills_root: Path, rec, emb: str, tried: dict, after: dict) -> tuple[str, dict]:
     d = to_plain(rec)
     node, det = tried["node"], tried["detail"]
-    key = det["to"] if tried["kind"] == "executor" else det["executor"]
+    key = det["to"] if tried["kind"] in ("executor", "card") else det["executor"]
     runs = [s["nodes"][node] for s in after["seeds"].values() if node in s["nodes"]]
     ev = d.setdefault("evidence", {}).setdefault(emb, {"n": 0, "k": 0})
     row = ev.setdefault("by_executor", {}).setdefault(key, {"n": 0, "k": 0})
     row["n"] += len(runs)
     row["k"] += sum(r["success"] for r in runs)
+    if tried["kind"] == "card":   # the candidate's binding earns its place in the record
+        b = d.setdefault("bindings", {}).setdefault(emb, {})
+        b.setdefault("policies", {})[key] = _binding(det)
     if tried["kind"] == "tunables":
         b = d.setdefault("bindings", {}).setdefault(emb, {})
         slot = b.get("policies", {}).get(key, b)   # the policy entry; scripted rides the binding
@@ -276,7 +353,9 @@ def main(argv=None) -> int:
             return 3
         before = base or run_suite(args.task, binding, seeds, arm, args.skills_root, applied,
                                      media_dir=args.session / "media", budgets=budgets)
-        tried = propose(before, records, emb, arm, binding, r, applied)
+        prop = take_proposal(args.session, args.task, r)
+        tried = (from_proposal(prop, before) if prop
+                 else propose(before, records, emb, arm, binding, r, applied))
         after, published = before, False
         if tried["kind"] != "none":
             trial = apply(tried, applied)
@@ -298,7 +377,8 @@ def main(argv=None) -> int:
         doc["rounds"].append({
             "round": r, "tried": tried, "before": before["count"], "after": after["count"],
             "best": doc["best"], "suite_sha": after["sha"], "published": published,
-            "media": _media(args.session, args.task, seeds), "ts": time.time()})
+            "media": _media(args.session, args.task, seeds), "ts": time.time(),
+            "proposal": {k: prop[k] for k in ("id", "kind", "note")} if prop else None})
         doc["cursor"], doc["applied"] = r, applied
         store.save(doc)
         base = kept
