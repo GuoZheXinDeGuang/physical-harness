@@ -50,14 +50,29 @@ def _binding(rec: SkillRecordV0, embodiment: str) -> dict[str, Any] | None:
     return b
 
 
-def rearm(spec: Mapping[str, Any], arm: str) -> dict[str, Any]:
-    """Resolve a spec's ``policies`` for ``arm``: the arm's provider ref lands on
+def executor_key(spec: Mapping[str, Any], arm: str, executor: str | None = None) -> str:
+    """The policy key :func:`rearm` resolves for a spec: an explicit ``executor``
+    wins (refused when the spec does not bind it); else the arm when bound, else
+    ``scripted`` (handover, and the whole of arm ``auto`` with no explicit pick)."""
+    if arm != "auto" and arm not in ARMS:
+        raise ValueError(f"unknown arm {arm!r}; known arms: {sorted(ARMS)}")
+    policies = spec.get("policies") or {}
+    if executor is not None:
+        if executor != "scripted" and executor not in policies:
+            raise ValueError(f"unknown executor {executor!r}; bound: "
+                             f"{sorted({'scripted', *policies})}")
+        return executor
+    return arm if arm in policies else "scripted"
+
+
+def rearm(spec: Mapping[str, Any], arm: str, executor: str | None = None) -> dict[str, Any]:
+    """Resolve a spec's ``policies`` for ``arm`` (or the node's explicit
+    ``executor``, see :func:`executor_key`): the provider ref lands on
     ``policy_provider`` (plus ``policy_params`` when it pins a ``checkpoint_sha``);
     scripted, or an arm the record has no binding for, keeps the stage driver."""
-    if arm not in ARMS:
-        raise ValueError(f"unknown arm {arm!r}; known arms: {sorted(ARMS)}")
+    key = executor_key(spec, arm, executor)
     spec = dict(spec)
-    p = (spec.pop("policies", None) or {}).get(arm)
+    p = (spec.pop("policies", None) or {}).get(key)
     if p:
         spec["policy_provider"] = p["ref"]
         if p.get("checkpoint_sha"):

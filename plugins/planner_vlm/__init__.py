@@ -79,6 +79,9 @@ graph that achieves the goal with the listed skills.
 - On a replan (fault and completed_nodes are given): keep every completed node in the \
 plan with its id, skill and args EXACTLY as listed -- byte-identical -- and only \
 re-plan the remaining work.
+- executor: when the input's arm is "auto", pick one per node from that skill's \
+executors (a key), preferring the one with measured evidence (a non-null interval) and \
+the higher lower bound; otherwise omit executor. Never name a key the skill lacks.
 - rationale: one short paragraph on why the graph is legal (which facts / ensures \
 support each requires) and sufficient."""
 
@@ -162,6 +165,7 @@ class VlmPlanner:
             "oracles": list(brief.get("oracles") or ()),
             "scene": brief.get("scene") or {},
             "budget": brief.get("budget"),
+            "arm": brief.get("arm", "scripted"),
             "completed_nodes": [{"id": n["id"], "skill": n["skill"],
                                  "args": dict(n["args"])} for n in completed],
         }

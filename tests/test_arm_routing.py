@@ -60,7 +60,7 @@ class _Remote:
         self.resets += 1
 
 
-def _run(monkeypatch, arm):
+def _run(monkeypatch, arm, executor=None):
     spec = EpisodeSpec(seed=0, task="kitchen_thaw", policy_provider="scripted:provider")
     ep = EpisodeContext(SimpleNamespace(), env=object(), driver=_Driver(), spec=spec, obs={})
     ctx = NodeCtx(seed=0, env_ref="e", policy_ref=spec.policy_provider, skills=(),
@@ -75,7 +75,8 @@ def _run(monkeypatch, arm):
                             ep.driver.enter_segment(ep.env, spec, executor=executor),
                             {"success": True, "steps": 1, "stages": [], "obs": {}})[1])
     def node(skill):
-        return {"id": skill, "skill": skill, "kind": "segment", "args": {}}
+        n = {"id": skill, "skill": skill, "kind": "segment", "args": {}}
+        return {**n, "executor": executor} if executor and skill == "place_meat" else n
     return ep, ctx, loads, [_segment(node(s), ctx) for s in ("grasp_meat", "place_meat", "place_meat")]
 
 
@@ -87,6 +88,7 @@ def test_pi05_arm_hands_place_to_the_provider_and_seals_it(monkeypatch):
     grasp, place, _ = out
     assert "driver" not in grasp                      # scripted: the episode's driver
     assert place["driver"] == {"ref": VLA, "handshake": _Remote.handshake}
+    assert [r["executor"] for r in out] == ["scripted", "pi05", "pi05"]
     execs = [x for _, x in ep.driver.entered]
     assert execs[0] is None and isinstance(execs[1], _Remote) and execs[2] is not execs[1]
 
@@ -95,3 +97,26 @@ def test_scripted_arm_is_unchanged(monkeypatch):
     ep, _, loads, out = _run(monkeypatch, "scripted")
     assert loads == [] and all("driver" not in r for r in out)
     assert all(x is None for _, x in ep.driver.entered)
+    assert all(r["executor"] == "scripted" for r in out)
+
+
+def test_explicit_executor_wins_over_arm(monkeypatch):
+    # explicit pi05 under the scripted arm routes place_meat to the provider
+    _, _, loads, out = _run(monkeypatch, "scripted", executor="pi05")
+    assert loads == [(VLA, {"chunk": 10, "checkpoint_sha": PIN})]
+    assert out[1]["executor"] == "pi05" and out[1]["driver"]["ref"] == VLA
+    # explicit scripted on the two-policy record stays under the episode driver
+    _, _, loads, out = _run(monkeypatch, "pi05", executor="scripted")
+    assert loads == [] and all(r["executor"] == "scripted" and "driver" not in r for r in out)
+
+
+def test_auto_arm_falls_back_to_scripted_without_node_executor(monkeypatch):
+    _, _, loads, out = _run(monkeypatch, "auto")
+    assert loads == [] and all(r["executor"] == "scripted" for r in out)
+    assert rearm(SEGMENT_SPECS["place_meat"], "auto") == {"task": "place_meat"}
+    assert rearm(SEGMENT_SPECS["place_meat"], "auto", "pi05")["policy_provider"] == VLA
+    with pytest.raises(ValueError, match="unknown executor 'nope'"):
+        rearm(SEGMENT_SPECS["place_meat"], "auto", "nope")
+    with pytest.raises(ValueError, match="unknown executor 'pi05'"):
+        rearm(SEGMENT_SPECS["grasp_meat"], "auto", "pi05")     # explicit key the record lacks
+

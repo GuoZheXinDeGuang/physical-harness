@@ -21,7 +21,7 @@ _TYPE_NAME = {t: n for n, t in TYPES.items()}     # python type -> TYPES name
 _NODE_KEYS = frozenset({"id", "skill", "args", "after"})
 #: Admitted beside them: ``kind`` (dispatch), ``task`` (which declared task the
 #: node serves in a composed graph) and ``on_fail`` (protocol Node, inert today).
-_NODE_OPTIONAL = frozenset({"kind", "task", "on_fail"})
+_NODE_OPTIONAL = frozenset({"kind", "task", "on_fail", "executor"})
 
 #: The node KINDS the loop can dispatch. This frozenset is the single source of
 #: truth for the NAMES; ``workload._KIND_HANDLERS`` maps exactly these to their
@@ -105,9 +105,10 @@ def validate_plan(plan: Mapping, catalogue: Mapping[str, Mapping[str, type]],
     records = {name: SkillRecordV0(id=name, name=name,
                                    args={k: _TYPE_NAME[t] for k, t in schema.items()})
                for name, schema in catalogue.items()}
-    # Goals stripped here: Covered needs contract-bearing records, which the
-    # workload's protocol gate (_graph_problems) supplies.
-    typed = {**plan, "tasks": [{"id": t["id"], "goal": []} for t in tasks or ()]}
+    # Goals and executors stripped here: Covered and Bound need contract-bearing
+    # records (bindings), which the workload's protocol gate (_graph_problems) supplies.
+    typed = {**plan, "tasks": [{"id": t["id"], "goal": []} for t in tasks or ()],
+             "nodes": [{k: v for k, v in n.items() if k != "executor"} for n in plan["nodes"]]}
     ok, problems = validate_graph(plan_to_graph(typed), records, (), ())
     if not ok:
         return False, "; ".join(problems)
@@ -204,7 +205,7 @@ def plan_to_graph(plan: Mapping) -> ExecutionGraph:
                   for t in plan.get("tasks") or ()) or (Task(id="main", goal=()),)
     nodes = tuple(Node(id=n["id"], task=n.get("task", tasks[0].id), skill=n["skill"],
                        args=dict(n["args"]), after=tuple(n["after"]),
-                       on_fail=dict(n.get("on_fail") or {}))
+                       on_fail=dict(n.get("on_fail") or {}), executor=n.get("executor"))
                   for n in plan["nodes"])
     return ExecutionGraph(mission=plan["goal"], seed=int(plan.get("seed", 0)),
                           tasks=tasks, nodes=nodes)

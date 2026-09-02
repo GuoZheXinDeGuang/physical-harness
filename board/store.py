@@ -1162,6 +1162,30 @@ def plan_index(session_dir: str | Path) -> list[dict]:
     return out
 
 
+def skill_evidence(session_dir: str | Path) -> list[dict]:
+    """Per (skill, embodiment, executor) skill evidence {n, k}, a PURE projection
+    of one session's ``task.verify`` seal rows: ``n`` counts verified nodes,
+    ``k`` those whose bound predicates were all true. The node's skill comes from
+    the enclosing ``task.plan`` graph, embodiment from that row, executor from
+    the verify row's own ``executor`` key (``scripted`` on older rows that seal
+    only ``driver``). Rows sorted by key; feeds bindings.<emb>.policies.<key>
+    evidence (record.evidence[<emb>].by_executor) at publish time."""
+    keys: dict[tuple, dict] = {}
+    skill_of, emb = {}, None
+    for row in chain_rows(session_dir):
+        kind, d = row["kind"], row["data"]
+        if kind == "task.plan":
+            emb = d.get("embodiment")
+            skill_of = {n.get("id"): n.get("skill") for n in (d.get("graph") or {}).get("nodes", [])}
+        elif kind == "task.verify" and d.get("node") in skill_of:
+            key = (skill_of[d["node"]], emb, d.get("executor") or "scripted")
+            e = keys.setdefault(key, {"skill": key[0], "embodiment": key[1],
+                                      "executor": key[2], "n": 0, "k": 0})
+            e["n"] += 1
+            e["k"] += all(v is True for v in d["results"].values())
+    return [keys[k] for k in sorted(keys, key=lambda k: tuple(str(x) for x in k))]
+
+
 def split_trajectories(samples: list[dict]) -> dict[str, list[dict]]:
     """``{"dev": [...], "heldout": [...]}`` by each sample's ``o.role``."""
     return {r: [t for t in samples if t["o"]["role"] == r] for r in ("dev", "heldout")}

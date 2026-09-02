@@ -138,6 +138,9 @@ class Evidence:
     heldout: bool = False
     store: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+    #: policy key -> {n, k, seed_blocks?, store?}: evidence measured PER executor
+    #: (the projection never lends the whole-record row to one executor).
+    by_executor: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -171,6 +174,15 @@ class SkillRecordV0:
         return cls(**d)
 
 
+def executors_of(rec: SkillRecordV0) -> dict[str, dict[str, Any]]:
+    """Policy key -> binding ({ref, checkpoint_sha?}) over every embodiment
+    binding's ``policies``; a plain binding (or none) is ``scripted``."""
+    out: dict[str, dict[str, Any]] = {"scripted": {}}
+    for b in rec.bindings.values():
+        out.update(b.get("policies") or {})
+    return out
+
+
 # -------------------------------------------------------------------- graph
 
 @dataclass(frozen=True)
@@ -187,6 +199,7 @@ class Node:
     args: dict[str, Any] = field(default_factory=dict)
     after: tuple[str, ...] = ()
     on_fail: dict[str, Any] = field(default_factory=dict)   # {policy, budget?, rule?}
+    executor: str | None = None     # explicit policy key (bindings.<emb>.policies); None = arm default
 
 
 @dataclass(frozen=True)
@@ -206,7 +219,7 @@ class ExecutionGraph:
                         for t in d.get("tasks", ())),
             nodes=tuple(Node(id=n["id"], task=n["task"], skill=n["skill"],
                              args=dict(n.get("args", {})), after=tuple(n.get("after", ())),
-                             on_fail=dict(n.get("on_fail", {})))
+                             on_fail=dict(n.get("on_fail", {})), executor=n.get("executor"))
                         for n in d.get("nodes", ())),
             rationale=str(d.get("rationale", "")), planner=dict(d.get("planner", {})))
 
@@ -311,7 +324,7 @@ def _resolve(graph: Any, records: Mapping[str, SkillRecordV0]
 def validate_graph(graph: Any, records: Mapping[str, SkillRecordV0],
                    sigma0_facts: Collection[Any], sigma0_objects: Collection[str]
                    ) -> tuple[bool, list[str]]:
-    """Legal(G) = Typed and Grounded and Supported and Covered. ``records`` is
+    """Legal(G) = Typed and Bound and Grounded and Supported and Covered. ``records`` is
     keyed by record id and/or name; ``sigma0_facts`` are pred refs (any form)
     true at start. Returns every problem found, not just the first."""
     g, nodes, recs, problems = _resolve(graph, records)
@@ -340,6 +353,12 @@ def validate_graph(graph: Any, records: Mapping[str, SkillRecordV0],
             elif not isinstance(v, t) or (t is not bool and isinstance(v, bool)):
                 problems.append(f"typed: node {n.id!r} arg {k!r} must be "
                                 f"{schema[k]}, got {type(v).__name__}")
+
+    # Bound: an explicit executor must be a policy key the record binds.
+    for n in g.nodes:
+        if n.executor is not None and n.executor not in executors_of(recs[n.id]):
+            problems.append(f"bound: node {n.id!r} names executor {n.executor!r}; record "
+                            f"{recs[n.id].id!r} binds {sorted(executors_of(recs[n.id]))}")
 
     # Instantiated contracts per node.
     req = {n.id: [instantiate(p, n.args) for p in recs[n.id].requires] for n in g.nodes}
@@ -421,14 +440,18 @@ VLM_OUTPUT_SCHEMA: dict[str, Any] = {
     "goal": "<string>",
     "nodes": [{"id": "<unique string>", "skill": "<a skill name from skills>",
                "args": {"<arg>": "<value of the declared type>"},
-               "after": ["<id of an EARLIER node>"]}],
+               "after": ["<id of an EARLIER node>"],
+               "executor": "<optional: a key of the skill's executors>"}],
     "verify": [{"after": "<node id>", "predicate": "<an oracle name>"}],
     "rationale": "<string: why this graph is legal and sufficient>",
 }
 
 
-def evidence_interval(ev: Evidence, z: float = 1.96) -> list[float]:
-    """Wilson 95% interval on k/n; ``[0, 1]`` when n == 0."""
+def evidence_interval(ev: Evidence | Mapping[str, Any], z: float = 1.96) -> list[float]:
+    """Wilson 95% interval on k/n; ``[0, 1]`` when n == 0. Accepts an
+    ``Evidence`` or its dict form (a ``by_executor`` row)."""
+    if isinstance(ev, Mapping):
+        ev = Evidence(**ev)
     if ev.n <= 0:
         return [0.0, 1.0]
     p, n = ev.k / ev.n, ev.n
@@ -556,6 +579,18 @@ def vlm_projection(records: Mapping[str, Any], sigma0_facts: Collection[Any],
         if show_evidence:
             card["evidence"] = {emb: evidence_interval(ev)
                                 for emb, ev in sorted(rec.evidence.items())}
+        # Per-executor cards: evidence only from a measured by_executor row (null
+        # otherwise -- never the whole-record row lent to one executor).
+        # ponytail: first embodiment carrying the row wins; per-embodiment cards
+        # when a record is bound on two embodiments with separate evidence.
+        execs = {}
+        for key, pol in sorted(executors_of(rec).items()):
+            rows = [ev.by_executor[key] for _, ev in sorted(rec.evidence.items())
+                    if key in ev.by_executor]
+            execs[key] = {"evidence": evidence_interval(rows[0]) if show_evidence and rows else None}
+            if pol.get("checkpoint_sha"):
+                execs[key]["checkpoint_sha"] = pol["checkpoint_sha"]
+        card["executors"] = execs
         cards.append(card)
     return {"skills": cards,
             "facts": sorted(pred_ref_str(f) for f in sigma0_facts),

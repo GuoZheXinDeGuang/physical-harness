@@ -1069,7 +1069,7 @@ def _run_suite(brief: dict, rt: Runtime, brief_id: str, cancelled) -> bool:
     if card is None:
         raise ValueError(f"unknown suite {name!r} (known: {sorted(rt.benchmarks)})")
     arm = brief.get("arm", "scripted")
-    if arm not in card.get("arms", ()):
+    if arm != "auto" and arm not in card.get("arms", ()):
         raise ValueError(f"suite {name!r} has no arm {arm!r} (arms: {card.get('arms')})")
     lo, hi = (int(x) for x in brief["seeds"])
     lo, hi = min(lo, hi), max(lo, hi)

@@ -31,7 +31,7 @@ from harness.features import privilege_cost
 from harness.kernel import Kernel
 from harness.manifest import mount_params
 from harness.registry import load_provider
-from harness.skill_library import ARMS, RECORDS, rearm, skill_specs
+from harness.skill_library import ARMS, RECORDS, executor_key, rearm, skill_specs
 from harness.spec import EpisodeSpec
 from plugins.task.validate import NODE_KINDS, plan_to_graph, validate_plan
 
@@ -373,7 +373,7 @@ def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpe
     binding = (ctx.segment_specs or {}).get(node["skill"])
     if not binding:
         return ep.spec
-    kwargs = rearm(binding, ctx.arm)
+    kwargs = rearm(binding, ctx.arm, node.get("executor"))
     kwargs.pop("policy_params", None)  # provider-mount params, read by _executor
     args = dict(node.get("args") or {})
     # Static skill-library grounding: the abstract graph carries semantic args
@@ -431,7 +431,8 @@ def _executor(node: Mapping, ep: EpisodeContext, seg_spec: EpisodeSpec, ctx: Nod
     if ref == ep.spec.policy_provider:
         return None, None
     if ref not in ep.factories:
-        params = rearm((ctx.segment_specs or {})[node["skill"]], ctx.arm).get("policy_params") or {}
+        params = rearm((ctx.segment_specs or {})[node["skill"]], ctx.arm,
+                       node.get("executor")).get("policy_params") or {}
         ep.factories[ref] = load_provider(ref, {**mount_params(ref), **params})
     driver = ep.factories[ref].make_driver(seg_spec)
     return driver, {"ref": ref, "handshake": getattr(driver, "handshake", None)}
@@ -471,7 +472,10 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
     out = {"success": bool(seg["success"]), "steps": seg.get("steps"),
            "stages": stages,
            "diagnostics": seg.get("diagnostics", {}),
-           "governance": _segment_governance(bundle, digests, entered, exited)}
+           "governance": _segment_governance(bundle, digests, entered, exited),
+           # the policy key that drove it (next to driver.ref): the evidence chain key
+           "executor": executor_key((ctx.segment_specs or {}).get(node["skill"]) or {},
+                                    ctx.arm, node.get("executor"))}
     if driver_seal is not None:
         out["driver"] = driver_seal
     return out
@@ -604,7 +608,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     board.store.session_progress from tallying it as a failure. ``None`` (the
     default, and every non-runtime caller) is today's path, byte-identical."""
     arm = str(brief.get("arm", "scripted"))  # brief validation: before any mount
-    if arm not in ARMS:
+    if arm != "auto" and arm not in ARMS:  # auto: the planner picks per node.executor
         raise ValueError(f"unknown arm {arm!r}; known arms: {sorted(ARMS)}")
     planner = kernel.resolve("task.planner", consumer=CONSUMER)
     scene = kernel.resolve("graph.scene", consumer=CONSUMER)
@@ -817,8 +821,9 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                            for v in plan["verify"] if v["after"] == node["id"]}
                 verify = {"node": node["id"],
                           "results": results or {node["skill"]: protocol.tri(result["success"])}}
-                if "driver" in result:  # which executor (ref + handshake) drove it
-                    verify["driver"] = result["driver"]
+                for k in ("driver", "executor"):  # which executor (key, ref + handshake) drove it
+                    if k in result:
+                        verify[k] = result[k]
                 kernel.note("task.verify", verify)
                 entry = {"success": bool(result["success"]),
                          "steps": result.get("steps"),
@@ -827,7 +832,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 # A perceive/decide node's payload (facts / chosen route) is sealed
                 # so a later decide/verify node -- reading ctx.nodes_out -- routes on
                 # it. Manipulate nodes carry neither; the keys stay absent.
-                for extra in ("facts", "decision", "diagnostics", "driver"):
+                for extra in ("facts", "decision", "diagnostics", "driver", "executor"):
                     if extra in result:
                         entry[extra] = result[extra]
                 nodes_out[node["id"]] = entry

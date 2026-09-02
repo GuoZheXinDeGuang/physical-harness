@@ -42,6 +42,35 @@ def test_typed():
     assert not ok and any(p.startswith("typed:") for p in problems)
 
 
+def test_bound():
+    two = P.SkillRecordV0.from_dict({**P.to_plain(PLACE), "bindings": {
+        "sim": {"policies": {"scripted": {"task": "place"}, "pi05": {"ref": "x:provider"}}}}})
+    recs = {**RECS, "place": two}
+    ok, problems = P.validate_graph(graph([
+        {**GOOD["nodes"][0], "executor": "pi05"}, {**GOOD["nodes"][1], "executor": "pi05"}]),
+        recs, FACTS, OBJS)
+    assert not ok and len(problems) == 1 and problems[0].startswith("bound: node 'g'")
+    assert P.validate_graph(graph([
+        {**GOOD["nodes"][0], "executor": "scripted"}, {**GOOD["nodes"][1], "executor": "pi05"}]),
+        recs, FACTS, OBJS) == (True, [])
+
+
+def test_projection_executors():
+    ev = {"sim": {"n": 4, "k": 4, "by_executor": {"pi05": {"n": 20, "k": 18}}}}
+    two = P.SkillRecordV0.from_dict({**P.to_plain(PLACE), "evidence": ev, "bindings": {"sim": {
+        "policies": {"scripted": {"task": "place"},
+                     "pi05": {"ref": "x:provider", "checkpoint_sha": "ab" * 32}}}}})
+    card = P.vlm_projection({"place": two, "grasp": GRASP}, (), (), (), None,
+                            show_evidence=True)["skills"]
+    assert card[0]["executors"] == {"scripted": {"evidence": None}}
+    ex = card[1]["executors"]
+    assert ex["scripted"] == {"evidence": None}            # whole-record row never lent
+    assert ex["pi05"]["checkpoint_sha"] == "ab" * 32 and 0.68 < ex["pi05"]["evidence"][0] < 0.9
+    hidden = P.vlm_projection({"place": two}, (), (), (), None)["skills"][0]["executors"]
+    assert hidden["pi05"]["evidence"] is None
+    assert "executor" in P.VLM_OUTPUT_SCHEMA["nodes"][0]
+
+
 def test_grounded():
     bad = graph([{"id": "g", "task": "t", "skill": "grasp", "args": {"object": "pear"},
                   "after": []}], goal=("holding(pear)",))

@@ -1486,6 +1486,14 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 - 链：每条 `task.plan` 带 `graph_sha`（去掉 planner/rationale 的 content_id）和 `planner:{provider:"library"|<ref>,plan_id?,prompt_sha?}`；合成图只封一条 task.plan，逐任务来源在 `planner.tasks`。
 - e2e：`tests/test_plan_records.py`、`tests/test_mission_plan.py`（单元）、`tests/test_plan_library_e2e.py`、`tests/test_mission_decompose_e2e.py`（FakeEndpoint JSON 列表按序应答）、`tests/test_mission_robocasa_e2e.py`（robocasa）。
 
+### 9.8 Executor choice
+
+- 节点可带 `executor: <record.bindings.<本体>.policies 的键>`（今天 scripted|pi05）；省略则由 brief `arm` 定默认。arm `auto` = planner 逐节点自选，record 没有该 policy 时只在**未显式**写 executor 时回落 scripted。
+- Legal 第五条 **Bound**：显式 `executor` 必须是 record 该本体 policies 的键（plain binding 只认 scripted），问题前缀 `bound:`，派发前拒绝，绝不在集中途。
+- 投影：`vlm_projection` 卡片带 `executors:{key:{evidence:[lo,hi]|null, checkpoint_sha?}}`，`VLM_OUTPUT_SCHEMA` 收 `node.executor`；区间只来自 `record.evidence[本体].by_executor[key]{n,k,seed_blocks,store}`（`evidence_interval`），缺就 `null`，不编造。
+- 链：每条 `task.verify`（及 segment 结果）在 `driver.ref` 旁封 `executor: <实际用的键>`；`board.store.skill_evidence(session)` 投影成 per (skill, embodiment, executor) `{n,k}` = storecli `skill_evidence` = MCP `skill_evidence`，三面字节相同。
+- e2e：`tests/test_arm_routing.py`、`tests/test_protocol.py::test_bound`、`tests/test_skill_evidence.py`、`tests/test_executor_choice_e2e.py`（真 runtime，无 GPU）、`tests/test_executor_pi05_e2e.py`（robocasa+vla，自起自停 :8000）。
+
 ---
 
 ## 10. 没在这份文档里的东西

@@ -173,6 +173,14 @@ def plan_index(name: str = _DEFAULT_SESSION) -> list[dict]:
 
 
 @mcp.tool()
+def skill_evidence(name: str = _DEFAULT_SESSION) -> list[dict]:
+    """Per (skill, embodiment, executor) skill evidence {n, k} projected from one
+    session's task.verify seal rows (executor defaults to scripted on rows that
+    seal only driver). ``name`` defaults to session-main."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.skill_evidence(path) if path else {"error": "unknown session"}
+
+@mcp.tool()
 def trajectories_split(name: str = _DEFAULT_SESSION) -> dict:
     """``trajectories`` split ``{"dev": [...], "heldout": [...]}`` by ``o.role``
     (the seed's burned block role) -- the same rows ``storecli trajectories --out``

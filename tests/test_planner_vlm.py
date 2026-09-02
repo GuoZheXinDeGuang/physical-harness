@@ -123,7 +123,8 @@ def test_canned_reply_yields_a_plan_validate_plan_admits(endpoint_url):
     sent = _payload(_Server.requests[0])
     assert [c["name"] for c in sent["skills"]] == ["pick", "stack"]
     assert sent["skills"][0] == {"name": "pick", "kind": "segment", "args": {"object": "str"},
-                                 "requires": [], "ensures": []}
+                                 "requires": [], "ensures": [],
+                                 "executors": {"scripted": {"evidence": None}}}
     assert sent["output_schema"] == protocol.VLM_OUTPUT_SCHEMA
     assert sent["oracles"] == list(ORACLES) and sent["budget"] == 3
     assert _Server.requests[0]["response_format"] == {"type": "json_object"}
