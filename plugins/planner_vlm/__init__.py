@@ -80,7 +80,12 @@ graph that achieves the goal with the catalogue's skills.
 "predicate": <a declared oracle>}); verify must be non-empty.
 - On a replan (a fault and completed_nodes are given): keep every completed node in the \
 plan with its id, skill and args EXACTLY as listed -- byte-identical -- and only \
-re-plan the remaining work."""
+re-plan the remaining work.
+- If taxonomy is present, a catalogue skill listed with stages or a decomposition is a \
+COMPOSITE: select it whole; the server expands it from the skill graph. Never hand-expand \
+it into stages, and never emit a stage name as a skill.
+- If binding_availability is present, prefer skills marked bound:true whenever they can \
+achieve the goal; a plan that uses an unbound skill is planning-only and will not run."""
 
 
 class VlmPlanner:
@@ -131,7 +136,7 @@ class VlmPlanner:
         done_ids = tuple((fault or {}).get("nodes_done", ()))
         completed = [n for n in (self._last_plan or {}).get("nodes", ())
                      if n["id"] in done_ids]
-        return {
+        payload = {
             "goal": (brief.get("instruction")
                      or brief.get("default_instruction")
                      or brief.get("task")),
@@ -146,6 +151,13 @@ class VlmPlanner:
             "completed_nodes": [{"id": n["id"], "skill": n["skill"],
                                  "args": dict(n["args"])} for n in completed],
         }
+        # Skill-graph planning (plugins/task/skill_planning) threads two more
+        # server-authored context blocks; they are ABSENT from every existing
+        # task brief, so those payloads stay byte-identical.
+        for key in ("taxonomy", "binding_availability"):
+            if brief.get(key):
+                payload[key] = brief[key]
+        return payload
 
     @staticmethod
     def _parse(text: str) -> Mapping:
@@ -211,7 +223,10 @@ class VlmPlanner:
                           brief.get("instruction"),
                           brief.get("default_instruction"),
                           brief.get("planning_context"),
-                          brief.get("fault")], sort_keys=True, default=str)
+                          brief.get("fault"),
+                          # skill-graph briefs: a changed catalogue (retrieval or
+                          # graph file) is a fresh generation, same instruction
+                          brief.get("catalogue_digest")], sort_keys=True, default=str)
         frozen = _FROZEN.get(key)
         if frozen is None:
             plan = self._generate(brief)
