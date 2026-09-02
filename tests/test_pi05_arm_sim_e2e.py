@@ -29,8 +29,12 @@ OPENPI = Path("/home/yusenzlabpc/Desktop/Learning_based_model/openpi")
 CKPT = OPENPI / "checkpoints/pi05_robocasa_lora/gate2_bs8/199"
 VLA = "plugins.policy_vla_remote:provider"
 PORT = 8000
-#: a scratch seed the scripted nav/grasp/carry prelude is known to complete on
-SEED = int(os.environ.get("PI05_E2E_SEED", "429002"))
+#: a scratch seed the scripted nav/grasp/carry prelude completes on FIRST shot
+#: (isolated probe: grasp 153 steps, carry 61, secure hold) under the item-2 reach
+#: watchdog. 429002 only ever reached place via a lucky in-episode grasp re-drive;
+#: the watchdog re-timed its retry schedule and that luck ran out (isolated
+#: grasp at 429002 fails with the watchdog on AND off).
+SEED = int(os.environ.get("PI05_E2E_SEED", "429017"))
 
 
 @pytest.fixture(scope="module")
