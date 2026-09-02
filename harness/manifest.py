@@ -57,6 +57,9 @@ class Registry:
     #: ``reads`` (sigma keys) and optional ``args``; ``harness.predicates`` folds
     #: them into PredicateRecords keyed by name, bindings per card.
     provides: tuple[dict, ...] = ()
+    #: ``[benchmarks.<name>]`` pure-data suite cards (tasks, arms, max_replans):
+    #: the runtime's ``suite`` brief selector, folded exactly like campaigns.
+    benchmarks: dict[str, dict] = field(default_factory=dict)
 
 
 PROVIDES_KINDS = frozenset({"embodiment", "predicate", "recovery", "skill", "planner"})
@@ -109,6 +112,17 @@ def card_mounts(data: dict) -> list[Mount]:
     return out
 
 
+def mount_params(ref: str, root: Path = PLUGINS_ROOT) -> dict:
+    """The params the card declaring provider ``ref`` mounts it with, enabled or
+    not: a segment an arm routes to an unmounted card's provider still runs under
+    that card's declared contract. ``{}`` when no card mounts the ref."""
+    for _, data in _load(root):
+        for m in card_mounts(data):
+            if m.provider == ref:
+                return dict(m.params)
+    return {}
+
+
 def card_bundles(data: dict) -> dict[str, list[Mount]]:
     """Every named ``[bundles.<name>]`` overlay a SINGLE manifest declares.
 
@@ -156,6 +170,8 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
     camp_owner: dict = {}
     bundle_owner: dict = {}
     recov_owner: dict = {}
+    benchmarks: dict[str, dict] = {}
+    bench_owner: dict = {}
 
     # PH_PLUGINS_EXTRA: colon-separated extra card roots folded after ``root``
     # (a test's tmp card beside the installed ones; same collision rules).
@@ -204,9 +220,12 @@ def discover(root: Path = PLUGINS_ROOT) -> Registry:
         for name, script in data.get("campaigns", {}).items():
             _claim(campaigns, camp_owner, name, script,
                    kind="campaign", plugin=plugin)
+        for name, spec in data.get("benchmarks", {}).items():
+            _claim(benchmarks, bench_owner, name, dict(spec),
+                   kind="benchmark", plugin=plugin)
         for name, mounts_ in card_bundles(data).items():
             _claim(bundles, bundle_owner, name, tuple(mounts_),
                    kind="bundle", plugin=plugin)
 
     return Registry(tuple(mounts.values()), task_bindings, campaigns,
-                    third_party, bundles, recoveries, tuple(provides))
+                    third_party, bundles, recoveries, tuple(provides), benchmarks)

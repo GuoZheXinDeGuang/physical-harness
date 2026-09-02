@@ -1213,6 +1213,24 @@ def session_progress(session_dir: str | Path) -> dict:
     }
 
 
+def suite_result(session_dir: str | Path, sha: str | None = None) -> dict | None:
+    """The sealed suite artifact of one session: ``<session>/suites/<sha>.json``,
+    ``sha`` defaulting to the newest ``suite.sealed`` chain row's. None when the
+    session sealed no suite (or the sha names no artifact / is not a hex digest)."""
+    session_dir = Path(session_dir)
+    if sha is None:
+        sealed = _session_rows(session_dir / "session-log")[0].get("suite.sealed", [])
+        if not sealed:
+            return None
+        sha = sealed[-1].get("sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        return None
+    try:
+        return json.loads((session_dir / "suites" / f"{sha}.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def discover_sessions(runs_dir: str | Path) -> list[dict]:
     """Every runtime session under runs_dir, newest first -- summary cards (no
     row payloads) for the sidebar. Sessions are tiny, so this reads each once.
@@ -1487,6 +1505,111 @@ def model_server(action: str = "status", runs_dir: str | Path = ".") -> dict:
     return _model_state()
 
 
+# --- pi0.5 policy server: the model_server pattern on :8000 ---------------------
+#: openpi checkout that owns the interpreter and the fine-tuned checkpoints; the
+#: serve script lives in THIS repo (scripts/serve_vla_openpi.py) but runs under
+#: openpi's venv, exactly as its docstring shows. Same constant-not-argument rule
+#: as _MODEL_SCRIPT: a caller picks a checkpoint dir, never an interpreter.
+_OPENPI = Path.home() / "Desktop" / "Learning_based_model" / "openpi"
+_POLICY_PYTHON = _OPENPI / ".venv" / "bin" / "python"
+_POLICY_CHECKPOINT = _OPENPI / "checkpoints" / "pi05_robocasa_lora" / "gate2_bs8" / "199"
+_POLICY_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "serve_vla_openpi.py"
+_POLICY_CONFIG = "pi05_robocasa_lora"
+_POLICY_PORT = 8000
+_POLICY_START_HINT = ("start it with `scripts/cockpit --with-policy` (or set PH_WITH_POLICY=1 "
+                      "in .env)")
+
+
+def _policy_identity(pid: int) -> bool:
+    """True iff ``pid`` is live and is serve_vla_openpi.py on _POLICY_PORT
+    (cmdline only: the exe is a python, which proves nothing)."""
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except OSError:
+        return False
+    return _POLICY_SCRIPT.name in cmdline and f"--port {_POLICY_PORT}" in cmdline
+
+
+def _find_policy_server() -> int | None:
+    try:
+        pids = [int(p.name) for p in Path("/proc").iterdir() if p.name.isdigit()]
+    except OSError:
+        return None
+    return next((pid for pid in sorted(pids) if _policy_identity(pid)), None)
+
+
+def _policy_probe() -> tuple[bool, str | None]:
+    """``(serving, checkpoint_sha)``: the port only listens once the weights are
+    loaded, and the server's FIRST frame is its metadata, so one recv is the
+    whole handshake. Any failure reads as not serving / unknown sha."""
+    if not _serving(_POLICY_PORT):
+        return False, None
+    try:
+        import msgpack
+        import websockets.sync.client
+        with websockets.sync.client.connect(f"ws://127.0.0.1:{_POLICY_PORT}", compression=None,
+                                            max_size=None, open_timeout=_MODEL_PROBE_TIMEOUT_S) as ws:
+            meta = msgpack.unpackb(ws.recv(timeout=_MODEL_PROBE_TIMEOUT_S))
+        sha = meta.get("checkpoint_sha") if isinstance(meta, dict) else None
+        return True, sha if isinstance(sha, str) else None
+    except Exception:
+        return True, None
+
+
+def _policy_state() -> dict:
+    pid = _find_policy_server()
+    serving, sha = _policy_probe()
+    return {"running": pid is not None, "pid": pid, "port": _POLICY_PORT,
+            "serving": serving, "checkpoint_sha": sha}
+
+
+def policy_server(action: str = "status", runs_dir: str | Path = ".",
+                  checkpoint_dir: str | Path | None = None) -> dict:
+    """Start, stop, or read the pi0.5 policy server -- ``{"running", "pid",
+    "port", "serving", "checkpoint_sha"}`` plus ``"error"`` when an action
+    could not be carried out. model_server's contract, one port over:
+    adopt-or-spawn, setsid, pidfile under ``runs_dir``, exact-pid stop with an
+    identity re-check, never raises. ``running and not serving`` is loading.
+    ``checkpoint_dir`` defaults to ``$PH_POLICY_CHECKPOINT`` then the constant.
+    """
+    if action not in _MODEL_ACTIONS:
+        return {**_policy_state(), "error": f"unknown action: {action}"}
+    pidfile = Path(runs_dir) / "policy-server.pid"
+    if action == "start":
+        if _find_policy_server() is None:
+            ckpt = Path(checkpoint_dir or os.environ.get("PH_POLICY_CHECKPOINT") or _POLICY_CHECKPOINT)
+            if not _POLICY_PYTHON.exists():
+                return {**_policy_state(), "error": f"interpreter not found: {_POLICY_PYTHON}"}
+            if not ckpt.is_dir():
+                return {**_policy_state(), "error": f"checkpoint not found: {ckpt}"}
+            env = {**os.environ, "PYTHONPATH": str(_POLICY_SCRIPT.parent.parent),
+                   "HF_LEROBOT_HOME": os.environ.get("HF_LEROBOT_HOME", str(Path.home() / "Desktop" / "datasets")),
+                   "HF_HUB_OFFLINE": "1"}
+            try:
+                with open(Path(runs_dir) / "policy-server.log", "ab") as log:
+                    proc = subprocess.Popen(
+                        [str(_POLICY_PYTHON), str(_POLICY_SCRIPT), "--checkpoint-dir", str(ckpt),
+                         "--config", _POLICY_CONFIG, "--port", str(_POLICY_PORT)],
+                        cwd=str(_OPENPI), env=env, stdout=log, stderr=log,
+                        stdin=subprocess.DEVNULL, start_new_session=True)
+                pidfile.write_text(str(proc.pid))
+            except OSError as exc:
+                return {**_policy_state(), "error": f"spawn failed: {exc}"}
+    elif action == "stop":
+        try:
+            recorded = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            recorded = 0
+        pid = recorded if _policy_identity(recorded) else _find_policy_server()
+        if pid is None:
+            return {**_policy_state(), "error": "not running"}
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            return {**_policy_state(), "error": f"kill {pid} failed: {exc}"}
+        pidfile.unlink(missing_ok=True)
+    return _policy_state()
+
 # --- system health: the ONE first command --------------------------------------
 #
 # Three incidents, one shape: a piece of the pipeline was dead and every face
@@ -1528,7 +1651,7 @@ def _count(d: Path) -> int:
 def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> dict:
     """Is my system healthy RIGHT NOW -- one call, whole pipeline.
 
-    ``{ok, problems, sessions, console, model, ts}``.
+    ``{ok, problems, sessions, console, model, policy, ts}``.
 
     * ``sessions`` -- every INTAKE session under runs/, i.e. every dir with an
       ``inbox/``. That is the exact set a brief can be dropped into, including a
@@ -1544,6 +1667,8 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
       from .env): stopping the model to hand ~19 GB back to the simulator is a
       normal operator move, not a fault -- unless the operator declared the VLM
       part of the stack, in which case a stopped server is the silent failure.
+    * ``policy`` -- ``_policy_state()`` (pi0.5 on :8000: running/serving/
+      checkpoint_sha); flagged only under ``PH_WITH_POLICY=1``, same rule.
 
     Each session row also carries ``state``: ``up`` (runtime alive), ``dormant``
     (dead runtime, nothing queued -- evidence left in place, never a problem),
@@ -1613,9 +1738,14 @@ def health(runs_dir: str | Path = "runs", console_port: int = _CONSOLE_PORT) -> 
         problems.append(f"model: PH_WITH_MODEL=1 but nothing serving on "
                         f"127.0.0.1:{model['port']} (the VLM path cannot run) -- "
                         f"{_MODEL_START_HINT}")
+    policy = _policy_state()
+    if os.environ.get("PH_WITH_POLICY") == "1" and not policy["running"]:
+        problems.append(f"policy: PH_WITH_POLICY=1 but nothing serving on "
+                        f"127.0.0.1:{policy['port']} (the pi05 arm cannot run) -- "
+                        f"{_POLICY_START_HINT}")
     return {"ok": not problems, "problems": problems, "sessions": sessions,
             "console": {"port": int(console_port), "serving": serving},
-            "model": model, "ts": time.time()}
+            "model": model, "policy": policy, "ts": time.time()}
 
 
 # --- markdown feeds ---------------------------------------------------------

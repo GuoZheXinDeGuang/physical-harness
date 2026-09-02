@@ -1,0 +1,17 @@
+# The RoboCasa benchmark card: PURE DATA, no .py. Dropping this dir makes
+# {"kind":"suite","suite":"robocasa_v0","arm":"scripted","seeds":[lo,hi]} an
+# accepted brief. The runtime runs every (task, seed) through the ordinary task
+# path (the mission cards below bind each task), burns [lo,hi] as a heldout
+# block in a sealed preregistration BEFORE the first episode, and seals one
+# content-addressed suite artifact under <session>/suites/. It declares no
+# mounts, so base_profile's sha is untouched.
+[benchmarks.robocasa_v0]
+tasks = ["kitchen_thaw", "pack_lunch", "recycle_cans", "steam_prep"]
+# scripted = kitchen_driver stage drivers; pi05 = the fine-tuned pi0.5 through
+# plugins/policy_vla_remote on segments that have a binding, scripted elsewhere
+# (the handover shape of scripts/probe_pi05_rollout.py).
+arms = ["scripted", "pi05"]
+max_replans = 3
+# every dispatched node bills one actuation; kitchen_thaw alone is 14 nodes
+max_actuations = 24
+notes = "seeds are inclusive [lo,hi]; per_task = {n, k, L_mean (task.verify rows per episode), first_death (first failing seed)}; checkpoint_sha rides along when the pi05 arm's handshake sealed one"

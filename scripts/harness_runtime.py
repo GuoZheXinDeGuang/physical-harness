@@ -209,6 +209,8 @@ class Runtime:
     #: authority-laundering allowlists, no longer welded into this module.
     task_bindings: dict[str, dict] = field(default_factory=dict)
     campaigns: dict[str, str] = field(default_factory=dict)
+    #: benchmark name -> its pure-data card ({tasks, arms, max_replans, ...}).
+    benchmarks: dict[str, dict] = field(default_factory=dict)
 
 
 def _skills_manifest(skills_root: Path) -> list[str]:
@@ -480,7 +482,7 @@ def boot(session_dir: str | Path, inbox: str | Path | None = None, *,
     registry = discover()
     return Runtime(inbox, processing, done, failed, skills_root, log, mode,
                    render, frames, baseline, registry.task_bindings,
-                   registry.campaigns)
+                   registry.campaigns, registry.benchmarks)
 
 
 def _mount_plan(binding: dict, skills_root: Path, render: bool = False,
@@ -595,6 +597,9 @@ def _run_task(brief: dict, rt: Runtime, cancelled=None) -> dict:
     wbrief = task_brief(task, binding)
     if "instruction" in brief:
         wbrief["instruction"] = brief["instruction"]
+    # Executor arm (skill_library.ARMS; workload refuses an unknown one): pi05
+    # runs each segment its record binds to the policy card, scripted elsewhere.
+    wbrief["arm"] = brief.get("arm", "scripted")
     return workload.run(wbrief, kernel, seed=seed,
                         max_replans=max_replans, max_actuations=max_actuations,
                         segment_retries=int(binding.get("segment_retries", 0)),
@@ -617,7 +622,8 @@ def _declared_ranges(brief: dict) -> list[tuple[int, int]]:
     return ranges
 
 
-def _assert_unburned(brief: dict, what: str, runs_root: Path) -> None:
+def _assert_unburned(brief: dict, what: str, runs_root: Path,
+                     allow_empty: bool = False) -> None:
     """The seed-ledger guard (non-negotiable invariant): the burned set DERIVED
     from every sealed preregistration (board.store.burned_blocks) is one enforced
     check at the scheduling boundary. Reject BEFORE spawning if the declared
@@ -633,7 +639,14 @@ def _assert_unburned(brief: dict, what: str, runs_root: Path) -> None:
     declared = _declared_ranges(brief)
     if not declared:
         return
-    burned = burned_blocks(runs_root)
+    try:
+        burned = burned_blocks(runs_root)
+    except ValueError:
+        # allow_empty: the caller is about to seal the FIRST prereg under this
+        # runs root (a suite on a fresh session), so an absent ledger is empty.
+        if not allow_empty:
+            raise
+        burned = []
     for lo, hi in declared:
         for blo, bhi, role, sha in burned:
             if lo <= bhi and blo <= hi:
@@ -881,6 +894,93 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
     })
 
 
+def _find_key(obj, key: str) -> str | None:
+    """First value under ``key`` anywhere inside a nested row payload, or None."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            if (hit := _find_key(v, key)) is not None:
+                return hit
+    elif isinstance(obj, list):
+        for v in obj:
+            if (hit := _find_key(v, key)) is not None:
+                return hit
+    return None
+
+
+def _run_suite(brief: dict, rt: Runtime, brief_id: str, cancelled) -> bool:
+    """Run one benchmark card as ordinary task briefs -- every (task, seed) goes
+    through the SAME ``_run_task`` a task brief uses -- and seal one
+    content-addressed suite artifact under ``<session>/suites/<sha>.json``.
+
+    Before the first episode a preregistration burns ``[lo,hi]`` as a heldout
+    block in the session's campaign-store layout (``campaigns/<brief>``), the
+    layout ``board.store.burned_blocks`` already scans; an overlap with a burned
+    block is refused first (the shared ``_assert_unburned`` guard, fed the
+    suite's block). Returns True when the operator cancelled mid-suite.
+    """
+    from plugins.rsi.campaign import CampaignStore
+    from harness.config import sha_json
+    name = brief["suite"]
+    card = rt.benchmarks.get(name)
+    if card is None:
+        raise ValueError(f"unknown suite {name!r} (known: {sorted(rt.benchmarks)})")
+    arm = brief.get("arm", "scripted")
+    if arm not in card.get("arms", ()):
+        raise ValueError(f"suite {name!r} has no arm {arm!r} (arms: {card.get('arms')})")
+    lo, hi = (int(x) for x in brief["seeds"])
+    lo, hi = min(lo, hi), max(lo, hi)
+    _assert_unburned({"heldout": [[lo, hi]]}, f"suite {name!r}", _runs_root(rt),
+                     allow_empty=True)
+    store = CampaignStore(rt.inbox.parent / "campaigns" / Path(brief_id).stem)
+    prereg_sha = store.put("preregistration", {
+        "kind": "preregistration", "suite": name, "arm": arm,
+        "tasks": list(card["tasks"]), "blocks": {"heldout": [lo, hi]},
+        "heldout": list(range(lo, hi + 1))})
+    rt.log.append("runtime.suite_preregistered",
+                  {"brief": brief_id, "suite": name, "arm": arm,
+                   "seeds": [lo, hi], "prereg_sha": prereg_sha})
+    max_replans = int(brief.get("max_replans", card.get("max_replans", 3)))
+    # Actuation floor: brief -> card -> the task path's own default. kitchen_thaw's
+    # 14-node chain dies at the task default (3) before its first segment.
+    budget = brief.get("max_actuations", card.get("max_actuations"))
+    budget = {} if budget is None else {"max_actuations": int(budget)}
+    first_row = len(rt.log.rows())
+    per_task = {}
+    for task in card["tasks"]:
+        n = k = 0
+        lengths = []
+        first_death = None
+        for seed in range(lo, hi + 1):
+            at = len(rt.log.rows())
+            out = _run_task({"kind": "task", "task": task, "seed": seed,
+                             "max_replans": max_replans, "arm": arm, **budget},
+                            rt, cancelled=cancelled)
+            if cancelled_run(out):
+                return True
+            n += 1
+            k += bool(out["success"])
+            lengths.append(sum(1 for r in rt.log.rows()[at:] if r["kind"] == "task.verify"))
+            if first_death is None and not out["success"]:
+                first_death = seed
+        per_task[task] = {"n": n, "k": k,
+                          "L_mean": (sum(lengths) / len(lengths)) if lengths else None,
+                          "first_death": first_death}
+    artifact = {"kind": "suite_result", "suite": name, "arm": arm,
+                "seeds": [lo, hi], "per_task": per_task, "prereg_sha": prereg_sha}
+    ckpt = _find_key([r["data"] for r in rt.log.rows()[first_row:]], "checkpoint_sha")
+    if ckpt is not None:
+        artifact["checkpoint_sha"] = ckpt
+    sha = sha_json(artifact)
+    suites = rt.inbox.parent / "suites"
+    suites.mkdir(exist_ok=True)
+    (suites / f"{sha}.json").write_text(json.dumps(artifact, indent=1, sort_keys=True))
+    rt.log.append("suite.sealed", {"brief": brief_id, "suite": name, "arm": arm,
+                                   "seeds": [lo, hi], "sha": sha})
+    return False
+
+
 #: A brief is a selector plus budgets. A task may additionally carry one inert
 #: natural-language ``instruction``; it selects no provider/skill/oracle and is
 #: bounded below before reaching the planner. Providers are always chosen
@@ -894,8 +994,9 @@ def _run_rsi(brief: dict, rt: Runtime, brief_id: str) -> None:
 #: the verdict), ``cal``/``dev``/``heldout`` pin a block instead of allocating.
 _BRIEF_KEYS = {
     "task": {"kind", "task", "instruction", "seed", "max_replans",
-             "max_actuations"},
+             "max_actuations", "arm"},
     "campaign": {"kind", "campaign", "dev", "heldout"},
+    "suite": {"kind", "suite", "arm", "seeds", "max_replans", "max_actuations"},
     "rsi": {"kind", "task", "node", "cal", "dev", "heldout", "workers", "floor"},
 }
 _MAX_INSTRUCTION_CHARS = 4000
@@ -980,6 +1081,9 @@ def _process(rt: Runtime, path: Path) -> None:
             stopped = cancelled_run(
                 _run_task(brief, rt,
                           cancelled=lambda: _cancel_requested(rt, brief_id)))
+        elif kind == "suite":
+            stopped = _run_suite(brief, rt, brief_id,
+                                 cancelled=lambda: _cancel_requested(rt, brief_id))
         elif kind in ("campaign", "rsi"):
             # v4.1 hard rule: an evolution brief is accepted ONLY in evolution
             # mode. Rejection, not neutralization -- same pattern as the

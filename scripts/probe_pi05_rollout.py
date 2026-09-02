@@ -112,10 +112,7 @@ OBJ_SPLIT = "pretrain"
 CAMERAS = ["robot0_agentview_left", "robot0_eye_in_hand"]
 CAM_PX = 256  # the dataset's native stream size; the server resizes to 224
 
-#: obs key -> slice, in modality.json's state order (robocasa's own
-#: lerobot_utils.LEROBOT_STATE_TO_HDF5_STATE, read left to right).
-STATE_KEYS = ("robot0_base_pos", "robot0_base_quat", "robot0_base_to_eef_pos",
-              "robot0_base_to_eef_quat", "robot0_gripper_qpos")
+from plugins.embodiment_robocasa.vla_io import build_obs, lerobot_to_env  # one copy of the I/O contract
 
 #: The five mission predicates, in chain order. Names are exactly the ones
 #: plugins/embodiment_robocasa/predicates.py exports.
@@ -125,39 +122,6 @@ PREDICATES = ("fridge_is_open", "obj_grasped", "obj_in_microwave",
 #: The client-side training-observation contract (probe_vla_handshake.CONTRACT).
 CONTRACT = {"image_size": [224, 224], "views": ["base_0_rgb", "left_wrist_0_rgb"],
             "chunk": 10, "unnorm_key": "robocasa/lerobot"}
-
-
-def lerobot_to_env(a) -> np.ndarray:
-    """modality.json action order -> the robosuite PandaOmron action vector.
-
-    Inverse of robocasa ``lerobot_utils.ACTION_KEY_ORDERING_HDF5``. Getting this
-    wrong does not raise: the base would receive eef deltas and the arm would
-    receive wheel velocities, and the rollout would look merely bad.
-    """
-    a = np.asarray(a, dtype=np.float64).reshape(-1)
-    if a.shape[0] != 12:
-        raise ValueError(f"expected a 12-dim action, got {a.shape}")
-    out = np.empty(12)
-    out[0:3] = a[5:8]     # eef_position   -> arm OSC position
-    out[3:6] = a[8:11]    # eef_rotation   -> arm OSC rotation
-    out[6] = a[11]        # gripper_close  -> gripper
-    out[7:11] = a[0:4]    # base_motion    -> base vx/vy/wyaw/torso
-    out[11] = a[4]        # control_mode   -> base_mode
-    return out
-
-
-def build_obs(obs, prompt: str) -> dict:
-    """The observation the checkpoint was trained on, out of a live robocasa obs.
-    Images are flipped back to the dataset's top-down convention (see module doc)."""
-    return {
-        "observation/image": np.ascontiguousarray(
-            obs["robot0_agentview_left_image"][::-1]),
-        "observation/wrist_image": np.ascontiguousarray(
-            obs["robot0_eye_in_hand_image"][::-1]),
-        "observation/state": np.concatenate(
-            [np.asarray(obs[k], dtype=np.float32).reshape(-1) for k in STATE_KEYS]),
-        "prompt": prompt,
-    }
 
 
 def make_env(seed: int, split: str):

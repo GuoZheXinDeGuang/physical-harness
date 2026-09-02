@@ -22,16 +22,17 @@ from __future__ import annotations
 import importlib
 import itertools
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from harness import opstream, predicates, protocol
 from harness.config import sha_json
 from harness.features import privilege_cost
 from harness.kernel import Kernel
+from harness.manifest import mount_params
 from harness.registry import load_provider
+from harness.skill_library import ARMS, RECORDS, rearm, skill_specs
 from harness.spec import EpisodeSpec
-from harness.skill_library import RECORDS, skill_specs
 from plugins.task.validate import NODE_KINDS, validate_plan
 
 #: The kernel consumer name every capability this workload resolves is
@@ -176,6 +177,9 @@ class EpisodeContext:
     obs: Any
     cursor: int = 0
     closed: bool = False
+    #: provider ref -> connected policy factory, for segments an arm routes to
+    #: another executor than the episode's driver (handshake once per episode).
+    factories: dict[str, Any] = field(default_factory=dict)
 
     @property
     def exhausted(self) -> bool:
@@ -214,6 +218,9 @@ class NodeCtx:
     #: task whose object_key the driver retargets on. Empty -> every segment drives
     #: the ONE episode spec (a single-object mission). Card data, threaded on the brief.
     segment_specs: Mapping[str, Mapping] | None = None
+    #: executor arm the brief selects (skill_library.ARMS); a segment whose
+    #: record binds this arm runs under that provider, the rest stay scripted.
+    arm: str = "scripted"
 
 
 #: A non-manipulate node seals zero privilege: decide/verify read only sealed
@@ -305,7 +312,7 @@ def _segment_governance(bundle, digests, entered: int, exited: int) -> dict:
 
 
 def _governed_segment(episode: EpisodeContext, seg_spec: EpisodeSpec, bundle, *,
-                      step_budget: int) -> dict:
+                      step_budget: int, executor: Any = None) -> dict:
     """Drive the PERSISTENT episode ONE sub-goal segment on the SHARED env -- no
     make, no reset, no close. Re-aims the shared driver at this sub-goal's object
     (its live pose off ``episode.obs``) and restarts its grasp schedule, drives the
@@ -330,7 +337,10 @@ def _governed_segment(episode: EpisodeContext, seg_spec: EpisodeSpec, bundle, *,
     # ponytail: two branches, one protocol probe; unify only if a THIRD driver
     # shape appears that fits neither.
     if hasattr(ep.driver, "enter_segment"):
-        ep.driver.enter_segment(ep.env, seg_spec)
+        if executor is None:
+            ep.driver.enter_segment(ep.env, seg_spec)
+        else:  # the arm's executor drives; the stage keeps its done() truth + cap
+            ep.driver.enter_segment(ep.env, seg_spec, executor=executor)
         seg = gov.governed_segment(ep.env, ep.obs, ep.driver, seg_spec, bundle,
                                    step_budget=step_budget)
         ep.obs = seg["obs"]
@@ -363,7 +373,8 @@ def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpe
     binding = (ctx.segment_specs or {}).get(node["skill"])
     if not binding:
         return ep.spec
-    kwargs = dict(binding)
+    kwargs = rearm(binding, ctx.arm)
+    kwargs.pop("policy_params", None)  # provider-mount params, read by _executor
     args = dict(node.get("args") or {})
     # Static skill-library grounding: the abstract graph carries semantic args
     # (grasp(object=hot0), place(object=hot0,target=tupperware0)); the
@@ -407,6 +418,25 @@ def _segment_spec(node: Mapping, ep: EpisodeContext, ctx: NodeCtx) -> EpisodeSpe
     return ep.spec.child(**kwargs)
 
 
+def _executor(node: Mapping, ep: EpisodeContext, seg_spec: EpisodeSpec, ctx: NodeCtx
+              ) -> tuple[Any, dict | None]:
+    """The arm's executor for this segment, or ``(None, None)`` when the segment
+    runs under the episode's own driver (scripted arm, or a skill the arm has no
+    binding for -- handover). Another provider ref mounts under its card's
+    declared params (the observation contract the handshake gate reconciles)
+    plus the record's pin; the factory connects once per episode, a fresh driver
+    per segment (a chunk computed for another situation is stale). The seal
+    names the ref and, when the driver carries one, the handshake record."""
+    ref = seg_spec.policy_provider
+    if ref == ep.spec.policy_provider:
+        return None, None
+    if ref not in ep.factories:
+        params = rearm((ctx.segment_specs or {})[node["skill"]], ctx.arm).get("policy_params") or {}
+        ep.factories[ref] = load_provider(ref, {**mount_params(ref), **params})
+    driver = ep.factories[ref].make_driver(seg_spec)
+    return driver, {"ref": ref, "handshake": getattr(driver, "handshake", None)}
+
+
 def _segment(node: Mapping, ctx: NodeCtx) -> dict:
     """SEGMENT (M7): drive the ONE persistent episode for this sub-goal. Unlike
     ``manipulate`` (a throwaway make->reset->drive->close per node), a segment runs
@@ -429,17 +459,22 @@ def _segment(node: Mapping, ctx: NodeCtx) -> dict:
         # success=False and bounds the retries via max_replans, never a reset.
         return {"success": False, "steps": 0, "stages": [], "aborted": "horizon",
                 "governance": _segment_governance(bundle, digests, entered, entered)}
-    seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor)
+    executor, driver_seal = _executor(node, ep, seg_spec, ctx)
+    seg = _governed_segment(ep, seg_spec, bundle, step_budget=ep.spec.horizon - ep.cursor,
+                            executor=executor)
     exited = ep.cursor
     stages = seg.get("stages", [])
     opstream.emit("sub_goal_transition", node=node["id"],
                   object=(node.get("args") or {}).get("object"),
                   success=bool(seg["success"]),
                   entered_env_step=entered, exited_env_step=exited)
-    return {"success": bool(seg["success"]), "steps": seg.get("steps"),
-            "stages": stages,
-            "diagnostics": seg.get("diagnostics", {}),
-            "governance": _segment_governance(bundle, digests, entered, exited)}
+    out = {"success": bool(seg["success"]), "steps": seg.get("steps"),
+           "stages": stages,
+           "diagnostics": seg.get("diagnostics", {}),
+           "governance": _segment_governance(bundle, digests, entered, exited)}
+    if driver_seal is not None:
+        out["driver"] = driver_seal
+    return out
 
 
 #: kind -> handler ``(node, ctx) -> {"success", "governance", ...}``. The names
@@ -554,6 +589,9 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     note says in its own faults that a human stopped it -- which is what keeps
     board.store.session_progress from tallying it as a failure. ``None`` (the
     default, and every non-runtime caller) is today's path, byte-identical."""
+    arm = str(brief.get("arm", "scripted"))  # brief validation: before any mount
+    if arm not in ARMS:
+        raise ValueError(f"unknown arm {arm!r}; known arms: {sorted(ARMS)}")
     planner = kernel.resolve("task.planner", consumer=CONSUMER)
     scene = kernel.resolve("graph.scene", consumer=CONSUMER)
     # Accounted even while the catalogue is hand-declared: graph.skill is where
@@ -615,7 +653,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
     # episode (if any) is the shared persistent world every segment drives.
     ctx = NodeCtx(seed=seed, env_ref=env_ref, policy_ref=policy_ref,
                   skills=skills, nodes_out=nodes_out, predicates=predicates,
-                  episode=episode, segment_specs=brief.get("segment_specs"))
+                  episode=episode, segment_specs=brief.get("segment_specs"), arm=arm)
     # sigma0 for Legal(G): computed ONCE from the reset world (the persistent
     # episode's first obs, else the empty pre-episode snapshot) and the card's
     # declared facts, so Supported/Covered judge against real facts and objects.
@@ -738,9 +776,11 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 # (its own oracle when none bind); three-valued, None = unknown.
                 results = {v["predicate"]: protocol.tri(result["success"])
                            for v in plan["verify"] if v["after"] == node["id"]}
-                kernel.note("task.verify", {
-                    "node": node["id"],
-                    "results": results or {node["skill"]: protocol.tri(result["success"])}})
+                verify = {"node": node["id"],
+                          "results": results or {node["skill"]: protocol.tri(result["success"])}}
+                if "driver" in result:  # which executor (ref + handshake) drove it
+                    verify["driver"] = result["driver"]
+                kernel.note("task.verify", verify)
                 entry = {"success": bool(result["success"]),
                          "steps": result.get("steps"),
                          "stages": stages,
@@ -748,7 +788,7 @@ def run(brief: Mapping, kernel: Kernel, *, seed: int,
                 # A perceive/decide node's payload (facts / chosen route) is sealed
                 # so a later decide/verify node -- reading ctx.nodes_out -- routes on
                 # it. Manipulate nodes carry neither; the keys stay absent.
-                for extra in ("facts", "decision", "diagnostics"):
+                for extra in ("facts", "decision", "diagnostics", "driver"):
                     if extra in result:
                         entry[extra] = result[extra]
                 nodes_out[node["id"]] = entry

@@ -1,27 +1,35 @@
 {
- "id": "place_meat",
- "name": "place_meat",
- "kind": "segment",
- "lineage": {},
- "args": {},
- "requires": [
-  "holding(meat)",
-  "at(microwave)"
- ],
- "ensures": [
-  "inside(meat,microwave)",
-  "gripper_free()"
- ],
- "clobbers": [
-  "holding(meat)"
- ],
- "limits": {},
- "failure_modes": [],
- "bindings": {
-  "robocasa": {
-   "task": "place_meat"
-  }
- },
- "evidence": {},
- "description": "Drive the place_meat sub-goal in the persistent episode."
+  "id": "place_meat",
+  "name": "place_meat",
+  "kind": "segment",
+  "lineage": {},
+  "args": {},
+  "requires": [
+    "holding(meat)",
+    "at(microwave)"
+  ],
+  "ensures": [
+    "inside(meat,microwave)",
+    "gripper_free()"
+  ],
+  "clobbers": [
+    "holding(meat)"
+  ],
+  "limits": {},
+  "failure_modes": [],
+  "bindings": {
+    "robocasa": {
+      "policies": {
+        "scripted": {
+          "task": "place_meat"
+        },
+        "pi05": {
+          "ref": "plugins.policy_vla_remote:provider",
+          "checkpoint_sha": "08bae6a74c5d1ba90393f5bd59c9d0d1b39629a36d39e047fa7942361f3b1437"
+        }
+      }
+    }
+  },
+  "evidence": {},
+  "description": "Drive the place_meat sub-goal in the persistent episode."
 }

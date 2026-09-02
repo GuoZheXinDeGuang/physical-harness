@@ -1452,6 +1452,22 @@ planner 产出的图、runtime 的验收事件、技能库的记录和种子账�
 `tests/test_static_skill_library.py`、`tests/test_task_protocol_events.py`、
 `tests/test_trajectories.py`、`tests/test_store.py::*burned_blocks*`。
 
+### 9.6 Benchmark suites and arms
+
+- brief：`{"kind":"suite","suite":"robocasa_v0","arm":"scripted"|"pi05","seeds":[lo,hi],"max_replans"?,"max_actuations"?}`。
+  runtime 把卡上每个 (task, seed) 当普通 task brief 走 `_run_task`（无第二个执行器），
+  封 `<session>/suites/<sha>.json`：`{suite, arm, seeds, per_task:{n,k,L_mean,first_death}, prereg_sha, checkpoint_sha?}` + 链行 `suite.sealed`。
+- 卡：`plugins/benchmark_robocasa/manifest.toml` `[benchmarks.robocasa_v0]` 纯数据（tasks / arms / max_replans / max_actuations），`Registry.benchmarks` 折叠。
+- 烧块：第一集之前先封 prereg（`blocks.heldout=[lo,hi]`，链行 `runtime.suite_preregistered`），
+  `burned_blocks` 立刻看见；与已烧块重叠的 suite 在任何一集之前就被 `_assert_unburned` 拒绝。
+- 读：`board.store.suite_result(session, sha=None)` = `storecli suite_result <session> [--sha]` = MCP `suite_result`，三面字节相同。
+- arm：记录 binding 的 `policies.{scripted,pi05}`；`segment_specs(..., arm)` 按 arm 解析 provider。
+  handover 规则：某 skill 没有 pi05 binding ⇒ pi05 arm 回落到 scripted 阶段驱动；走 provider 的段在
+  `task.verify` 带 `driver:{ref:"plugins.policy_vla_remote:provider", handshake{checkpoint_sha}}`，suite 工件顺带 `checkpoint_sha`。
+- pi0.5 服务：`scripts/cockpit --with-policy`（或 `.env` `PH_WITH_POLICY=1`，`PH_POLICY_CHECKPOINT` 换 checkpoint）经
+  `board.store.policy_server` 起 :8000，`health().policy` 行只在该 flag 下计 problem。
+  e2e：`tests/test_suite_e2e.py`（S1/S2）、`tests/test_suite_robocasa_e2e.py`（S3，robocasa）、`tests/test_suite_pi05_e2e.py`（S4，robocasa+vla，测试自起自停服务）。
+
 ---
 
 ## 10. 没在这份文档里的东西

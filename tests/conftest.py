@@ -30,6 +30,10 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
+        "vla: starts the real pi0.5 server (openpi venv, GPU, port 8000) for the test",
+    )
+    config.addinivalue_line(
+        "markers",
         "libero: needs the libero venv (LIBERO+robosuite-1.4); "
         "auto-skipped when libero is unimportable (harness .venv)",
     )

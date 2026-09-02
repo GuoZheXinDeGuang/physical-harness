@@ -140,3 +140,34 @@ def test_with_model_starts_through_model_server_and_waits_for_healthy(tmp_path):
     (repo / "board" / "calls.json").unlink()
     _cockpit(repo, "--no-runtime", env={"NVM_DIR": str(tmp_path / "no-nvm")})
     assert not (repo / "board" / "calls.json").exists()
+
+
+_FAKE_POLICY_STORE = _FAKE_STORE + '''
+def policy_server(action="status", runs_dir=".", checkpoint_dir=None):
+    calls = json.loads(CALLS.read_text()) if CALLS.exists() else []
+    calls.append(["policy", action, str(runs_dir), checkpoint_dir])
+    CALLS.write_text(json.dumps(calls))
+    return {"running": True, "pid": 4343, "port": 8000, "serving": action == "status",
+            "checkpoint_sha": "ab" * 32}
+'''
+
+
+def test_with_policy_starts_through_policy_server_and_waits_for_the_port(tmp_path):
+    repo = _repo(tmp_path)
+    os.unlink(repo / "board")
+    (repo / "board").mkdir()
+    (repo / "board" / "__init__.py").write_text("")
+    (repo / "board" / "store.py").write_text(_FAKE_POLICY_STORE)
+    (repo / ".env").write_text("PH_WITH_POLICY=1\nPH_POLICY_CHECKPOINT=/ckpt/199\n")
+    res = _cockpit(repo, "--no-runtime", env={"NVM_DIR": str(tmp_path / "no-nvm")})
+    assert "policy server SERVING (checkpoint_sha=" + "ab" * 32 + ")" in res.stderr, res.stderr
+    assert "nvm not found" in res.stderr
+    calls = json.loads((repo / "board" / "calls.json").read_text())
+    assert calls == [["policy", "start", str(repo / "runs"), "/ckpt/199"],
+                     ["policy", "status", str(repo / "runs"), None]]
+    # the flag alone, no .env: same path, default checkpoint
+    (repo / "board" / "calls.json").unlink()
+    (repo / ".env").unlink()
+    _cockpit(repo, "--with-policy", "--no-runtime", env={"NVM_DIR": str(tmp_path / "no-nvm")})
+    assert json.loads((repo / "board" / "calls.json").read_text())[0] == \
+        ["policy", "start", str(repo / "runs"), None]

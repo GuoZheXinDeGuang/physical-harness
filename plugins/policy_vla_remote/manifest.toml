@@ -57,4 +57,8 @@ ref = "plugins.policy_vla_remote:provider"
 #                         chunk's value; see the driver docstring for why a mean
 #                         -- or a majority vote -- is the wrong operation on a
 #                         two-valued decision.
-params = { image_size = [224, 224], views = ["base_0_rgb", "left_wrist_0_rgb"], chunk = 10, unnorm_key = "libero_spatial_no_noops" }
+# Values below: the RoboCasa pi0.5 checkpoint scripts/serve_vla_openpi.py serves
+# (config pi05_robocasa_lora; echoes training_obs_image_size=[224,224],
+# action_chunk_size=10, default_unnorm_key="robocasa/lerobot"). discrete_dims
+# are the two-valued control_mode/gripper slots of its 12-dim action.
+params = { image_size = [224, 224], views = ["base_0_rgb", "left_wrist_0_rgb"], chunk = 10, unnorm_key = "robocasa/lerobot", discrete_dims = [4, 11] }

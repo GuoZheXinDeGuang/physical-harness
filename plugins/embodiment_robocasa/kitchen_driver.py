@@ -28,6 +28,7 @@ from typing import Any
 import numpy as np
 
 from plugins.embodiment_robocasa import drivers as D
+from plugins.embodiment_robocasa import vla_io
 
 #: spec.task (set by the mission card's SEGMENT_SPECS re-task, one per segment node)
 #: -> (stage-driver factory, per-segment step cap). The caps mirror the phase-3
@@ -58,6 +59,11 @@ class KitchenThawDriver:
         self._env: Any = None
         self._stage: Any = None
         self._cap: int = 0
+        #: an arm's executor (policy_vla_remote's chunk driver) bound for THIS
+        #: segment by the base's ``enter_segment(..., executor=)``; None -> the
+        #: stage driver acts. Either way the stage's done() is the sub-goal truth.
+        self._executor: Any = None
+        self._prompt: str = ""
         #: policy-owned step clock the base loop reads (``getattr(driver, "k", k)``)
         #: and the segment cap counts against.
         self.k: int = 0
@@ -69,8 +75,12 @@ class KitchenThawDriver:
         return np.zeros(D.ADIM)
 
     def act(self, obs) -> np.ndarray:
-        """Relay one control step to the active stage driver on the bound env."""
-        a = self._stage.act(self._env, obs)
+        """Relay one control step to the active stage driver on the bound env --
+        or to the bound executor, through the pi0.5 obs/action contract."""
+        if self._executor is not None:
+            a = vla_io.lerobot_to_env(self._executor.act(vla_io.build_obs(obs, self._prompt)))
+        else:
+            a = self._stage.act(self._env, obs)
         self.k += 1
         return a
 
@@ -111,10 +121,11 @@ class KitchenThawDriver:
         return "robocasa_kitchen_thaw@v1"
 
     # --- the episodic-segment protocol the base opts into (heterogeneous branch) --
-    def enter_segment(self, env, spec) -> None:
+    def enter_segment(self, env, spec, executor: Any = None) -> None:
         """Bind the live persistent world and arm THIS sub-goal's stage driver,
         selected by ``spec.task`` (the mission's per-node re-task). An unknown task
-        fails loudly here, before any actuation."""
+        fails loudly here, before any actuation. ``executor`` (an arm's policy
+        driver) takes the actions over; the stage still owns done() and the cap."""
         task = getattr(spec, "task", None)
         if task not in _STAGES:
             raise ValueError(
@@ -125,6 +136,10 @@ class KitchenThawDriver:
         self._stage = factory()
         self._cap = cap
         self.k = 0
+        self._executor = executor
+        if executor is not None:
+            executor.reset()  # a chunk computed for another situation is stale
+            self._prompt = str(env.get_ep_meta().get("lang") or task)
 
     def segment_success(self, env) -> bool:
         """The sub-goal truth: the stage driver's OWN live-state predicate (arrived

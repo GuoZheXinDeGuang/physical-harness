@@ -145,6 +145,15 @@ def session_progress(name: str = _DEFAULT_SESSION) -> dict:
 
 
 @mcp.tool()
+def suite_result(name: str = _DEFAULT_SESSION, sha: str | None = None) -> dict | None:
+    """One session's sealed benchmark-suite artifact ({suite, arm, seeds,
+    per_task:{n,k,L_mean,first_death}, prereg_sha, checkpoint_sha?}); ``sha``
+    defaults to the newest ``suite.sealed`` row. null when none was sealed."""
+    path = bs.safe_child(_Cfg.runs, name, bs.is_session)
+    return bs.suite_result(path, sha) if path else {"error": "unknown session"}
+
+
+@mcp.tool()
 def trajectories(name: str = _DEFAULT_SESSION) -> list[dict]:
     """Protocol-v0 trajectory samples projected from one session's chain: one
     per plan/replan decision (x: mission/sigma0/skills/done/fault, y: graph id +
